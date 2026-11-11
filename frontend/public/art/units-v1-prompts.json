@@ -1,0 +1,134 @@
+{
+  "generator": "Built-in image_gen",
+  "columns": 4,
+  "rows": 4,
+  "roles": [
+    "infantry",
+    "archer",
+    "cavalry",
+    "scout",
+    "wagon",
+    "catapult",
+    "ram",
+    "siegetower",
+    "governor",
+    "spearman",
+    "swordsman",
+    "crossbowman",
+    "lightcavalry",
+    "heavycavalry"
+  ],
+  "sheets": [
+    {
+      "slug": "romans",
+      "style": "Imperial Romans: red cloth, brass and iron segmented armor, rectangular shields, red crested helmets",
+      "names": [
+        "Legionary",
+        "Legion Archer",
+        "Imperial Cavalry",
+        "Eye of Rome",
+        "Legion Wagon",
+        "Roman Catapult",
+        "Legion Ram",
+        "Imperial Tower",
+        "Governor",
+        "Triarii",
+        "Praetorian",
+        "Roman Arbalist",
+        "Roman Courser",
+        "Cataphract"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production-ready transparent PNG sprite atlas for an existing isometric medieval strategy game. Create a NEW romans unit sprite sheet, exactly 4 columns by 4 rows on a SQUARE canvas, ideally 2048x2048. Fourteen separate complete sprites, last two cells of row 4 fully empty and transparent. Each cell is exactly one quarter of canvas width and height. Centers at 12.5%,37.5%,62.5%,87.5% in each axis. All sprites contained inside central 80% of their own cell with generous transparent gutters on ALL sides. No sprite may cross cell boundary. Full body incl feet, horses and machines completely visible; consistent three-quarter isometric view facing lower-right. Charming highly detailed hand-painted 3D strategy game miniatures, crisp silhouettes readable at 48px, soft sun from upper left, rich natural materials, subtle tiny contact shadow only. Tribe identity: Imperial Romans: red cloth, brass and iron segmented armor, rectangular shields, red crested helmets. Each unit DISTINCT and recognizable. Role order left to right top to bottom:\n1 (row 1, column 1): Legionary, legionary infantry with sword and shield\n2 (row 1, column 2): Legion Archer, foot archer with bow\n3 (row 1, column 3): Imperial Cavalry, armored cavalry on horse\n4 (row 1, column 4): Eye of Rome, light foot scout with hood and spyglass\n5 (row 2, column 1): Legion Wagon, covered wooden supply wagon with horse\n6 (row 2, column 2): Roman Catapult, wooden catapult\n7 (row 2, column 3): Legion Ram, covered battering ram\n8 (row 2, column 4): Imperial Tower, wooden siege tower\n9 (row 3, column 1): Governor, governor in formal robes with staff\n10 (row 3, column 2): Triarii, spearman with long spear and shield\n11 (row 3, column 3): Praetorian, elite swordsman\n12 (row 3, column 4): Roman Arbalist, crossbowman with recognizable crossbow\n13 (row 4, column 1): Roman Courser, light cavalry on fast unarmored horse\n14 (row 4, column 2): Cataphract, heavy cavalry on armored horse\nCells 15 and 16 EMPTY. NO letters, NO labels, NO numbers, NO grid, NO frames, NO tiles, NO ground platforms, NO scenery, NO watermark, NO checkerboard pixels. Genuinely transparent alpha background. Uniform scale within each category. Do not crop any equipment."
+    },
+    {
+      "slug": "germans",
+      "style": "Germanic woodland tribes: green wool, brown leather, fur cloaks, wood and iron equipment, rugged beards; NO horned helmets",
+      "names": [
+        "Clubman",
+        "Forest Hunter",
+        "Raider Cavalry",
+        "Tracker",
+        "Loot Wagon",
+        "Rock Thrower",
+        "Occupying Ram",
+        "Tribal Tower",
+        "Chieftain",
+        "Tribal Pikeman",
+        "Axeman",
+        "Forest Arbalist",
+        "Raider Horseman",
+        "Iron Rider"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production-ready transparent PNG sprite atlas for an existing isometric medieval strategy game. Create a NEW germans unit sprite sheet, exactly 4 columns by 4 rows on a SQUARE canvas, ideally 2048x2048. Fourteen separate complete sprites, last two cells of row 4 fully empty and transparent. Each cell is exactly one quarter of canvas width and height. Centers at 12.5%,37.5%,62.5%,87.5% in each axis. All sprites contained inside central 80% of their own cell with generous transparent gutters on ALL sides. No sprite may cross cell boundary. Full body incl feet, horses and machines completely visible; consistent three-quarter isometric view facing lower-right. Charming highly detailed hand-painted 3D strategy game miniatures, crisp silhouettes readable at 48px, soft sun from upper left, rich natural materials, subtle tiny contact shadow only. Tribe identity: Germanic woodland tribes: green wool, brown leather, fur cloaks, wood and iron equipment, rugged beards; NO horned helmets. Each unit DISTINCT and recognizable. Role order left to right top to bottom:\n1 (row 1, column 1): Clubman, clubman with wooden club and round shield\n2 (row 1, column 2): Forest Hunter, foot archer with bow\n3 (row 1, column 3): Raider Cavalry, armored cavalry on horse\n4 (row 1, column 4): Tracker, light foot scout with hood and spyglass\n5 (row 2, column 1): Loot Wagon, covered wooden supply wagon with horse\n6 (row 2, column 2): Rock Thrower, wooden catapult\n7 (row 2, column 3): Occupying Ram, covered battering ram\n8 (row 2, column 4): Tribal Tower, wooden siege tower\n9 (row 3, column 1): Chieftain, governor in formal robes with staff\n10 (row 3, column 2): Tribal Pikeman, spearman with long spear and shield\n11 (row 3, column 3): Axeman, elite axeman with battle axe\n12 (row 3, column 4): Forest Arbalist, crossbowman with recognizable crossbow\n13 (row 4, column 1): Raider Horseman, light cavalry on fast unarmored horse\n14 (row 4, column 2): Iron Rider, heavy cavalry on armored horse\nCells 15 and 16 EMPTY. NO letters, NO labels, NO numbers, NO grid, NO frames, NO tiles, NO ground platforms, NO scenery, NO watermark, NO checkerboard pixels. Genuinely transparent alpha background. Uniform scale within each category. Do not crop any equipment."
+    },
+    {
+      "slug": "greeks",
+      "style": "Classical Greeks: blue cloth, polished bronze, round hoplite shields and crested Corinthian helmets",
+      "names": [
+        "Hoplite",
+        "Cretan Archer",
+        "Interceptor Cavalry",
+        "Greek Scout",
+        "Supply Wagon",
+        "Athenian Catapult",
+        "Spartan Ram",
+        "Greek Siege Tower",
+        "Archon",
+        "Phalanx",
+        "Spartan Swordsman",
+        "Greek Arbalist",
+        "Thessalian Rider",
+        "Companion Cavalry"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production-ready transparent PNG sprite atlas for an existing isometric medieval strategy game. Create a NEW greeks unit sprite sheet, exactly 4 columns by 4 rows on a SQUARE canvas, ideally 2048x2048. Fourteen separate complete sprites, last two cells of row 4 fully empty and transparent. Each cell is exactly one quarter of canvas width and height. Centers at 12.5%,37.5%,62.5%,87.5% in each axis. All sprites contained inside central 80% of their own cell with generous transparent gutters on ALL sides. No sprite may cross cell boundary. Full body incl feet, horses and machines completely visible; consistent three-quarter isometric view facing lower-right. Charming highly detailed hand-painted 3D strategy game miniatures, crisp silhouettes readable at 48px, soft sun from upper left, rich natural materials, subtle tiny contact shadow only. Tribe identity: Classical Greeks: blue cloth, polished bronze, round hoplite shields and crested Corinthian helmets. Each unit DISTINCT and recognizable. Role order left to right top to bottom:\n1 (row 1, column 1): Hoplite, legionary infantry with sword and shield\n2 (row 1, column 2): Cretan Archer, foot archer with bow\n3 (row 1, column 3): Interceptor Cavalry, armored cavalry on horse\n4 (row 1, column 4): Greek Scout, light foot scout with hood and spyglass\n5 (row 2, column 1): Supply Wagon, covered wooden supply wagon with horse\n6 (row 2, column 2): Athenian Catapult, wooden catapult\n7 (row 2, column 3): Spartan Ram, covered battering ram\n8 (row 2, column 4): Greek Siege Tower, wooden siege tower\n9 (row 3, column 1): Archon, governor in formal robes with staff\n10 (row 3, column 2): Phalanx, spearman with long spear and shield\n11 (row 3, column 3): Spartan Swordsman, elite swordsman\n12 (row 3, column 4): Greek Arbalist, crossbowman with recognizable crossbow\n13 (row 4, column 1): Thessalian Rider, light cavalry on fast unarmored horse\n14 (row 4, column 2): Companion Cavalry, heavy cavalry on armored horse\nCells 15 and 16 EMPTY. NO letters, NO labels, NO numbers, NO grid, NO frames, NO tiles, NO ground platforms, NO scenery, NO watermark, NO checkerboard pixels. Genuinely transparent alpha background. Uniform scale within each category. Do not crop any equipment."
+    },
+    {
+      "slug": "mongols",
+      "style": "Mongol steppe warriors: ochre and teal cloth, lamellar leather armor, fur hats and conical helmets, curved sabres, horse archers",
+      "names": [
+        "Khan Guard",
+        "Steppe Archer",
+        "Horse Archer",
+        "Steppe Scout",
+        "Nomad Wagon",
+        "Khan Catapult",
+        "Steppe Ram",
+        "Khan Tower",
+        "Khan Deputy",
+        "Steppe Spearman",
+        "Keshig Swordsman",
+        "Steppe Arbalist",
+        "Steppe Raider",
+        "Khan Lancer"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production-ready transparent PNG sprite atlas for an existing isometric medieval strategy game. Create a NEW mongols unit sprite sheet, exactly 4 columns by 4 rows on a SQUARE canvas, ideally 2048x2048. Fourteen separate complete sprites, last two cells of row 4 fully empty and transparent. Each cell is exactly one quarter of canvas width and height. Centers at 12.5%,37.5%,62.5%,87.5% in each axis. All sprites contained inside central 80% of their own cell with generous transparent gutters on ALL sides. No sprite may cross cell boundary. Full body incl feet, horses and machines completely visible; consistent three-quarter isometric view facing lower-right. Charming highly detailed hand-painted 3D strategy game miniatures, crisp silhouettes readable at 48px, soft sun from upper left, rich natural materials, subtle tiny contact shadow only. Tribe identity: Mongol steppe warriors: ochre and teal cloth, lamellar leather armor, fur hats and conical helmets, curved sabres, horse archers. Each unit DISTINCT and recognizable. Role order left to right top to bottom:\n1 (row 1, column 1): Khan Guard, legionary infantry with sword and shield\n2 (row 1, column 2): Steppe Archer, foot archer with bow\n3 (row 1, column 3): Horse Archer, horse archer on steppe horse\n4 (row 1, column 4): Steppe Scout, light foot scout with hood and spyglass\n5 (row 2, column 1): Nomad Wagon, covered wooden supply wagon with horse\n6 (row 2, column 2): Khan Catapult, wooden catapult\n7 (row 2, column 3): Steppe Ram, covered battering ram\n8 (row 2, column 4): Khan Tower, wooden siege tower\n9 (row 3, column 1): Khan Deputy, governor in formal robes with staff\n10 (row 3, column 2): Steppe Spearman, spearman with long spear and shield\n11 (row 3, column 3): Keshig Swordsman, elite swordsman\n12 (row 3, column 4): Steppe Arbalist, crossbowman with recognizable crossbow\n13 (row 4, column 1): Steppe Raider, light cavalry on fast unarmored horse\n14 (row 4, column 2): Khan Lancer, heavy cavalry on armored horse\nCells 15 and 16 EMPTY. NO letters, NO labels, NO numbers, NO grid, NO frames, NO tiles, NO ground platforms, NO scenery, NO watermark, NO checkerboard pixels. Genuinely transparent alpha background. Uniform scale within each category. Do not crop any equipment."
+    },
+    {
+      "slug": "persians",
+      "style": "Persian and Babylonian empire: purple cloth, gold trim, ornate scale armor, patterned robes, curved blades; third sprite MUST be a war ELEPHANT with a rider, not a horse",
+      "names": [
+        "Immortal",
+        "Babylonian Archer",
+        "War Elephant",
+        "King's Eye",
+        "Caravan Wagon",
+        "Babylonian Catapult",
+        "Royal Ram",
+        "Babylonian Tower",
+        "Satrap",
+        "Royal Spearman",
+        "Royal Swordsman",
+        "Persian Arbalist",
+        "Persian Courser",
+        "Armored Cavalry"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: production-ready transparent PNG sprite atlas for an existing isometric medieval strategy game. Create a NEW persians unit sprite sheet, exactly 4 columns by 4 rows on a SQUARE canvas, ideally 2048x2048. Fourteen separate complete sprites, last two cells of row 4 fully empty and transparent. Each cell is exactly one quarter of canvas width and height. Centers at 12.5%,37.5%,62.5%,87.5% in each axis. All sprites contained inside central 80% of their own cell with generous transparent gutters on ALL sides. No sprite may cross cell boundary. Full body incl feet, horses and machines completely visible; consistent three-quarter isometric view facing lower-right. Charming highly detailed hand-painted 3D strategy game miniatures, crisp silhouettes readable at 48px, soft sun from upper left, rich natural materials, subtle tiny contact shadow only. Tribe identity: Persian and Babylonian empire: purple cloth, gold trim, ornate scale armor, patterned robes, curved blades; third sprite MUST be a war ELEPHANT with a rider, not a horse. Each unit DISTINCT and recognizable. Role order left to right top to bottom:\n1 (row 1, column 1): Immortal, legionary infantry with sword and shield\n2 (row 1, column 2): Babylonian Archer, foot archer with bow\n3 (row 1, column 3): War Elephant, large armored war elephant with rider\n4 (row 1, column 4): King's Eye, light foot scout with hood and spyglass\n5 (row 2, column 1): Caravan Wagon, covered wooden supply wagon with horse\n6 (row 2, column 2): Babylonian Catapult, wooden catapult\n7 (row 2, column 3): Royal Ram, covered battering ram\n8 (row 2, column 4): Babylonian Tower, wooden siege tower\n9 (row 3, column 1): Satrap, governor in formal robes with staff\n10 (row 3, column 2): Royal Spearman, spearman with long spear and shield\n11 (row 3, column 3): Royal Swordsman, elite swordsman\n12 (row 3, column 4): Persian Arbalist, crossbowman with recognizable crossbow\n13 (row 4, column 1): Persian Courser, light cavalry on fast unarmored horse\n14 (row 4, column 2): Armored Cavalry, heavy cavalry on armored horse\nCells 15 and 16 EMPTY. NO letters, NO labels, NO numbers, NO grid, NO frames, NO tiles, NO ground platforms, NO scenery, NO watermark, NO checkerboard pixels. Genuinely transparent alpha background. Uniform scale within each category. Do not crop any equipment."
+    }
+  ],
+  "outputDimensions": [
+    1254,
+    1254
+  ],
+  "alpha": true,
+  "mongolsCleanup": "Background-extraction edit using built-in image_gen: remove all gray/white studio background and broad background shadows; preserve all 14 characters, equipment, colors, scale, positions and exact 4x4 layout. Keep only tiny contact shadows. No text, frames, resizing or repositioning."
+}

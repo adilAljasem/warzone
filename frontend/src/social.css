@@ -1,0 +1,40 @@
+.world-chat{position:fixed;left:16px;bottom:calc(var(--command-height) + 18px);width:240px;z-index:23;border:1px solid #d8e9ce38;border-radius:12px;background:linear-gradient(145deg,#102b24e8,#18372ccc);box-shadow:0 10px 28px #10251f26;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);overflow:hidden}
+.chat-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;padding:9px 12px;border:0;border-radius:0;background:#ffffff08;color:#f0d497;font-size:11px;font-weight:700;letter-spacing:.4px}
+.chat-toggle>span:last-child{font-size:17px;line-height:14px}
+#chat-content{padding:0 9px 9px}
+#chat-messages{height:190px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#b7a27366 transparent;padding:3px 3px 8px;display:flex;flex-direction:column;gap:7px}
+.chat-message{padding:6px 8px;border-radius:8px;background:#071e1645;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.chat-message .chat-author{display:flex;justify-content:space-between;gap:8px;color:#e5ca8e;font-size:9px;margin-bottom:2px}
+.chat-message .chat-author time{color:#b8c5b5;font-size:8px;direction:ltr}
+.chat-message.own{background:#6f69312e}
+.chat-message.system{background:#b89b4d1f;border:1px solid #d8bb6b2e;color:#ead9aa}
+.chat-empty{margin:auto;color:#c1cdbd;font-size:10px;text-align:center}
+#chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;border-top:1px solid #d8e9ce26;padding-top:8px}
+#chat-form input{padding:7px 8px;background:#0a211bbd;font-size:11px}
+#chat-form .chat-send{padding:6px 10px;background:#b69a5552;border-color:#dbc17d66;font-size:10px}
+.has-drawer .world-chat{width:260px}
+.resource-transfer,.village-alliances,.alliance-requests{display:grid;gap:9px;padding:12px;border:1px solid #d9c58b30;border-radius:9px;background:#0b231b45}
+.resource-transfer h3,.village-alliances h3,.alliance-requests h3{font-size:13px;color:#e5cb91}
+.resource-transfer .choice-field{margin:0}
+.transfer-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.transfer-grid label{margin:0}
+.transfer-grid label>span{display:flex;align-items:center;gap:5px}
+.transfer-grid svg{width:17px;height:17px}
+.transfer-grid input{margin-top:4px;padding:6px}
+.alliance-names{display:flex;flex-wrap:wrap;gap:5px}
+.alliance-names span{padding:4px 7px;border:1px solid #9cc49b44;border-radius:6px;background:#59855722;color:#d6e7c7;font-size:10px}
+.alliance-actions{display:flex;gap:6px;flex-wrap:wrap}
+.alliance-actions button{flex:1;white-space:nowrap}
+.alliance-request{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center;padding:7px 0;border-top:1px solid var(--line);font-size:11px}
+.alliance-request .alliance-actions{grid-column:1/-1}
+[dir=rtl] .chat-message{text-align:right}
+@media(max-width:1100px){
+ .world-chat{bottom:calc(var(--command-height) + 14px)}
+}
+@media(max-width:700px){
+ .world-chat{left:8px;bottom:calc(var(--command-height) + 12px);width:min(280px,calc(100vw - 16px));background:linear-gradient(145deg,#102b24ed,#18372cdd)}
+ #chat-messages{height:150px}
+ .has-drawer .world-chat{display:none}
+ .resource-transfer,.village-alliances,.alliance-requests{padding:9px}
+}
+@media(max-height:650px){#chat-messages{height:115px}}

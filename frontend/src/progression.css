@@ -1,0 +1,38 @@
+.unit-portrait>.unit-art{display:block;width:100%;height:100%;overflow:hidden;filter:drop-shadow(0 3px 2px #071d1940)}
+.training-summary{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 12px;border:1px solid #d7c28b40;border-radius:9px;background:linear-gradient(120deg,#c8ac5419,#6b9e6d0b)}
+.training-summary>div{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.training-summary strong{font-size:18px;color:#e9d296;font-variant-numeric:tabular-nums}
+.training-summary p,.training-summary>small{grid-column:1/-1;font-size:10px;color:#c8d4b9;line-height:1.6}
+.unit-tabs.recruitment-roster{display:grid;grid-template-columns:repeat(var(--roster-count,5),minmax(0,1fr));gap:5px}
+.recruitment-roster>button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 3px;border:1px solid #d2c38e30;background:#ffffff04}
+.recruitment-roster>button>.unit-portrait{width:58px;height:58px}
+.recruitment-roster>button>span:not(.unit-portrait){font-size:9px;line-height:1.5;overflow-wrap:anywhere}
+.recruitment-roster>button>small{font-size:9px;color:#a9c99f}
+.recruitment-roster .unit-locked .unit-art,.training-roadmap .locked .unit-art{filter:grayscale(.8);opacity:.5}
+.recruitment-roster .unit-locked>small{color:#c2b591}
+.recruitment-roster>button.active{border-color:#e1c278;background:#b79d4c1c;box-shadow:inset 0 0 15px #d6b86612}
+.recruit-showcase{display:flex;align-items:center;gap:14px;padding:8px 10px;background:radial-gradient(ellipse at 25% 70%,#d8b8661a,transparent 70%);border-bottom:1px solid var(--line)}
+.recruit-showcase>.unit-portrait{width:105px;height:105px;flex-shrink:0}
+.recruit-showcase h3{font-size:16px;color:#f1dfac}.recruit-showcase small{display:block;margin-top:4px;font-size:10px}
+.recruit-lock{text-align:center;padding:10px;background:#cfb57509;border:1px dashed #c3ae6a44;border-radius:10px}
+.recruit-lock .recruit-showcase{justify-content:center;border:0;padding:0}.recruit-lock p{font-size:12px;color:#ebcd8f;margin:8px 0}
+.training-roadmap{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.training-roadmap>div{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:6px;border:1px solid var(--line);border-radius:8px;background:#ffffff04}
+.training-roadmap .unlocked{border-color:#88b98a44}.training-roadmap span:not(.unit-portrait){font-size:10px}.training-roadmap small{font-size:9px}
+.recruit-progress{padding:9px 11px;border-radius:8px;background:#8eae6112;border:1px solid #a9ca8140}
+.recruit-progress>div{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#d5e3b5}
+.recruit-progress progress{display:block;width:100%;height:7px;margin-top:9px;accent-color:#c3d88e;border:0;border-radius:4px;overflow:hidden;background:#102820}
+.recruit-progress progress::-webkit-progress-bar{background:#102820}.recruit-progress progress::-webkit-progress-value{background:linear-gradient(90deg,#719b64,#dce7a0)}.recruit-progress progress::-moz-progress-bar{background:#c3d88e}
+.building-card.level-up .building-open{animation:building-achieved 1.8s ease-out}
+@keyframes building-achieved{0%,30%{border-color:#ffdf8b;box-shadow:0 0 20px #e7c76988,inset 0 0 18px #e7c76944}100%{box-shadow:none}}
+.achievement{position:fixed;z-index:48;top:82px;left:20px;width:min(340px,calc(100vw - 40px));display:grid;grid-template-columns:36px 1fr 24px;gap:10px;align-items:start;padding:14px;border:1px solid #e5c98099;border-radius:12px;background:linear-gradient(125deg,#354934f5,#18352ff5);box-shadow:0 8px 30px #10251f55;pointer-events:auto;animation:achievement-in .3s ease-out}
+.achievement>span{display:grid;place-items:center;width:36px;height:36px;font-size:24px;color:#f4d68c;border:1px solid #e1c17d66;border-radius:50%;background:#d6b96818}
+.achievement strong{display:block;font-size:14px;color:#ffe3a3}.achievement p{font-size:11px;line-height:1.7;margin-top:5px;color:#d9e2c6}
+.achievement button{padding:0;width:24px;height:24px;background:transparent;font-size:19px;line-height:1}
+@keyframes achievement-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+@media(max-height:850px){.recruitment-roster>button>.unit-portrait{width:44px;height:44px}.recruit-showcase>.unit-portrait{width:76px;height:76px}.training-summary{padding:7px 10px}.training-summary strong{font-size:15px}.recruitment-roster>button{padding:4px}}
+@media(max-width:700px){.achievement{top:106px;left:12px;width:calc(100vw - 24px)}.training-roadmap .unit-portrait{width:42px;height:42px}.training-summary>div{flex-wrap:wrap;gap:3px}.recruitment-roster>button>.unit-portrait{width:45px;height:45px}}
+@media(prefers-reduced-motion:reduce){.building-card.level-up .building-open,.achievement{animation:none}.building-card.level-up .building-open{border-color:#ffdf8b}}
+.toast{bottom:calc(var(--command-height) + 76px)}
+@media(min-width:701px){.has-drawer .work-queue{right:calc(var(--drawer-space,400px) + 32px);max-width:260px}}
+@media(max-width:700px){.unit-tabs.recruitment-roster{grid-template-columns:repeat(3,minmax(0,1fr))}}

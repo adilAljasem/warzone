@@ -1,0 +1,50 @@
+{
+  "generator": "Built-in image_gen",
+  "version": 3,
+  "assets": [
+    {
+      "path": "buildings-v3.png",
+      "columns": 8,
+      "rows": 5,
+      "tribes": [
+        "Romans",
+        "Germans",
+        "Greeks",
+        "Mongols",
+        "Persians"
+      ],
+      "buildings": [
+        "MainHall",
+        "Warehouse",
+        "Barracks",
+        "Stable",
+        "SiegeWorkshop",
+        "Smithy",
+        "Hospital",
+        "Wall"
+      ],
+      "prompt": "Production game asset sprite atlas, EXACTLY 8 columns and 5 rows of equally sized cells, 40 separate isometric medieval strategy game buildings. Transparent background, no text, no labels, no grid lines. Canvas landscape 8:5 ratio, ideally 2048x1280. Every object fits entirely within its own cell with generous 12% transparent margin, same scale, same 30 degree elevated isometric camera, soft sunlight upper left, detailed hand-painted polished cozy strategy game art, richly colored tiles and wood, warm stone, readable silhouettes, elegant dimensional highlights, small grounded soft shadow only, joyful Travian-like village illustration. COLUMNS left to right in EVERY row: 1 grand town hall with tower and flag; 2 resource warehouse with crates and barrels; 3 barracks with training courtyard and weapon rack; 4 stable with horse and covered wagon; 5 siege workshop with catapult; 6 blacksmith forge with chimney and glowing furnace; 7 healer hospital with herb garden and medical banner; 8 fortified city gate with two towers and short wall wings. ROW 1 Roman architecture pale masonry red terracotta roofs, ROW 2 German timber halls dark timber golden thatch and wooden palisade gate, ROW 3 Greek white marble blue roofs columned halls and white stone gate, ROW 4 Mongol turquoise and cream yurts elaborate tents, wooden stockade gate and flags, ROW 5 Persian sandstone turquoise domes mosaic details and domed gate. All 40 buildings distinct and complete, no overlapping neighboring cells, no terrain squares, no background scenery, no UI. Practical evenly aligned sprite sheet for cropping, not a montage.",
+      "cleanupPrompt": "Edit this exact production sprite atlas. Remove ALL background haze, beige paper, tinted background, white floors and inter-object ground surfaces to FULLY TRANSPARENT alpha zero. Preserve all forty buildings exactly in their current 8 columns by 5 rows, their colors, architecture, precise locations, cell alignment, canvas aspect ratio and size. Keep only actual buildings, their immediately attached items and crisp small cast shadows. Completely clean transparent spacing around each isolated building. Do not redraw or rearrange any building. This is background extraction for a game sprite atlas, no background tint at all."
+    },
+    {
+      "path": "terrain-v3.png",
+      "columns": 4,
+      "rows": 3,
+      "objects": [
+        "BroadleafTrees",
+        "PineTrees",
+        "SnowMountain",
+        "IronMine",
+        "DesertMesa",
+        "Oasis",
+        "WheatField",
+        "LumberYard",
+        "Windmill",
+        "Bridge",
+        "SupplyDepot",
+        "Cottages"
+      ],
+      "prompt": "Game environment sprite atlas on genuinely transparent background, precisely 4 columns by 3 rows, 12 separate full objects, each centered in its equally sized cell with 10 percent transparent padding. Landscape 4:3 canvas. Detailed hand painted isometric medieval strategy game scenery, same elevated 30 degree view, softly shaded three dimensional colorful cozy game art, clear silhouettes, warm sunlight upper left, polished mobile kingdom game aesthetic. No text, labels, cell borders, landscape background or UI. Readable at small sizes. Row 1 left to right: cluster of three lush green broadleaf trees; cluster of three dark green pine trees; dramatic rocky mountain with snow cap; rocky mountain with iron mine entrance and ore cart. Row 2: warm sandstone desert mesa rocks; oasis pool with palm trees; rectangular golden wheat field with small fence; lumber yard with stacked logs and small saw shed. Row 3: charming windmill with cream walls terracotta roof; wooden arched river bridge; rustic supply depot with crates and covered wagon; tiny cluster of three cottages with red tiled roofs. Each object isolated, complete, consistent scale, fully inside cell, soft ground shadows, transparent spaces between sprites. Practical sprite sheet ready to crop."
+    }
+  ]
+}

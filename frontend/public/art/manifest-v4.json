@@ -1,0 +1,96 @@
+{
+  "generator": "Built-in image_gen",
+  "asset": "buildings-v4.png",
+  "columns": 8,
+  "rows": 5,
+  "tribes": [
+    "Romans",
+    "Germans",
+    "Greeks",
+    "Mongols",
+    "Persians"
+  ],
+  "buildings": [
+    "MainHall",
+    "Warehouse",
+    "Barracks",
+    "Stable",
+    "SiegeWorkshop",
+    "Smithy",
+    "Hospital",
+    "Wall"
+  ],
+  "prompt": "Production sprite atlas for an isometric medieval strategy game. EXACT 8 columns and 5 rows, forty separate buildings, equally sized square cells on a transparent background. Strict landscape canvas 8:5 ratio. Every object centered within its cell and fully contained with 14 percent padding. VERY SIMPLE CLEAN LOW-POLY VECTOR-STYLE ART: solid flat warm pastel colors, 2 or 3 broad geometric shaded planes per surface, chunky readable shapes, no painterly texture, no micro-details, no outlines, no decorative floor islands, no grass or gardens, no realistic lighting, no glows, no heavy shadows, no text, no labels. Think clean colorful isometric board-game pieces, gentle tan walls and muted roof colors, camera 30 degree elevated, sunlight upper left. Each building should integrate into a flat pale-green game ground. Small modest buildings, not enormous castles. Exact COLUMNS across each row: 1 town hall, 2 warehouse with two crates, 3 barracks with one shield and spear rack, 4 stable with tiny horse, 5 workshop with small catapult, 6 smithy with chimney, 7 hospital with simple medical banner, 8 city gate with two short wall wings. Exact ROWS: 1 Romans cream masonry muted red tiled roofs, 2 Germans timber warm tan thatched roofs, 3 Greeks ivory walls muted blue roofs and columns, 4 Mongols round cream yurts with turquoise roof accents and wood gate, 5 Persians pale sandstone turquoise domes and arched doors. Match visual simplicity of a clean low polygon mobile world map. Sharp uncomplicated silhouettes with much LESS detail than realistic game assets. Complete isolated objects with genuine transparent space between all cells. No background tint or paper.",
+  "cleanupPrompt": "Clean up this exact sprite atlas for production. Preserve the forty flat-color buildings and their exact 8 columns / 5 rows alignment and all colors and details. Remove ALL scattered colored pixels, yellow/white/red speckles, grain, background noise and haze around and between the buildings. All background and inter-cell spacing must become absolutely transparent alpha zero, smooth crisp antialiased edges only on the buildings. No cast shadow outside the buildings. Do not change canvas size or positions. Do not add any new background, texture or objects. Only clean background extraction; keep simple flat vector look.",
+  "scenery": "Code-native SVGs in frontend/src/scenery.ts share the same flat-color palette with Pixi world scenery and village grounds.",
+  "size": {
+    "width": 1585,
+    "height": 992
+  },
+  "rowEdges": [
+    0,
+    218,
+    432,
+    618,
+    807,
+    992
+  ],
+  "cropping": "Measured row and column boundaries isolate each illustration without neighboring fragments.",
+  "columnEdgesByRow": [
+    [
+      0,
+      210,
+      402,
+      595,
+      795,
+      988,
+      1184,
+      1376,
+      1585
+    ],
+    [
+      0,
+      211,
+      405,
+      600,
+      796,
+      988,
+      1184,
+      1376,
+      1585
+    ],
+    [
+      0,
+      212,
+      402,
+      596,
+      794,
+      992,
+      1182,
+      1376,
+      1585
+    ],
+    [
+      0,
+      206,
+      406,
+      598,
+      794,
+      994,
+      1190,
+      1376,
+      1585
+    ],
+    [
+      0,
+      212,
+      406,
+      600,
+      801,
+      996,
+      1186,
+      1376,
+      1585
+    ]
+  ]
+}

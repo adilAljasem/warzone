@@ -1,0 +1,48 @@
+{
+  "generator": "Built-in image_gen",
+  "direction": "Restore the detailed v3 illustrated isometric architecture. Warm daylight, quiet textured ground, readable silhouettes and generous clearings. Avoid replacing rich assets with flat geometric graphics.",
+  "restoredAssets": [
+    "buildings-v3.png",
+    "terrain-v3.png"
+  ],
+  "assets": [
+    {
+      "file": "ground-v5.png",
+      "columns": 2,
+      "rows": 2,
+      "cells": [
+        "grass",
+        "earth",
+        "rock",
+        "sand"
+      ],
+      "prompt": "Game terrain material texture atlas, EXACT 2 columns by 2 rows, four square seamless flat ground textures filling their entire quadrants edge to edge, no gutters, no text, no grid lines. Square 1536x1536 canvas. Hand-painted cozy medieval isometric strategy game ground, matched to detailed warm stone and timber buildings with sunlit terracotta roofs, restrained natural earth palette, calm low-contrast painterly surface. This is ONLY a ground material texture, seen vertically from overhead, no perspective, no horizon, no buildings, no trees, no scenery objects, no hills, no large rocks, no grass blades standing up. Each quadrant internally tileable with continuous edges and diffuse ambient lighting, no directional shadows or vignette. TOP LEFT meadow grass: muted warm sage and olive green #91a76d with fine brushwork, sparse tiny moss tufts, tiny subtle ochre dirt flecks, soft natural variations, not noisy. TOP RIGHT worn village earth: warm buff brown #b7a379, fine granular earth, very sparse tiny pebbles, quiet soft mottling. BOTTOM LEFT rocky ground: muted warm gray olive #989982, fine dust and very small rock flecks, low contrast. BOTTOM RIGHT desert sand: muted golden sandstone #d1b981, fine painterly sand and very soft tonal variation, no dune ridges. Fine painted detail visible when zoomed in but a quiet unobtrusive backdrop when zoomed out. No glossy 3D plastic or flat geometric shapes, no cartoon polka dots, no labels, no objects."
+    },
+    {
+      "file": "oases-v5.png",
+      "columns": 4,
+      "rows": 1,
+      "cells": [
+        "Wood",
+        "Iron",
+        "Stone",
+        "Wheat"
+      ],
+      "size": {
+        "width": 2172,
+        "height": 724
+      },
+      "frame": {
+        "width": 543,
+        "y": 60,
+        "height": 580
+      },
+      "prompt": "Create a new resource oasis sprite atlas derived from this reference scenery atlas, matching its rich detailed hand-painted medieval game illustration style, soft warm highlights and natural foliage exactly. Replace the existing grid with EXACTLY FOUR columns in ONE row, four independent complete oases on a truly transparent background, landscape 4:1 canvas. All four objects centered inside equal square cells with at least 10% empty transparent margins, no overlap, no text or labels, identical elevated isometric camera. Cell 1 WOOD OASIS: small sparkling spring, three lush leafy trees, fallen logs and neat timber pile, a tiny canvas woodcutter shelter; predominantly leafy green. Cell 2 IRON OASIS: small sparkling spring beside a low rocky mine entrance, ore cart and visible steel-gray iron ore vein; slate blue-gray rocks, a few shrubs. Cell 3 STONE OASIS: small spring next to a low stepped pale stone quarry with a simple wooden lifting crane and stacked stone blocks; cream and gray stone. Cell 4 WHEAT OASIS: small spring, two golden grain plots, a tiny rustic windmill and hay bundles; predominantly golden yellow. Detailed but clearly readable as compact resource destinations, natural soft irregular ground edge with a little grass, not floating square tiles or discs. No fortified castles or large buildings. Keep water in the lower center of each cell so animated ripples can be overlaid there. Same lighting, scale and illustrative craft as the attached reference. Absolutely clean transparent empty space between sprites, no colored background noise, no white floor.",
+      "cleanupPrompts": [
+        "Precisely extract the four resource oasis illustrations from this atlas. Remove the entire white/off-white background, soft background haze and glow to genuine fully transparent alpha zero. Preserve every tree, rock, spring, ore cart, quarry crane, windmill and grain field, preserving illustration style and colors. Keep exactly four columns in one row in the same order: wood, iron, stone, wheat. Keep the canvas dimensions and the locations and scale of all four objects unchanged. All empty spacing around and between the four oases must be completely clean transparent pixels, no colored background or white outlines. This is a production game sprite background extraction, not a new scene.",
+        "Background removal only, production PNG cutout. The input has erroneous white and gray fog in its background. Remove this completely. Keep exactly the four existing oasis illustrations, their positions, size, details, and 2172 x 724 canvas. Every empty pixel around and between the four islands must have alpha exactly ZERO (0), NOT semi-transparent white, NOT gray haze, NOT checkerboard pixels, NOT soft glow. Hard clean isolated silhouette edges with only 1 pixel antialiasing. All subject pixels solid opaque. No cast shadows or aura beyond the grass island edges. Make the four islands truly transparent isolated cutouts ready to place over dark green terrain. Do not repaint the illustrations."
+      ]
+    }
+  ],
+  "animation": "Gentle canopy and grain sway, river glints, spring ripples, flying birds, chimney smoke, forge glow and villagers walking. Honors prefers-reduced-motion. Construction and training activity remains linked to real jobs."
+}

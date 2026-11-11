@@ -1,0 +1,150 @@
+{
+  "generator": "Built-in image_gen",
+  "columns": 4,
+  "rows": 4,
+  "roles": [
+    "infantry",
+    "archer",
+    "cavalry",
+    "scout",
+    "wagon",
+    "catapult",
+    "ram",
+    "siegetower",
+    "governor",
+    "spearman",
+    "swordsman",
+    "crossbowman",
+    "lightcavalry",
+    "heavycavalry"
+  ],
+  "sheets": [
+    {
+      "slug": "romans",
+      "identity": "ROMANS: HEAVY, disciplined imperial professional army. Broad solid metal silhouettes. Most troops wear segmented iron armor, iron helmets with cheek guards, sturdy boots, large rectangular tower shields. Red cloth is restrained, metal dominates. Strong precision-made swords and machines. No fur, no bare torsos, no generic fantasy knights.",
+      "units": [
+        "heavily armored legionary in segmented plate with large rectangular red scutum and short gladius",
+        "armored auxiliary archer in mail with open-faced steel helmet and short bow, NO giant crest",
+        "imperial armored lancer on armored dark horse, rectangular cavalry shield",
+        "lightly armored Roman scout in short grey hooded cloak with map scroll and dagger, NO spyglass",
+        "heavy standardized four-wheel Roman supply cart, canvas cover and bundled shields, horse",
+        "massive iron-braced Roman torsion catapult with winch",
+        "iron-shod armored Roman covered battering ram with rectangular siege shield panels",
+        "broad tall iron-reinforced Roman siege tower with red banner",
+        "older clean-shaven Roman governor in white toga with purple stripe, laurel wreath and scroll, NO soldier outfit",
+        "elite triarius in mail with very long spear, huge rectangular shield, tall narrow crest",
+        "praetorian in polished dark segmented armor, double-edged sword and angular shield, white crest",
+        "Roman engineer crossbowman in iron chestplate, leather sleeves and compact steel crossbow",
+        "Roman light cavalry in leather cuirass and open helmet on light unarmored horse with short javelins",
+        "very heavily armored Roman cataphract, complete scale barding on horse, long lance and face-covering helmet"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: transparent game sprite atlas. Create a NEW highly distinctive romans army roster for a hand-painted isometric strategy game. Art direction: ROMANS: HEAVY, disciplined imperial professional army. Broad solid metal silhouettes. Most troops wear segmented iron armor, iron helmets with cheek guards, sturdy boots, large rectangular tower shields. Red cloth is restrained, metal dominates. Strong precision-made swords and machines. No fur, no bare torsos, no generic fantasy knights.\nExactly 14 full-body sprites in EXACTLY 4 equal columns x 4 equal rows on a SQUARE canvas. Last 2 cells of row 4 EMPTY. Cell centers at 12.5%,37.5%,62.5%,87.5% along both axes. Keep ALL equipment, feet, horses and machines inside central 78% of each cell with clear transparent gutters, no touching cell edges. ALL sprites same three-quarter isometric view facing lower right. Crisp polished painterly miniatures, realistic materials, readable silhouettes at 40px; no chibi style. Most important: each role has a DIFFERENT silhouette and equipment; never repeat a base soldier and only swap weapon. Tribe identity must remain obvious without relying on color.\nOrder left-to-right top-to-bottom:\nCell 1, row 1 column 1: heavily armored legionary in segmented plate with large rectangular red scutum and short gladius\nCell 2, row 1 column 2: armored auxiliary archer in mail with open-faced steel helmet and short bow, NO giant crest\nCell 3, row 1 column 3: imperial armored lancer on armored dark horse, rectangular cavalry shield\nCell 4, row 1 column 4: lightly armored Roman scout in short grey hooded cloak with map scroll and dagger, NO spyglass\nCell 5, row 2 column 1: heavy standardized four-wheel Roman supply cart, canvas cover and bundled shields, horse\nCell 6, row 2 column 2: massive iron-braced Roman torsion catapult with winch\nCell 7, row 2 column 3: iron-shod armored Roman covered battering ram with rectangular siege shield panels\nCell 8, row 2 column 4: broad tall iron-reinforced Roman siege tower with red banner\nCell 9, row 3 column 1: older clean-shaven Roman governor in white toga with purple stripe, laurel wreath and scroll, NO soldier outfit\nCell 10, row 3 column 2: elite triarius in mail with very long spear, huge rectangular shield, tall narrow crest\nCell 11, row 3 column 3: praetorian in polished dark segmented armor, double-edged sword and angular shield, white crest\nCell 12, row 3 column 4: Roman engineer crossbowman in iron chestplate, leather sleeves and compact steel crossbow\nCell 13, row 4 column 1: Roman light cavalry in leather cuirass and open helmet on light unarmored horse with short javelins\nCell 14, row 4 column 2: very heavily armored Roman cataphract, complete scale barding on horse, long lance and face-covering helmet\nBackground: actual transparent alpha everywhere outside sprites. Clean cutouts, NO background, NO white/grey haze, NO glow, NO fog, NO terrain, NO ground tiles, NO platforms, NO ambient scene, NO broad drop shadows. No text or labels, no numbers, no grid, no watermark. Cells15-16 completely empty. Show all fourteen designs individually, no troops grouped together in one cell."
+    },
+    {
+      "slug": "germans",
+      "identity": "GERMANIC TRIBES: LIGHT, rough, fast woodland raiders. At least 10 of 14 units are visibly unarmored or lightly armored. Common troops have BARE ARMS, simple loose linen tunics, leather straps, wool trousers, open heads and wild hair, small round wooden shields; NO metal breastplates, NO Roman helmets, NO uniform armor, NO horned helmets. Only elite axeman and heavy rider wear appreciable iron/mail. Green/brown earth palette but clothing and unarmored silhouette are the identity, NOT merely palette swap.",
+      "units": [
+        "lean bare-armed clubman, sleeveless linen tunic, simple wooden club, small rough round wooden shield, NO helmet, NO armor",
+        "slender forest hunter in short green wool hood, simple bow, leather bracer, NO armor",
+        "bare-armed raider on shaggy UNARMORED pony, javelin and small wooden buckler, no helmet",
+        "fast young woodland tracker in ragged brown cloak and bareheaded messy hair, hunting knife and small satchel, NO spyglass",
+        "rough open wooden loot wagon full of sacks and barrels pulled by shaggy pony, NO imperial canopy",
+        "primitive timber rock-thrower sling frame with ropes and rough-hewn logs, no iron armor",
+        "simple EXPOSED suspended log ram on open wooden trestles, no roof",
+        "rough timber ladder siege scaffold with hide panels and uneven planks, not a castle tower",
+        "elderly tribal chieftain in long wool cloak with fur collar and carved wooden staff, no armor, no crown",
+        "tall lean tribal spearman in sleeveless linen shirt and trousers, long wooden pike and small wicker shield, no helmet",
+        "stocky elite axeman, the rare armored infantry: dark chainmail shirt, simple iron cap, large two-handed axe",
+        "crossbow hunter wearing plain brown quilted vest and leather cap, large wooden crossbow, bare forearms",
+        "bareheaded light horseman in short green tunic on fast unarmored bay horse, spear, no mail",
+        "rare armored Iron Rider with dark chainmail, plain iron helmet and fur mantle on partly leather-barded horse, heavy axe, avoid Roman full plate"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: transparent game sprite atlas. Create a NEW highly distinctive germans army roster for a hand-painted isometric strategy game. Art direction: GERMANIC TRIBES: LIGHT, rough, fast woodland raiders. At least 10 of 14 units are visibly unarmored or lightly armored. Common troops have BARE ARMS, simple loose linen tunics, leather straps, wool trousers, open heads and wild hair, small round wooden shields; NO metal breastplates, NO Roman helmets, NO uniform armor, NO horned helmets. Only elite axeman and heavy rider wear appreciable iron/mail. Green/brown earth palette but clothing and unarmored silhouette are the identity, NOT merely palette swap.\nExactly 14 full-body sprites in EXACTLY 4 equal columns x 4 equal rows on a SQUARE canvas. Last 2 cells of row 4 EMPTY. Cell centers at 12.5%,37.5%,62.5%,87.5% along both axes. Keep ALL equipment, feet, horses and machines inside central 78% of each cell with clear transparent gutters, no touching cell edges. ALL sprites same three-quarter isometric view facing lower right. Crisp polished painterly miniatures, realistic materials, readable silhouettes at 40px; no chibi style. Most important: each role has a DIFFERENT silhouette and equipment; never repeat a base soldier and only swap weapon. Tribe identity must remain obvious without relying on color.\nOrder left-to-right top-to-bottom:\nCell 1, row 1 column 1: lean bare-armed clubman, sleeveless linen tunic, simple wooden club, small rough round wooden shield, NO helmet, NO armor\nCell 2, row 1 column 2: slender forest hunter in short green wool hood, simple bow, leather bracer, NO armor\nCell 3, row 1 column 3: bare-armed raider on shaggy UNARMORED pony, javelin and small wooden buckler, no helmet\nCell 4, row 1 column 4: fast young woodland tracker in ragged brown cloak and bareheaded messy hair, hunting knife and small satchel, NO spyglass\nCell 5, row 2 column 1: rough open wooden loot wagon full of sacks and barrels pulled by shaggy pony, NO imperial canopy\nCell 6, row 2 column 2: primitive timber rock-thrower sling frame with ropes and rough-hewn logs, no iron armor\nCell 7, row 2 column 3: simple EXPOSED suspended log ram on open wooden trestles, no roof\nCell 8, row 2 column 4: rough timber ladder siege scaffold with hide panels and uneven planks, not a castle tower\nCell 9, row 3 column 1: elderly tribal chieftain in long wool cloak with fur collar and carved wooden staff, no armor, no crown\nCell 10, row 3 column 2: tall lean tribal spearman in sleeveless linen shirt and trousers, long wooden pike and small wicker shield, no helmet\nCell 11, row 3 column 3: stocky elite axeman, the rare armored infantry: dark chainmail shirt, simple iron cap, large two-handed axe\nCell 12, row 3 column 4: crossbow hunter wearing plain brown quilted vest and leather cap, large wooden crossbow, bare forearms\nCell 13, row 4 column 1: bareheaded light horseman in short green tunic on fast unarmored bay horse, spear, no mail\nCell 14, row 4 column 2: rare armored Iron Rider with dark chainmail, plain iron helmet and fur mantle on partly leather-barded horse, heavy axe, avoid Roman full plate\nBackground: actual transparent alpha everywhere outside sprites. Clean cutouts, NO background, NO white/grey haze, NO glow, NO fog, NO terrain, NO ground tiles, NO platforms, NO ambient scene, NO broad drop shadows. No text or labels, no numbers, no grid, no watermark. Cells15-16 completely empty. Show all fourteen designs individually, no troops grouped together in one cell."
+    },
+    {
+      "slug": "greeks",
+      "identity": "GREEKS: Classical Hellenic bronze, large ROUND shields, Corinthian helmets and disciplined spear phalanxes. Bare lower legs, short white/blue linen skirts, bronze muscular cuirasses on heavy soldiers; light linen on skirmishers. Distinct from Roman rectangular shields and iron segmented armor. NO Roman plate, NO medieval full plate.",
+      "units": [
+        "bronze hoplite with muscular bronze cuirass, Corinthian helmet, huge ROUND blue shield and long spear",
+        "Cretan archer in white short linen tunic, leather sandals, bare head with blue headband and recurve bow",
+        "Greek cavalry with bronze cuirass and open-faced bronze helmet on unarmored horse, long spear and round shield",
+        "young Greek scout in white exomis tunic and broad straw petasos hat, light javelin and leather satchel, NO telescope",
+        "Greek mule cart with amphorae and woven baskets, pale blue cloth",
+        "Greek ballista-like stone catapult, balanced twin torsion arms and pale timber",
+        "bronze ram-head siege log under simple Greek gabled blue cover",
+        "slender pale-timber Greek siege tower with blue pennants and exterior ladders",
+        "bearded archon in ivory himation with blue border and laurel crown holding scroll",
+        "phalanx spearman with extremely long sarissa, round bronze shield, linen cuirass and bronze helmet",
+        "Spartan swordsman with red cloak, bronze cuirass, lambda round shield and short xiphos",
+        "Greek arbalist in white padded linen armor and bronze skullcap with distinctive large belly crossbow",
+        "Thessalian light rider in blue short cloak and linen tunic on white unarmored horse with javelins",
+        "Companion cavalry officer with ornate gold-bronze cuirass, crested bronze helmet, long lance and blue horsecloth"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: transparent game sprite atlas. Create a NEW highly distinctive greeks army roster for a hand-painted isometric strategy game. Art direction: GREEKS: Classical Hellenic bronze, large ROUND shields, Corinthian helmets and disciplined spear phalanxes. Bare lower legs, short white/blue linen skirts, bronze muscular cuirasses on heavy soldiers; light linen on skirmishers. Distinct from Roman rectangular shields and iron segmented armor. NO Roman plate, NO medieval full plate.\nExactly 14 full-body sprites in EXACTLY 4 equal columns x 4 equal rows on a SQUARE canvas. Last 2 cells of row 4 EMPTY. Cell centers at 12.5%,37.5%,62.5%,87.5% along both axes. Keep ALL equipment, feet, horses and machines inside central 78% of each cell with clear transparent gutters, no touching cell edges. ALL sprites same three-quarter isometric view facing lower right. Crisp polished painterly miniatures, realistic materials, readable silhouettes at 40px; no chibi style. Most important: each role has a DIFFERENT silhouette and equipment; never repeat a base soldier and only swap weapon. Tribe identity must remain obvious without relying on color.\nOrder left-to-right top-to-bottom:\nCell 1, row 1 column 1: bronze hoplite with muscular bronze cuirass, Corinthian helmet, huge ROUND blue shield and long spear\nCell 2, row 1 column 2: Cretan archer in white short linen tunic, leather sandals, bare head with blue headband and recurve bow\nCell 3, row 1 column 3: Greek cavalry with bronze cuirass and open-faced bronze helmet on unarmored horse, long spear and round shield\nCell 4, row 1 column 4: young Greek scout in white exomis tunic and broad straw petasos hat, light javelin and leather satchel, NO telescope\nCell 5, row 2 column 1: Greek mule cart with amphorae and woven baskets, pale blue cloth\nCell 6, row 2 column 2: Greek ballista-like stone catapult, balanced twin torsion arms and pale timber\nCell 7, row 2 column 3: bronze ram-head siege log under simple Greek gabled blue cover\nCell 8, row 2 column 4: slender pale-timber Greek siege tower with blue pennants and exterior ladders\nCell 9, row 3 column 1: bearded archon in ivory himation with blue border and laurel crown holding scroll\nCell 10, row 3 column 2: phalanx spearman with extremely long sarissa, round bronze shield, linen cuirass and bronze helmet\nCell 11, row 3 column 3: Spartan swordsman with red cloak, bronze cuirass, lambda round shield and short xiphos\nCell 12, row 3 column 4: Greek arbalist in white padded linen armor and bronze skullcap with distinctive large belly crossbow\nCell 13, row 4 column 1: Thessalian light rider in blue short cloak and linen tunic on white unarmored horse with javelins\nCell 14, row 4 column 2: Companion cavalry officer with ornate gold-bronze cuirass, crested bronze helmet, long lance and blue horsecloth\nBackground: actual transparent alpha everywhere outside sprites. Clean cutouts, NO background, NO white/grey haze, NO glow, NO fog, NO terrain, NO ground tiles, NO platforms, NO ambient scene, NO broad drop shadows. No text or labels, no numbers, no grid, no watermark. Cells15-16 completely empty. Show all fourteen designs individually, no troops grouped together in one cell."
+    },
+    {
+      "slug": "mongols",
+      "identity": "MONGOLS: mobile STEPPE NOMADS, curved composite bows, long side-fastened deels, leather lamellar, fur-edged conical caps and small round shields. Teal, muted ochre, dark leather. Compact stocky steppe horses with cloth saddle blankets. No western plate, no Roman crests, no gigantic European knight shields. Common troops lightly equipped, elite guards layered lamellar.",
+      "units": [
+        "Khan guard in dark leather lamellar over long split ochre deel, fur-edged conical cap, sabre and small round shield",
+        "steppe archer in plain long teal deel, fur cap, composite recurved bow and hip quiver, no heavy armor",
+        "horse archer leaning sideways on small fast steppe pony, drawing a composite bow, leather vest and teal sash",
+        "steppe tracker in plain short sheepskin coat and fur cap with rolled map, bow slung over shoulder, NO telescope",
+        "two-wheeled nomad cart with round felt-yurt canopy pulled by shaggy steppe pony",
+        "portable rope-bound steppe traction catapult built from slender dark timber",
+        "low mobile open wooden ram with hanging leather protective curtains",
+        "narrow collapsible dark-timber steppe siege tower with felt screens and teal horse-tail standard",
+        "Khan deputy in long gold-patterned deel, fur hat and ceremonial curved sabre, seated posture standing on ground not throne",
+        "steppe spearman in quilted ochre deel and simple conical helmet, light spear and small leather shield",
+        "Keshig swordsman in black lamellar with gold edges and fur shoulders, curved sabre, small round shield",
+        "Mongol crossbowman in teal padded deel, simple leather cap, compact wooden crossbow",
+        "steppe raider on unarmored pony, loose coat flaring, light curved sabre, no heavy armor",
+        "Khan lancer in dense dark lamellar with face guard, long horse-tail lance, horse in overlapping leather scale barding"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: transparent game sprite atlas. Create a NEW highly distinctive mongols army roster for a hand-painted isometric strategy game. Art direction: MONGOLS: mobile STEPPE NOMADS, curved composite bows, long side-fastened deels, leather lamellar, fur-edged conical caps and small round shields. Teal, muted ochre, dark leather. Compact stocky steppe horses with cloth saddle blankets. No western plate, no Roman crests, no gigantic European knight shields. Common troops lightly equipped, elite guards layered lamellar.\nExactly 14 full-body sprites in EXACTLY 4 equal columns x 4 equal rows on a SQUARE canvas. Last 2 cells of row 4 EMPTY. Cell centers at 12.5%,37.5%,62.5%,87.5% along both axes. Keep ALL equipment, feet, horses and machines inside central 78% of each cell with clear transparent gutters, no touching cell edges. ALL sprites same three-quarter isometric view facing lower right. Crisp polished painterly miniatures, realistic materials, readable silhouettes at 40px; no chibi style. Most important: each role has a DIFFERENT silhouette and equipment; never repeat a base soldier and only swap weapon. Tribe identity must remain obvious without relying on color.\nOrder left-to-right top-to-bottom:\nCell 1, row 1 column 1: Khan guard in dark leather lamellar over long split ochre deel, fur-edged conical cap, sabre and small round shield\nCell 2, row 1 column 2: steppe archer in plain long teal deel, fur cap, composite recurved bow and hip quiver, no heavy armor\nCell 3, row 1 column 3: horse archer leaning sideways on small fast steppe pony, drawing a composite bow, leather vest and teal sash\nCell 4, row 1 column 4: steppe tracker in plain short sheepskin coat and fur cap with rolled map, bow slung over shoulder, NO telescope\nCell 5, row 2 column 1: two-wheeled nomad cart with round felt-yurt canopy pulled by shaggy steppe pony\nCell 6, row 2 column 2: portable rope-bound steppe traction catapult built from slender dark timber\nCell 7, row 2 column 3: low mobile open wooden ram with hanging leather protective curtains\nCell 8, row 2 column 4: narrow collapsible dark-timber steppe siege tower with felt screens and teal horse-tail standard\nCell 9, row 3 column 1: Khan deputy in long gold-patterned deel, fur hat and ceremonial curved sabre, seated posture standing on ground not throne\nCell 10, row 3 column 2: steppe spearman in quilted ochre deel and simple conical helmet, light spear and small leather shield\nCell 11, row 3 column 3: Keshig swordsman in black lamellar with gold edges and fur shoulders, curved sabre, small round shield\nCell 12, row 3 column 4: Mongol crossbowman in teal padded deel, simple leather cap, compact wooden crossbow\nCell 13, row 4 column 1: steppe raider on unarmored pony, loose coat flaring, light curved sabre, no heavy armor\nCell 14, row 4 column 2: Khan lancer in dense dark lamellar with face guard, long horse-tail lance, horse in overlapping leather scale barding\nBackground: actual transparent alpha everywhere outside sprites. Clean cutouts, NO background, NO white/grey haze, NO glow, NO fog, NO terrain, NO ground tiles, NO platforms, NO ambient scene, NO broad drop shadows. No text or labels, no numbers, no grid, no watermark. Cells15-16 completely empty. Show all fourteen designs individually, no troops grouped together in one cell."
+    },
+    {
+      "slug": "persians",
+      "identity": "PERSIANS / BABYLONIANS: ornate Eastern imperial army, scale armor, patterned long trousers and tunics, tall soft tiaras and wrapped headcloths, wicker shields. Purple, turquoise and gold accents. Do not put every unit in the same armor. Infantry has patterned cloth under scales; archers and scouts are light robed troops. Distinct WAR ELEPHANT instead of horse for ordinary cavalry. NO Roman helmets or rectangular legion shields.",
+      "units": [
+        "Immortal in bronze scale cuirass over patterned purple long tunic and trousers, soft tall tiara, large woven wicker shield and spear",
+        "Babylonian archer in turquoise patterned robe and wrapped headcloth, long bow, unarmored arms",
+        "huge WAR ELEPHANT in purple-gold caparison carrying wooden howdah and Persian spearman, not a horse",
+        "Persian king's-eye scout in light sand-colored long robe and wrapped desert scarf, dagger and scroll case, NO telescope",
+        "ornate Eastern caravan wagon carrying carpet rolls and ceramic jars, arched purple canopy, mule",
+        "ornate Babylonian catapult with gold-capped beams and curved purple hanging banners",
+        "massive gilded bull-headed ram beneath purple patterned woven canopy",
+        "wide stepped Babylonian wooden siege tower inspired by a ziggurat, turquoise panels",
+        "satrap in richly patterned long purple robes, tall gold headpiece, curled beard and ceremonial staff, no armor",
+        "royal spearman in gold scale vest over turquoise trousers, long spear and tall wicker shield",
+        "royal swordsman in purple scale armor and long trousers, curved sword and crescent-shaped shield",
+        "Persian arbalist in light patterned quilted coat and wrapped turban, heavy crossbow",
+        "Persian courser rider in flowing light silk tunic and headscarf on lean desert horse, javelin, no armor",
+        "armored Persian cavalry in gold-bronze scales, pointed helmet with mail veil, fully scale-barded horse and long lance"
+      ],
+      "prompt": "Use case: stylized-concept. Asset type: transparent game sprite atlas. Create a NEW highly distinctive persians army roster for a hand-painted isometric strategy game. Art direction: PERSIANS / BABYLONIANS: ornate Eastern imperial army, scale armor, patterned long trousers and tunics, tall soft tiaras and wrapped headcloths, wicker shields. Purple, turquoise and gold accents. Do not put every unit in the same armor. Infantry has patterned cloth under scales; archers and scouts are light robed troops. Distinct WAR ELEPHANT instead of horse for ordinary cavalry. NO Roman helmets or rectangular legion shields.\nExactly 14 full-body sprites in EXACTLY 4 equal columns x 4 equal rows on a SQUARE canvas. Last 2 cells of row 4 EMPTY. Cell centers at 12.5%,37.5%,62.5%,87.5% along both axes. Keep ALL equipment, feet, horses and machines inside central 78% of each cell with clear transparent gutters, no touching cell edges. ALL sprites same three-quarter isometric view facing lower right. Crisp polished painterly miniatures, realistic materials, readable silhouettes at 40px; no chibi style. Most important: each role has a DIFFERENT silhouette and equipment; never repeat a base soldier and only swap weapon. Tribe identity must remain obvious without relying on color.\nOrder left-to-right top-to-bottom:\nCell 1, row 1 column 1: Immortal in bronze scale cuirass over patterned purple long tunic and trousers, soft tall tiara, large woven wicker shield and spear\nCell 2, row 1 column 2: Babylonian archer in turquoise patterned robe and wrapped headcloth, long bow, unarmored arms\nCell 3, row 1 column 3: huge WAR ELEPHANT in purple-gold caparison carrying wooden howdah and Persian spearman, not a horse\nCell 4, row 1 column 4: Persian king's-eye scout in light sand-colored long robe and wrapped desert scarf, dagger and scroll case, NO telescope\nCell 5, row 2 column 1: ornate Eastern caravan wagon carrying carpet rolls and ceramic jars, arched purple canopy, mule\nCell 6, row 2 column 2: ornate Babylonian catapult with gold-capped beams and curved purple hanging banners\nCell 7, row 2 column 3: massive gilded bull-headed ram beneath purple patterned woven canopy\nCell 8, row 2 column 4: wide stepped Babylonian wooden siege tower inspired by a ziggurat, turquoise panels\nCell 9, row 3 column 1: satrap in richly patterned long purple robes, tall gold headpiece, curled beard and ceremonial staff, no armor\nCell 10, row 3 column 2: royal spearman in gold scale vest over turquoise trousers, long spear and tall wicker shield\nCell 11, row 3 column 3: royal swordsman in purple scale armor and long trousers, curved sword and crescent-shaped shield\nCell 12, row 3 column 4: Persian arbalist in light patterned quilted coat and wrapped turban, heavy crossbow\nCell 13, row 4 column 1: Persian courser rider in flowing light silk tunic and headscarf on lean desert horse, javelin, no armor\nCell 14, row 4 column 2: armored Persian cavalry in gold-bronze scales, pointed helmet with mail veil, fully scale-barded horse and long lance\nBackground: actual transparent alpha everywhere outside sprites. Clean cutouts, NO background, NO white/grey haze, NO glow, NO fog, NO terrain, NO ground tiles, NO platforms, NO ambient scene, NO broad drop shadows. No text or labels, no numbers, no grid, no watermark. Cells15-16 completely empty. Show all fourteen designs individually, no troops grouped together in one cell."
+    }
+  ],
+  "dimensions": {
+    "romans": [
+      1254,
+      1254
+    ],
+    "germans": [
+      1254,
+      1254
+    ],
+    "greeks": [
+      1254,
+      1254
+    ],
+    "mongols": [
+      1254,
+      1254
+    ],
+    "persians": [
+      1254,
+      1254
+    ]
+  }
+}

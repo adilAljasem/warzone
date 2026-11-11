@@ -1,0 +1,21 @@
+{
+  "name": "warzone-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "test:integration": "node ../tests/signalr.mjs",
+    "test:visuals": "node ../tests/map-visuals.mjs",
+    "test:audio": "node ../tests/audio-events.mjs"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "10.0.11",
+    "pixi.js": "8.22.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "8.3.6"
+  }
+}
