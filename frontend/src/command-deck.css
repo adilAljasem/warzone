@@ -1,10 +1,37 @@
-:root{--command-height:183px}
+:root{--command-height:206px}
 /* Keep the resource bar flush with the viewport on every screen size. */
 .hud{top:0;border-top-left-radius:0;border-top-right-radius:0}
 .command-deck{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);width:min(1000px,calc(100vw - 24px));z-index:22;display:flex;flex-direction:column;gap:6px}
-.command-deck .dock{position:static;transform:none;margin:auto;max-width:100%;height:49px;min-height:49px;width:auto;padding:4px 10px;border-radius:12px;gap:5px}
-.command-deck .dock button{min-width:0;padding:6px 12px;flex-direction:row;font-size:12px}
-.command-deck .dock button svg{flex-shrink:0}
+.army-shelf{align-self:center;margin:0 auto;width:max-content;max-width:100%;border-radius:14px;padding:5px 8px;background:#172d29f0;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(16,37,31,.4);border:1px solid rgba(216,233,206,.15);transition:all .2s ease}
+.army-shelf[hidden]{display:none!important}
+.army-strip{display:flex;gap:8px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:#a7915c #233e33;padding:2px}
+.army-strip::-webkit-scrollbar{height:4px}
+.army-strip::-webkit-scrollbar-track{background:#233e33}
+.army-strip::-webkit-scrollbar-thumb{background:#a7915c;border-radius:4px}
+.army-card{position:relative;flex:0 0 88px;width:88px;height:84px;isolation:isolate}
+.army-card-btn{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:space-between;width:100%;height:100%;padding:4px 5px 3px;background:linear-gradient(180deg,#284435,#193126);border:1px solid #c8bd8a40;border-radius:9px;text-align:center;cursor:pointer;transition:transform .12s,border-color .15s,background .15s,box-shadow .15s;overflow:hidden}
+.army-card-btn:hover{background:linear-gradient(180deg,#325342,#213c30);border-color:#e3c17a88;transform:translateY(-1px)}
+.army-card.selected .army-card-btn{border-color:#f0d48c;background:linear-gradient(180deg,#44412a,#26382c);box-shadow:0 0 12px rgba(240,212,140,.45)}
+.army-card.reinforcement .army-card-btn{border:2px solid #22c55e!important;background:linear-gradient(180deg,#184632,#0d291e)!important;box-shadow:0 0 10px rgba(34,197,94,.4),inset 0 0 6px rgba(34,197,94,.15)}
+.army-card.reinforcement:hover .army-card-btn{border-color:#4ade80!important;box-shadow:0 0 14px rgba(74,222,128,.55),inset 0 0 8px rgba(74,222,128,.2)}
+.army-card-header{display:flex;align-items:center;justify-content:space-between;width:100%;line-height:1;z-index:2}
+.army-name-tag{font-size:9.5px;font-weight:600;color:#e8e4d2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.army-card.reinforcement .army-name-tag{color:#86efac}
+.army-status-badge{display:inline-flex;align-items:center;justify-content:center;height:17px;border-radius:4px;flex-shrink:0;line-height:1}
+.army-status-badge svg{width:15px;height:15px}
+.army-status-badge.status-defender{filter:drop-shadow(0 0 5px #0284c7)}
+.army-status-badge.status-defender svg{width:16px;height:16px}
+.army-status-badge.status-attacker{filter:drop-shadow(0 0 5px #dc2626);animation:battle-pulse 1.4s ease-in-out infinite}
+.army-status-badge.status-attacker svg{width:16px;height:16px}
+@keyframes battle-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+.army-status-badge.status-idle .badge-zzz{font-size:9.5px;font-weight:700;color:#ffffff;letter-spacing:.5px;background:#00000066;padding:1px 3px;border-radius:3px;border:1px solid rgba(255,255,255,.3);font-family:monospace,sans-serif}
+.army-status-badge.status-moving .badge-move{font-size:11px;color:#cbd5e1}
+.army-lead-art{display:flex;align-items:center;justify-content:center;width:52px;height:44px;margin:-1px 0;filter:drop-shadow(1px 2px 3px rgba(10,31,25,.7));flex-shrink:0}
+.army-lead-art svg{width:100%;height:100%;display:block}
+.army-lead-art.lead-icon{font-size:28px;line-height:1}
+.army-card-bottom{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;line-height:1.1;z-index:2}
+.army-total-count{font-size:12.5px;font-weight:700;color:#ffe6a5;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.army-foreign-origin{font-size:8px;color:#86efac;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;font-weight:500;display:block;margin-top:1px}
 .building-shelf{border-radius:14px;padding:8px 12px 10px;background:#172d29f2}
 .building-strip{display:flex;gap:8px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:#a7915c #233e33;padding:3px 1px 5px}
 .building-card{position:relative;flex:1;min-width:93px;max-width:130px;isolation:isolate}
@@ -22,7 +49,7 @@
 .market-create{display:grid;grid-template-columns:1fr 1fr;gap:12px}.market-create label{margin:0}.market-create input{margin-top:7px}
 .market-offers{display:grid;gap:9px}.market-offer{display:grid;gap:7px;padding:10px;border:1px solid var(--line);border-radius:9px;background:#10251f44}.market-offer>div{display:flex;justify-content:space-around;gap:9px;align-items:center}.market-offer>div>span{display:flex;gap:6px;align-items:center}
 @media(max-width:1100px){.building-card{min-width:95px}.building-open{height:98px}}
-@media(max-width:700px){:root{--command-height:172px}.command-deck{bottom:7px;width:calc(100vw - 16px);gap:4px}.command-deck .dock{height:45px;min-height:45px;width:100%;padding:3px;gap:1px}.command-deck .dock button{min-width:0;flex:1;flex-direction:column;font-size:9px;padding:2px;gap:1px}.command-deck .dock svg{width:17px;height:17px}.command-deck .dock-divider{margin:3px 1px}.building-shelf{padding:6px 7px}.building-card{flex:0 0 88px;min-width:88px}.building-open{height:94px}.building-open .building-art{width:69px;height:62px}.building-name{font-size:9px}.building-upgrade{width:27px;height:27px}.building-level{font-size:15px}.building-strip{gap:6px}.chronicle{bottom:calc(var(--command-height) + 12px);max-width:180px}.work-queue{bottom:calc(var(--command-height) + 12px)}.scene-heading p{max-width:235px}.market-create{gap:7px}}
+@media(max-width:700px){:root{--command-height:190px}.command-deck{bottom:7px;width:calc(100vw - 16px);gap:4px}.army-shelf{padding:4px 6px;min-height:64px}.army-card{flex:0 0 94px;min-width:90px;height:62px}.building-shelf{padding:6px 7px}.building-card{flex:0 0 88px;min-width:88px}.building-open{height:94px}.building-open .building-art{width:69px;height:62px}.building-name{font-size:9px}.building-upgrade{width:27px;height:27px}.building-level{font-size:15px}.building-strip{gap:6px}.chronicle{bottom:calc(var(--command-height) + 12px);max-width:180px}.work-queue{bottom:calc(var(--command-height) + 12px)}.scene-heading p{max-width:235px}.market-create{gap:7px}}
 @media(max-height:650px){:root{--command-height:165px}.building-open{height:80px}.building-open .building-art{height:52px}.scene-heading{display:none}}
 @media(max-width:700px){.drawer[data-building-name=MainHall]{z-index:25}}.oasis-section{display:grid;gap:8px;padding:12px 0;border-top:1px solid var(--line)}.oasis-section h3{font-size:13px;margin:0}.oasis-section p{font-size:11px;margin:0}.oasis-section meter{width:100%;height:15px}.oasis-danger{padding:10px;background:#753a32;border:1px solid #f1a38a;border-radius:7px;color:#fff0d8}.oasis-section [role=switch][aria-checked=true]{background:#405c3d;border-color:#b1ce8a}
 .important-alerts{position:fixed;top:88px;left:50%;transform:translateX(-50%);width:min(1060px,calc(100vw - 32px));z-index:46;display:flex;flex-wrap:wrap;direction:rtl;justify-content:flex-start;gap:8px;pointer-events:none}
@@ -48,8 +75,6 @@
    stretch the ribbon or navigation. Wider panels can still claim extra room. */
 @media(min-width:701px){
   .command-deck{--panel-lane:max(400px,var(--drawer-space,0px));left:calc((100vw - var(--panel-lane)) / 2);width:min(1000px,calc(100vw - var(--panel-lane) - 32px))}
-  .command-deck .dock{width:max-content}
-  .command-deck .dock button{padding-inline:clamp(5px,1vw,12px);font-size:clamp(10px,.8vw,12px)}
 }
 button.action-capture{background:linear-gradient(135deg,#623e354d,#4e37302b);border-color:#bf80645c;color:#efc3ae}button.action-blockade{background:linear-gradient(135deg,#82703744,#5e512627);border-color:#d0b36666;color:#ead593}button.action-reinforce{background:linear-gradient(135deg,#47704d55,#294b372e);border-color:#96bc8166;color:#c9dfb5}button.action-capture:hover:not(:disabled){background:#76483766}button.action-blockade:hover:not(:disabled){background:#82703766}button.action-reinforce:hover:not(:disabled){background:#47704d77}
 .attack-objectives{margin:0;padding:0;border:0}.attack-objectives legend{font-size:12px;color:#d9c59c;margin-bottom:8px}.attack-objectives>div{display:grid;grid-template-columns:1fr 1fr;gap:7px}.objective-card{display:grid;grid-template-columns:25px 1fr;gap:4px 8px;text-align:start;padding:10px;background:#ffffff04;border-color:#cab77b33}.objective-card>span{grid-row:1/3;font-size:21px;color:#d5be85}.objective-card strong{font-size:12px}.objective-card small{font-size:10px;line-height:1.6;color:#c7cbb7}.objective-card.active{background:#7667373b;border-color:#d8be78}.objective-card:disabled{opacity:.48}.city-objective-progress{display:grid;gap:6px;padding:10px;background:#c7ab5812;border:1px solid #c7ab5833;border-radius:8px}.city-objective-progress strong{color:#e8ce94}.city-objective-progress meter{width:100%}

@@ -17,7 +17,7 @@ export interface Point { x: number; y: number }
 export interface MapPlayer { tribe?: string; id: string; name: string; villageId: string | null; position: Point | null; level: number | null; ruined?: boolean; flagColor?: string }
 export interface ArmyView { id: string; ownerId: string; homeVillageId: string; position: Point; destination: Point; order: string; soldiers: number; wagons: number; speed: number; wheat: number | null; capacity: number; morale: number | null; autoSupply: boolean; supplyWagons: number; escorts: number; supplyStatus: string | null; targetId: string | null; actionSeconds: number }
 export interface ConvoyView { id: string; ownerId: string; targetArmyId: string | null; position: Point; destination: Point; returning: boolean; wagons: number; escorts: number; wheat: number | null; speed: number; cargo: Cargo | null; recipientId: string | null }
-export interface OasisView { id: string; name: string; position: Point; resource: string; ownerId: string | null; villageId: string | null; defenders: number; stock: Cargo | null; capacity: number; productionPerMinute: Cargo; autoTransport: boolean | null; transportStatus: string | null; convoyId: string | null; wallLevel: number; wallHealth: number; wallMaximum: number; wallUpgradeCost: Cargo | null; underAttack: boolean; blockaded:boolean; siegeReportId:string|null; wheatUpkeepPerMinute:number|null }
+export interface OasisView { id: string; name: string; position: Point; resource: string; ownerId: string | null; villageId: string | null; defenders: number; stock: Cargo | null; capacity: number; productionPerMinute: Cargo; autoTransport: boolean | null; transportStatus: string | null; convoyId: string | null; wallLevel: number; wallHealth: number; wallMaximum: number; wallUpgradeCost: Cargo | null; underAttack: boolean; blockaded:boolean; siegeReportId:string|null; wheatUpkeepPerMinute:number|null; garrison?: Record<string, number> | null }
 export interface ArmyView { supplyVillageId: string; formation: Record<string, number> | null; mapFigures?:Record<string,number>|null; loot: Cargo | null }
 export interface ArmyView { afterAttack: string; tribe: string; defendingSiteId: string | null; supportedOwnerId: string | null; campRadius: number | null }
 export interface ConvoyView { kind: "Supply" | "Trade" | "Oasis" | "Shipment"; inBattle: boolean }
@@ -55,7 +55,8 @@ function resourceBadge(resource: string): Container {
   root.addChild(g); return root;
 }
 
-interface MovingNode { root: Container; from: Point; to: Point; at: number; label: Text; kind: "army" | "convoy"; artworkKey?: string; party?: Container; partyY?: number; dust?: Graphics; flag?: Graphics; marching?: boolean; figures?:{sprite:Sprite;y:number}[] }
+interface MovingNode { root: Container; from: Point; to: Point; at: number; label: Text; kind: "army" | "convoy"; artworkKey?: string; party?: Container; partyY?: number; dust?: Graphics; flag?: Graphics; marching?: boolean; figures?:{sprite:Sprite;y:number}[]; lastSoldiers?: number; lastEscorts?: number; wasFighting?: boolean; }
+interface LossIndicator { root: Container; caption: Text; at: number; duration: number; startX: number; startY: number; jitterX: number; targetArmyId?: string; }
 export class WorldMap {
   private armyLayout=new ArmyLayout();
   private app = new Application();
@@ -79,8 +80,10 @@ export class WorldMap {
   private clouds: Container[] = [];
   private flags: Graphics[] = [];
   private ownerColors=new Map<string,number>();
-  private clashes=new Map<string,{effect:BattleClash;battle:BattleView;pick:MapSelection}>();
+  private clashes=new Map<string,{effect:BattleClash;battle?:BattleView;siege?:SiegeView;pick:MapSelection}>();
   private battleLayer=new Container();
+  private lossLayer=new Container();
+  private losses: LossIndicator[] = [];
   private burningVillages=new Map<string,VillageFire>();
   private smokingVillages=new Map<string,VillageSmoke>();
   private fireLayer=new Container();
@@ -111,7 +114,8 @@ export class WorldMap {
     this.app.canvas.setAttribute("aria-label", "Interactive world map. Drag to pan, scroll to zoom, click to select. Arrow keys pan; plus and minus zoom.");
     this.app.canvas.tabIndex = 0;
     this.app.stage.addChild(this.sky, this.world);
-    this.world.addChild(this.terrain, this.camps, this.paths, this.settlements, this.selection, this.units, this.fireLayer, this.warfare, this.nameplates, this.battleLayer);
+    this.lossLayer.eventMode = 'none';
+    this.world.addChild(this.terrain, this.camps, this.paths, this.settlements, this.selection, this.units, this.fireLayer, this.warfare, this.nameplates, this.battleLayer, this.lossLayer);
     this.settlements.sortableChildren = true; this.units.sortableChildren=true;
     this.ready = true;
     const pending = this.last;
@@ -304,7 +308,7 @@ export class WorldMap {
         root.position.set(position.x, position.y);
         const text = label(isArmy ? `${entity.soldiers} troops` : "Supply", 10); text.anchor.set(.5, 0); text.position.set(0, 26); root.addChild(text);
         root.scale.set(1.25);
-        node = { root, from: position, to: position, at: performance.now(), label: text, kind }; this.moving.set(entity.id, node); this.units.addChild(root);
+        node = { root, from: position, to: position, at: performance.now(), label: text, kind, lastSoldiers: isArmy ? entity.soldiers : undefined, lastEscorts: !isArmy ? entity.escorts : undefined }; this.moving.set(entity.id, node); this.units.addChild(root);
       }
       node.from = { x: node.root.x, y: node.root.y }; node.to = position; node.at = performance.now();
       const tribe=(isArmy ? entity.tribe : players.find(p=>p.id===entity.ownerId)?.tribe ?? 'Romans').toLowerCase();
@@ -322,7 +326,7 @@ export class WorldMap {
         const flagBase=-12-Math.max(0,layout.rows-1)*17;
         party.addChild(new Graphics().ellipse(0,5-Math.max(0,layout.rows-1)*8,Math.max(26,layout.columns*13),12+layout.rows*7).fill({color,alpha:.12}));
         // Camped troops stand in the middle of the perimeter rather than above its centre point.
-        node.partyY=isArmy&&entity.campRadius?Math.max(0,layout.rows-1)*8.5+layout.width*.4:0;
+        node.partyY=isArmy&&entity.campRadius?Math.max(0,layout.rows-1)*8.5+16:0;
         this.unitFlagShaft(party,flagTop,flagBase,flagX);
         formation.forEach((id,index)=>{
           const point=layout.points[index]!,sprite=unitSprite(id,layout.width);sprite.position.set(point.x,point.y);
@@ -343,6 +347,30 @@ export class WorldMap {
       const ownerName = players.find(p => p.id === entity.ownerId)?.name ?? t("Settlement");
       const statusText = t(isArmy ? entity.order === "Camping" ? "Establishing camp" : entity.campRadius ? "Camped" : entity.order === "Guarding" ? "Guarding" : entity.order === "Reinforcing" ? "Reinforcing" : `${entity.soldiers + entity.wagons} units` : entity.inBattle ? "AMBUSH" : entity.returning ? "Returning" : entity.kind === "Oasis" ? "Oasis collection" : entity.kind === "Trade" ? "Trade" : entity.kind === "Shipment" ? "Resource shipment" : "Supply");
       node.label.text = isArmy ? statusText : `${ownerName.slice(0, 12)} · ${statusText}`;
+      const isFighting = isArmy ? (
+        entity.order === "Battle" || entity.order === "Sieging" ||
+        (world.warfare?.battles.some(b => b.status === "Active" && (b.attackerArmyIds?.includes(entity.id) || b.defenderArmyIds?.includes(entity.id) || b.attackerId === entity.id || b.defenderId === entity.id)) ?? false) ||
+        (world.warfare?.sieges.some(s => s.status === "Active" && (s.armyIds?.includes(entity.id) || s.armyId === entity.id)) ?? false) ||
+        (world.oasisSieges?.some(s => s.armyIds?.includes(entity.id) || s.armyId === entity.id) ?? false)
+      ) : (entity as ConvoyView).inBattle;
+
+      if (isArmy && node.lastSoldiers !== undefined) {
+        const diff = node.lastSoldiers - entity.soldiers;
+        if (diff > 0 && (isFighting || node.wasFighting)) {
+          this.showLoss(entity.id, position, diff);
+        }
+      } else if (!isArmy && node.lastEscorts !== undefined) {
+        const diff = node.lastEscorts - entity.escorts;
+        if (diff > 0 && (isFighting || node.wasFighting)) {
+          this.showLoss(entity.id, position, diff);
+        }
+      }
+      if (isArmy) {
+        node.lastSoldiers = entity.soldiers;
+      } else {
+        node.lastEscorts = entity.escorts;
+      }
+      node.wasFighting = isFighting;
       this.picks.push({ id: entity.id, kind, name: isArmy ? "Expedition" : "Supply convoy", position: entity.position, ownerId: entity.ownerId });
       const friendly = (ownerId: string | null | undefined) => ownerId === viewer || !!ownerId && this.alliedOwners.has(ownerId);
       const attackingFriendly = isArmy && !friendly(entity.ownerId) && (
@@ -368,7 +396,12 @@ export class WorldMap {
       }
     }
     this.armyLayout.retain(live);
-    for (const [id, node] of this.moving) if (!live.has(id)) { node.root.destroy({ children: true }); this.moving.delete(id); }
+    for (const [id, node] of this.moving) if (!live.has(id)) {
+      if (node.wasFighting && (node.lastSoldiers ?? 0) > 0) {
+        this.showLoss(undefined, { x: node.root.x, y: node.root.y }, node.lastSoldiers!);
+      }
+      node.root.destroy({ children: true }); this.moving.delete(id);
+    }
     this.warfare.removeChildren().forEach(child => child.destroy({ children: true })); this.effects = [];
     const war = world.warfare;
     const demolitions=new Set<string>();
@@ -403,17 +436,26 @@ export class WorldMap {
       const name = label(siege.phase === "Persuading" ? `${t("Persuasion in progress")} ${Math.ceil(siege.progress)}%` : siege.phase === "Demolishing" ? `${t("Demolition in progress")} ${Math.ceil(siege.progress)}%` : t("Siege in progress"), 10); name.anchor.set(.5, 0); name.position.set(p.x, p.y - 110); this.warfare.addChild(name);
     }
     for(const siege of war?.sieges.filter(s=>["Active"].includes(s.status))??[])this.picks.push({id:siege.id,kind:"battle",name:"Siege in progress",position:{x:siege.position.x,y:siege.position.y-110/.65}});
-    const activeBattles=new Set<string>();
+    const activeClashes = new Set<string>();
     for (const battle of war?.battles.filter(x => x.status === "Active") ?? []) {
-      activeBattles.add(battle.id);
-      let clash=this.clashes.get(battle.id);
-      if(!clash){
-        clash={effect:new BattleClash(),battle,pick:{id:battle.id,kind:'battle',name:'Battle in progress',position:battle.position}};
-        this.clashes.set(battle.id,clash);this.battleLayer.addChild(clash.effect.root);
+      activeClashes.add(battle.id);
+      let clash = this.clashes.get(battle.id);
+      if (!clash) {
+        clash = { effect: new BattleClash(), battle, pick: { id: battle.id, kind: 'battle', name: 'Battle in progress', position: battle.position } };
+        this.clashes.set(battle.id, clash); this.battleLayer.addChild(clash.effect.root);
       }
-      clash.battle=battle;this.positionClash(clash);this.picks.push(clash.pick);
+      clash.battle = battle; clash.siege = undefined; this.positionClash(clash); this.picks.push(clash.pick);
     }
-    for(const [id,clash] of this.clashes)if(!activeBattles.has(id)){clash.effect.destroy();this.clashes.delete(id);}
+    for (const siege of war?.sieges.filter(x => ["Active"].includes(x.status)) ?? []) {
+      activeClashes.add(siege.id);
+      let clash = this.clashes.get(siege.id);
+      if (!clash) {
+        clash = { effect: new BattleClash(), siege, pick: { id: siege.id, kind: 'battle', name: 'Siege in progress', position: siege.position } };
+        this.clashes.set(siege.id, clash); this.battleLayer.addChild(clash.effect.root);
+      }
+      clash.siege = siege; clash.battle = undefined; this.positionClash(clash); this.picks.push(clash.pick);
+    }
+    for (const [id, clash] of this.clashes) if (!activeClashes.has(id)) { clash.effect.destroy(); this.clashes.delete(id); }
     for (const siege of world.oasisSieges ?? []) {
       const p = project(siege.position), root = new Container();
       root.position.set(p.x, p.y - 83);
@@ -426,16 +468,33 @@ export class WorldMap {
     }
     this.updateDetail();
   }
-  private positionClash(clash:{effect:BattleClash;battle:BattleView;pick:MapSelection}) {
-    const {battle,effect,pick}=clash;
-    const center=(ids:string[],fallbackId:string)=>{
-      const points=[...new Set(ids)].flatMap(id=>{const node=this.moving.get(id);return node?[node.root.position]:[];});
-      if(!points.length){const fallback=this.moving.get(fallbackId);if(fallback)points.push(fallback.root.position);}
-      return points.length?{x:points.reduce((sum,p)=>sum+p.x,0)/points.length,y:points.reduce((sum,p)=>sum+p.y,0)/points.length}:project(battle.position);
-    };
-    const attacker=center(battle.attackerArmyIds,battle.attackerId),defender=center(battle.defenderArmyIds,battle.defenderId);
-    effect.root.position.set((attacker.x+defender.x)/2,(attacker.y+defender.y)/2-25);
-    pick.position={x:effect.root.x,y:effect.root.y/.65};
+  private positionClash(clash:{effect:BattleClash;battle?:BattleView;siege?:SiegeView;pick:MapSelection}) {
+    const {battle,siege,effect,pick}=clash;
+    if (battle) {
+      const center=(ids:string[],fallbackId:string)=>{
+        const points=[...new Set(ids)].flatMap(id=>{const node=this.moving.get(id);return node?[node.root.position]:[];});
+        if(!points.length){const fallback=this.moving.get(fallbackId);if(fallback)points.push(fallback.root.position);}
+        return points.length?{x:points.reduce((sum,p)=>sum+p.x,0)/points.length,y:points.reduce((sum,p)=>sum+p.y,0)/points.length}:project(battle.position);
+      };
+      const attacker=center(battle.attackerArmyIds,battle.attackerId),defender=center(battle.defenderArmyIds,battle.defenderId);
+      effect.root.position.set((attacker.x+defender.x)/2,(attacker.y+defender.y)/2-25);
+      pick.position={x:effect.root.x,y:effect.root.y/.65};
+    } else if (siege) {
+      const villagePos = project(siege.position);
+      const points = [...new Set(siege.armyIds)].flatMap(id => {
+        const node = this.moving.get(id);
+        return node ? [node.root.position] : [];
+      });
+      if (!points.length) {
+        const fallback = this.moving.get(siege.armyId);
+        if (fallback) points.push(fallback.root.position);
+      }
+      const attacker = points.length
+        ? { x: points.reduce((sum, p) => sum + p.x, 0) / points.length, y: points.reduce((sum, p) => sum + p.y, 0) / points.length }
+        : { x: villagePos.x, y: villagePos.y + 35 };
+      effect.root.position.set((attacker.x + villagePos.x) / 2, (attacker.y + villagePos.y) / 2 - 25);
+      pick.position = { x: effect.root.x, y: effect.root.y / .65 };
+    }
   }
   private dash(from: Point, to: Point, color: number, width = 2) {
     const length = Math.hypot(to.x - from.x, to.y - from.y);
@@ -444,6 +503,37 @@ export class WorldMap {
       this.paths.moveTo(from.x + (to.x - from.x) * step / length, from.y + (to.y - from.y) * step / length)
         .lineTo(from.x + (to.x - from.x) * end / length, from.y + (to.y - from.y) * end / length).stroke({ color, width, alpha: width > 2 ? .92 : .8 });
     }
+  }
+  showLoss(armyId: string | undefined, pos: Point, count: number) {
+    if (!this.ready || document.hidden || count <= 0) return;
+    const root = new Container();
+    root.eventMode = 'none';
+    const jitterX = (Math.random() - 0.5) * 16;
+    root.position.set(pos.x + jitterX, pos.y - 38);
+    const caption = new Text({
+      text: `-${count}`,
+      style: {
+        fontFamily: "Tahoma, 'Segoe UI', system-ui, sans-serif",
+        fontSize: 16,
+        fontWeight: "bold",
+        fill: 0xff3838,
+        stroke: { color: 0x1f0202, width: 4 },
+        align: "center",
+      }
+    });
+    caption.anchor.set(0.5, 0.5);
+    root.addChild(caption);
+    this.lossLayer.addChild(root);
+    this.losses.push({
+      root,
+      caption,
+      at: performance.now(),
+      duration: 1500,
+      startX: pos.x,
+      startY: pos.y - 38,
+      jitterX,
+      targetArmyId: armyId,
+    });
   }
   celebrate(position:Point, message:string){
     if(!this.ready||document.hidden)return;
@@ -482,6 +572,29 @@ export class WorldMap {
       if(progress>=1){effect.root.destroy({children:true});this.celebrations.splice(this.celebrations.indexOf(effect),1);continue;}
       effect.root.alpha=Math.min(1,(1-progress)*3);effect.caption.y=-75-(this.reduced?0:progress*35);
       effect.ring.clear().ellipse(0,8,65+(this.reduced?0:progress*35),29+(this.reduced?0:progress*17)).stroke({color:0xffdb88,width:3,alpha:1-progress});
+    }
+    for (const loss of [...this.losses]) {
+      const elapsed = now - loss.at;
+      const progress = elapsed / loss.duration;
+      if (progress >= 1) {
+        loss.root.destroy({ children: true });
+        this.losses.splice(this.losses.indexOf(loss), 1);
+        continue;
+      }
+      let scale = 1.0;
+      if (elapsed < 120) {
+        scale = 0.75 + (elapsed / 120) * 0.5;
+      } else if (elapsed < 240) {
+        scale = 1.25 - ((elapsed - 120) / 120) * 0.25;
+      }
+      loss.root.scale.set(scale);
+
+      const floatOffset = this.reduced ? 10 : 40 * Math.pow(Math.min(1, progress), 0.7);
+      const armyNode = loss.targetArmyId ? this.moving.get(loss.targetArmyId) : null;
+      const baseX = (armyNode ? armyNode.root.x : loss.startX) + loss.jitterX;
+      const baseY = (armyNode ? armyNode.root.y - 38 : loss.startY) - floatOffset;
+      loss.root.position.set(baseX, baseY);
+      loss.root.alpha = progress < 0.6 ? 1 : Math.max(0, 1 - (progress - 0.6) / 0.4);
     }
     this.selection.clear();
     if (this.selected) {

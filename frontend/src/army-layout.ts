@@ -5,8 +5,8 @@ import {armyFigureCount,armyFigureLayout} from './army-visual';
 export class ArmyLayout {
     private slots=new Map<string,{site:string;slot:number}>();
     position(army:ArmyView,world:WorldView):Point{
-        // Camps keep their troops on the perimeter centre; other armies stand beside their map point.
-        const base=army.campRadius?{x:army.position.x,y:army.position.y*.65}:{x:army.position.x+54,y:army.position.y*.65+22};
+        if(army.campRadius) return {x:army.position.x,y:army.position.y*.65};
+        const base={x:army.position.x+54,y:army.position.y*.65+22};
         const oasis=world.oases.find(o=>o.id===(army.defendingSiteId??army.targetId));
         const city=world.warfare?.settlements.find(c=>c.id===(army.defendingSiteId??army.targetId));
         const battle=world.warfare?.battles.find(b=>b.status==='Active'&&[...b.attackerArmyIds,...b.defenderArmyIds].includes(army.id));

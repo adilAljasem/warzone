@@ -101,6 +101,48 @@ internal static class CampChecks
         splitWorld.Apply(splitCity.Village.OwnerId, new(Guid.NewGuid(), CommandKind.MoveArmy, original.Id,
             Formation: new Dictionary<string, int> { ["romans-infantry"] = 6, ["romans-archer"] = 2 }, X: 650, Y: 500), 0, 0);
         Check(splitWorld.Snapshot(splitCity.Village.OwnerId).Armies.Length == 2, "Sending the full detachment does not create an empty army");
+
+        var campHome = City(500); var victimCity = City(650); var destCity = City(400);
+        var campWorld = new LogisticsWorld([campHome, victimCity, destCity], 731);
+        Gift(campHome, "infantry", 10); Gift(campHome, "wagon", 2); campHome.AddResources(new(5000, 5000, 5000, 5000));
+        campWorld.Apply(campHome.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, campHome.Village.Id,
+            Formation: new Dictionary<string, int> { ["romans-infantry"] = 10, ["romans-wagon"] = 1 },
+            Wagons: 0, Enabled: true, X: 520, Y: 500, Camp: true), 0, 0);
+        var campId = campWorld.Snapshot(campHome.Village.OwnerId).Armies.Single().Id;
+        var t = 0d;
+        void StepWorld() { t += .25; campWorld.Advance(.25, t, 0, 3600); }
+        void WaitWorld(Func<bool> cond, int limit = 1600)
+        {
+            for (var i = 0; i < limit && !cond(); i++) StepWorld();
+            Check(cond(), "Camp condition met");
+        }
+        WaitWorld(() => campWorld.Snapshot(campHome.Village.OwnerId).Armies.Single().Order == "Camped");
+        Check(campWorld.Snapshot(campHome.Village.OwnerId).Armies.Single().Wagons == 1, "Camp army contains 1 wagon");
+
+        Gift(victimCity, "wagon", 2); victimCity.AddResources(new(5000, 5000, 5000, 5000));
+        campWorld.Apply(victimCity.Village.OwnerId, new(Guid.NewGuid(), CommandKind.SendResources, victimCity.Village.Id,
+            DestinationId: destCity.Village.Id, Shipment: new(1000, 1000, 1000, 2000)), t, 0);
+
+        WaitWorld(() => campWorld.Snapshot(campHome.Village.OwnerId).Warfare.Battles.Any(b => b.Status == "Active"));
+        var campBattleId = campWorld.Snapshot(campHome.Village.OwnerId).Warfare.Battles.Single().Id;
+        WaitWorld(() => campWorld.Snapshot(campHome.Village.OwnerId).Warfare.Battles.FirstOrDefault(b => b.Id == campBattleId)?.Status != "Active");
+
+        var afterBattle = campWorld.Snapshot(campHome.Village.OwnerId);
+        var reportAfter = afterBattle.Reports.Single(r => r.Id == campBattleId);
+        Check(reportAfter.AttackerLoot.Wheat > 0 && reportAfter.AttackerLoot.Wood > 0, "Report captures both wheat and materials");
+        var campAfterBattle = afterBattle.Armies.Single(a => a.Id == campId);
+        Check(campAfterBattle.Loot is not null && campAfterBattle.Loot.Value.Wheat > 0 && campAfterBattle.Loot.Value.Wood > 0, "Camp army holds captured wheat and materials in loot");
+
+        WaitWorld(() => campWorld.Snapshot(campHome.Village.OwnerId).Convoys.Any(c => c.TargetArmyId == campId && !c.Returning));
+        Check(campWorld.Snapshot(campHome.Village.OwnerId).Armies.Single(a => a.Id == campId).Wagons == 1, "Camp army's wagons remain with the army and do not leave camp");
+
+        var woodBefore = campHome.Resources.Wood;
+        WaitWorld(() => campWorld.Snapshot(campHome.Village.OwnerId).Convoys.Any(c => c.TargetArmyId == campId && c.Returning && (c.Cargo?.Total ?? 0) > 0));
+        Check(campWorld.Snapshot(campHome.Village.OwnerId).Armies.Single(a => a.Id == campId).Wagons == 1, "Camp army still keeps its own wagon after collection");
+        Check(campWorld.Snapshot(campHome.Village.OwnerId).Armies.Single(a => a.Id == campId).Wheat > 0, "Camp army still keeps its food");
+
+        WaitWorld(() => campWorld.Snapshot(campHome.Village.OwnerId).Convoys.Length == 0);
+        Check(campHome.Resources.Wood > woodBefore, "Home village received the collected camp cargo");
         return checks;
     }
 }

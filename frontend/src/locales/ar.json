@@ -387,6 +387,8 @@
     "Orders received": "تم استلام الأوامر",
     "Waiting for wheat": "بانتظار القمح",
     "Waiting for wagons or escorts": "بانتظار العربات أو المرافقين",
+    "Waiting for wagons": "بانتظار العربات",
+    "Waiting for escorts": "بانتظار المرافقين",
     "Well supplied": "مؤونة كافية",
     "Convoy in transit": "القافلة في الطريق",
     "Returning home": "عائد للقرية",
@@ -1000,6 +1002,18 @@
     [
       "A supply convoy departed with ([0-9]+) wagon\\(s\\) and ([0-9]+) escorts\\.",
       "انطلقت قافلة إمداد تضم $1 عربة و$2 مرافقًا."
+    ],
+    [
+      "A collection wagon departed to retrieve loot from your camp \\(([0-9]+) wagon\\(s\\)\\)\\.",
+      "انطلقت عربة نقل لجمع الغنائم من معسكرك ($1 عربة)."
+    ],
+    [
+      "Collection wagon gathered (.*?) from your camp and is returning to the village\\.",
+      "جمعت عربة النقل غنائم المعسكر ($1) وهي عائدة إلى القرية."
+    ],
+    [
+      "Convoy safely returned with camp cargo: (.*?)\\.",
+      "عادت القافلة بسلام إلى القرية بحمولة المعسكر: $1."
     ],
     [
       "Supply delivered: ([0-9]+) wheat\\. The convoy is returning\\.",

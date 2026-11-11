@@ -68,10 +68,14 @@ internal static class SocialChecks
             && m.Text == "Alliance formed between Host and Guest."), "Acceptance announces both players in the shared chat");
         Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.ProposeAlliance, guest)).Code == "alliance",
             "Duplicate alliances are rejected");
+        Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.ProposeAlliance, host)).Code == "alliance",
+            "Self alliance is rejected");
         var bot = room.Snapshot(host, _ => true).Players.First(p => p.IsBot);
-        Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.ProposeAlliance, bot.Id)).Code == "alliance",
-            "Bots cannot receive requests they cannot answer");
-        var thirdRequest = room.Snapshot(host, _ => true).AllianceRequests.Single();
+        Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.ProposeAlliance, bot.Id)).Accepted,
+            "Bots can receive alliance requests and answer them");
+        var botRequest = room.Snapshot(host, _ => true).AllianceRequests.Single(r => r.RecipientId == bot.Id);
+        room.Execute(host, new(Guid.NewGuid(), CommandKind.CancelAllianceRequest, botRequest.Id));
+        var thirdRequest = room.Snapshot(host, _ => true).AllianceRequests.Single(r => r.RecipientId == third);
         Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.CancelAllianceRequest, thirdRequest.Id)).Accepted
             && room.Snapshot(third, _ => true).AllianceRequests.Length == 0, "A sender can cancel a pending request");
         var hostPlayers = room.Snapshot(host, _ => true).Players;

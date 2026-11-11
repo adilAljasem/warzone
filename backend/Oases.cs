@@ -3,7 +3,7 @@ namespace Warzone;
 public sealed record OasisSnapshot(Guid Id, string Name, Position Position, ResourceType Resource,
     Guid? OwnerId, Guid? VillageId, int Defenders, Resources? Stock, long Capacity, Resources ProductionPerMinute,
     bool? AutoTransport, string? TransportStatus, Guid? ConvoyId, int WallLevel, double WallHealth, double WallMaximum, Resources? WallUpgradeCost, bool UnderAttack,
-    bool Blockaded, Guid? SiegeReportId, double? WheatUpkeepPerMinute);
+    bool Blockaded, Guid? SiegeReportId, double? WheatUpkeepPerMinute, IReadOnlyDictionary<string, int>? Garrison = null);
 
 internal sealed class ResourceOasis(Position position, ResourceType resource)
 {
@@ -56,13 +56,18 @@ public sealed partial class LogisticsWorld
         var blockaded = OasisBlockaded(oasis);
         var status = blockaded ? "Oasis blockaded: collection suspended" : convoy is not null ? convoy.InBattle ? "Caravan under attack" : convoy.Returning ? "Resources returning" : "Wagons collecting"
             : !oasis.AutoTransport ? "Automatic transport paused" : oasis.Stock.Total < 2000 ? "Waiting for 2000 resources" : "Waiting for available wagons and provisions";
+        var guarding = armies.Where(a => a.DefendingSiteId == oasis.Id || (Distance(a.Position, oasis.Position) <= 35 && a.Order is "Guarding" or "Camped" or "Idle" or "Battle" or "Camping")).ToArray();
+        var visibleArmies = guarding.Where(a => mine || a.OwnerId == viewer || a.SupportedOwnerId == viewer || scoutedArmies.Contains((viewer, a.Id))).ToArray();
+        var garrison = visibleArmies.SelectMany(a => a.Troops).GroupBy(t => t.Unit.UnitId)
+            .ToDictionary(g => g.Key, g => g.Sum(t => t.Count));
         return new(oasis.Id, oasis.Name, oasis.Position, oasis.Resource, oasis.OwnerId, oasis.VillageId,
-            armies.Where(a => a.DefendingSiteId == oasis.Id && a.Order is "Guarding" or "Battle").Sum(Fighters),
+            guarding.Sum(Fighters),
             mine ? oasis.Stock : null, ResourceOasis.StorageCapacity, oasis.ProductionPerMinute,
             mine ? oasis.AutoTransport : null, mine ? status : null, mine ? convoy?.Id : null,
             oasis.WallLevel, oasis.WallHealth, oasis.WallMaximum, mine ? oasis.WallUpgradeCost : null, OasisUnderAttack(oasis),
             blockaded, oasisSieges.Find(s=>s.Oasis==oasis&&s.Status=="Active")?.Id,
-            mine ? armies.Where(a=>OasisFoodSource(a)==oasis).Sum(a=>a.Upkeep)*60 : null);
+            mine ? armies.Where(a=>OasisFoodSource(a)==oasis).Sum(a=>a.Upkeep)*60 : null,
+            garrison.Count > 0 ? garrison : null);
     }
     private void AdvanceOasisProduction(double seconds, double speed)
     {

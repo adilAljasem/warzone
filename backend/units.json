@@ -484,15 +484,15 @@
       "requiredBuildingLevel": 1,
       "trainingSeconds": 4,
       "cost": {
-        "wood": 25,
-        "iron": 40,
+        "wood": 15,
+        "iron": 0,
         "stone": 0,
         "wheat": 20
       },
       "stats": {
-        "attack": 56,
-        "defenseInfantry": 18,
-        "defenseCavalry": 12,
+        "attack": 35,
+        "defenseInfantry": 15,
+        "defenseCavalry": 10,
         "speed": 12,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
@@ -725,12 +725,12 @@
       "trainingSeconds": 6,
       "cost": {
         "wood": 10,
-        "iron": 0,
-        "stone": 55,
-        "wheat": 65
+        "iron": 55,
+        "stone": 0,
+        "wheat": 55
       },
       "stats": {
-        "attack": 92,
+        "attack": 85,
         "defenseInfantry": 42,
         "defenseCavalry": 22,
         "speed": 10,
@@ -820,15 +820,15 @@
       "requiredBuildingLevel": 1,
       "trainingSeconds": 4,
       "cost": {
-        "wood": 30,
+        "wood": 0,
         "iron": 10,
-        "stone": 25,
-        "wheat": 20
+        "stone": 35,
+        "wheat": 0
       },
       "stats": {
-        "attack": 36,
-        "defenseInfantry": 66,
-        "defenseCavalry": 72,
+        "attack": 15,
+        "defenseInfantry": 72,
+        "defenseCavalry": 40,
         "speed": 11,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
@@ -844,10 +844,10 @@
       "requiredBuildingLevel": 2,
       "trainingSeconds": 5,
       "cost": {
-        "wood": 35,
+        "wood": 15,
         "iron": 0,
-        "stone": 25,
-        "wheat": 20
+        "stone": 45,
+        "wheat": 0
       },
       "stats": {
         "attack": 44,
@@ -868,10 +868,10 @@
       "requiredBuildingLevel": 3,
       "trainingSeconds": 7,
       "cost": {
-        "wood": 45,
+        "wood": 25,
         "iron": 30,
-        "stone": 65,
-        "wheat": 50
+        "stone": 85,
+        "wheat": 0
       },
       "stats": {
         "attack": 88,
@@ -916,10 +916,10 @@
       "requiredBuildingLevel": 1,
       "trainingSeconds": 6,
       "cost": {
-        "wood": 80,
+        "wood": 60,
         "iron": 0,
-        "stone": 40,
-        "wheat": 30
+        "stone": 60,
+        "wheat": 0
       },
       "stats": {
         "attack": 1,
@@ -940,10 +940,10 @@
       "requiredBuildingLevel": 3,
       "trainingSeconds": 15,
       "cost": {
-        "wood": 180,
+        "wood": 120,
         "iron": 40,
-        "stone": 160,
-        "wheat": 60
+        "stone": 200,
+        "wheat": 0
       },
       "stats": {
         "attack": 100,
@@ -964,10 +964,10 @@
       "requiredBuildingLevel": 1,
       "trainingSeconds": 12,
       "cost": {
-        "wood": 140,
+        "wood": 100,
         "iron": 60,
         "stone": 80,
-        "wheat": 50
+        "wheat": 0
       },
       "stats": {
         "attack": 40,
@@ -988,10 +988,10 @@
       "requiredBuildingLevel": 5,
       "trainingSeconds": 18,
       "cost": {
-        "wood": 200,
+        "wood": 150,
         "iron": 40,
         "stone": 130,
-        "wheat": 60
+        "wheat": 0
       },
       "stats": {
         "attack": 20,
@@ -1015,7 +1015,7 @@
         "wood": 350,
         "iron": 150,
         "stone": 400,
-        "wheat": 300
+        "wheat": 150
       },
       "stats": {
         "attack": 5,
@@ -1036,10 +1036,10 @@
       "requiredBuildingLevel": 2,
       "trainingSeconds": 5,
       "cost": {
-        "wood": 40,
+        "wood": 20,
         "iron": 10,
-        "stone": 25,
-        "wheat": 20
+        "stone": 45,
+        "wheat": 0
       },
       "stats": {
         "attack": 18,
@@ -1060,10 +1060,10 @@
       "requiredBuildingLevel": 3,
       "trainingSeconds": 6,
       "cost": {
-        "wood": 35,
+        "wood": 15,
         "iron": 25,
-        "stone": 40,
-        "wheat": 30
+        "stone": 60,
+        "wheat": 0
       },
       "stats": {
         "attack": 84,
@@ -1084,10 +1084,10 @@
       "requiredBuildingLevel": 5,
       "trainingSeconds": 7,
       "cost": {
-        "wood": 60,
+        "wood": 40,
         "iron": 20,
-        "stone": 35,
-        "wheat": 30
+        "stone": 55,
+        "wheat": 0
       },
       "stats": {
         "attack": 96,
@@ -1108,16 +1108,16 @@
       "requiredBuildingLevel": 2,
       "trainingSeconds": 6,
       "cost": {
-        "wood": 60,
+        "wood": 30,
         "iron": 15,
-        "stone": 40,
-        "wheat": 45
+        "stone": 70,
+        "wheat": 0
       },
       "stats": {
         "attack": 70,
         "defenseInfantry": 26,
         "defenseCavalry": 20,
-        "speed": 41,
+        "speed": 53,
         "carryCapacity": 100,
         "wheatUpkeep": 2,
         "hitPoints": 102
@@ -1132,10 +1132,10 @@
       "requiredBuildingLevel": 5,
       "trainingSeconds": 10,
       "cost": {
-        "wood": 90,
-        "iron": 70,
+        "wood": 30,
+        "iron": 50,
         "stone": 100,
-        "wheat": 60
+        "wheat": 0
       },
       "stats": {
         "attack": 126,
@@ -1303,7 +1303,7 @@
         "wood": 160,
         "iron": 40,
         "stone": 0,
-        "wheat": 130
+        "wheat": 100
       },
       "stats": {
         "attack": 40,
@@ -1453,7 +1453,7 @@
         "attack": 74,
         "defenseInfantry": 26,
         "defenseCavalry": 20,
-        "speed": 45,
+        "speed": 55,
         "carryCapacity": 100,
         "wheatUpkeep": 2,
         "hitPoints": 105
@@ -1468,9 +1468,9 @@
       "requiredBuildingLevel": 5,
       "trainingSeconds": 10,
       "cost": {
-        "wood": 100,
+        "wood": 60,
         "iron": 40,
-        "stone": 0,
+        "stone": 25,
         "wheat": 180
       },
       "stats": {
@@ -1638,7 +1638,7 @@
       "cost": {
         "wood": 80,
         "iron": 120,
-        "stone": 80,
+        "stone": 40,
         "wheat": 50
       },
       "stats": {
@@ -1781,8 +1781,8 @@
       "trainingSeconds": 6,
       "cost": {
         "wood": 10,
-        "iron": 60,
-        "stone": 45,
+        "iron": 85,
+        "stone": 0,
         "wheat": 45
       },
       "stats": {

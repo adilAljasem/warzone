@@ -153,33 +153,41 @@ public sealed class VillageEconomy
     public Resources Resources => new((long)stock[0], (long)stock[1], (long)stock[2], (long)stock[3]);
     public bool FoodShortage { get; private set; }
 
-    // Material mix of each building's upgrades (weights sum to 35), so every structure creates demand for different resources.
-    private static readonly IReadOnlyDictionary<BuildingType, Resources> BuildingMaterials = new Dictionary<BuildingType, Resources>
+    // Differentiated material mix for each building upgrade, ending uniform 180-costs and creating varied resource demand.
+    private static readonly IReadOnlyDictionary<BuildingType, Resources> BuildingRate = new Dictionary<BuildingType, Resources>
     {
-        [BuildingType.MainHall] = new(10, 8, 10, 7),
-        [BuildingType.Warehouse] = new(15, 5, 11, 4),
-        [BuildingType.Barracks] = new(13, 10, 6, 6),
-        [BuildingType.Stable] = new(12, 7, 5, 11),
-        [BuildingType.SiegeWorkshop] = new(15, 11, 6, 3),
-        [BuildingType.Smithy] = new(7, 16, 9, 3),
-        [BuildingType.Hospital] = new(9, 5, 10, 11),
-        [BuildingType.Wall] = new(4, 6, 21, 4),
-        [BuildingType.Market] = new(13, 5, 7, 10)
+        [BuildingType.MainHall] = new(90, 80, 85, 60),
+        [BuildingType.Warehouse] = new(110, 65, 90, 50),
+        [BuildingType.Barracks] = new(100, 90, 65, 60),
+        [BuildingType.Stable] = new(90, 75, 60, 90),
+        [BuildingType.SiegeWorkshop] = new(115, 95, 55, 50),
+        [BuildingType.Smithy] = new(65, 130, 75, 45),
+        [BuildingType.Hospital] = new(75, 55, 95, 90),
+        [BuildingType.Wall] = new(50, 55, 160, 50),
+        [BuildingType.Market] = new(105, 60, 70, 80)
     };
-
-    // Splits a total price across resources in proportion to the given weights.
-    private static Resources Share(Resources weights, long total) => new(total * weights.Wood / weights.Total,
-        total * weights.Iron / weights.Total, total * weights.Stone / weights.Total, total * weights.Wheat / weights.Total);
 
     public VillageEconomy(Guid ownerId, TribeType tribe, Position position)
     {
-        static UpgradeStep[] Track(Resources weights, int factor, int maxLevel) => Enumerable.Range(2, maxLevel - 1)
-            .Select(level => new UpgradeStep(level, Share(weights, level * factor))).ToArray();
+        static UpgradeStep[] Track(Resources rate, int maxLevel = 30) => Enumerable.Range(2, maxLevel - 1)
+            .Select(level => new UpgradeStep(level, new Resources(level * rate.Wood, level * rate.Iron, level * rate.Stone, level * rate.Wheat))).ToArray();
+        static UpgradeStep[] UnitTrack(Resources unitCost, int maxLevel = 20)
+        {
+            var total = Math.Max(1, unitCost.Total);
+            return Enumerable.Range(2, maxLevel - 1).Select(level =>
+            {
+                var budget = level * 210L;
+                return new UpgradeStep(level, new Resources(
+                    budget * unitCost.Wood / total,
+                    budget * unitCost.Iron / total,
+                    budget * unitCost.Stone / total,
+                    budget * unitCost.Wheat / total));
+            }).ToArray();
+        }
         Village = new(ownerId, position, tribe,
-            Enum.GetValues<BuildingType>().Select(type => new Building(type, Track(BuildingMaterials[type], 315, 30))));
-        // Training tiers follow the unit's own recruitment mix, so each tribe keeps its signature resources.
+            Enum.GetValues<BuildingType>().Select(type => new Building(type, Track(BuildingRate[type]))));
         Training = Array.AsReadOnly(GameCatalog.Units.Values.Where(x => x.TribeType == tribe)
-            .OrderBy(x => x.Role).Select(x => new UnitTraining(x, 5, Track(x.TrainingCost, 210, 20))).ToArray());
+            .OrderBy(x => x.Role).Select(x => new UnitTraining(x, 5, UnitTrack(x.TrainingCost))).ToArray());
         targets = Village.Buildings.Cast<UpgradeableTarget>().Concat(Training).ToArray();
         bonuses = GameCatalog.Tribes[tribe].Bonuses;
         garrison.Add(Training.Single(x => x.Unit.Role == UnitRole.Infantry).Unit.UnitId, 20);

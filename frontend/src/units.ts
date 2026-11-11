@@ -1,5 +1,6 @@
 import { t } from './locale';
 import { unitArtwork } from './unit-art';
+export { unitArtwork } from './unit-art';
 export {initUnitTooltips} from './unit-tooltip';
 export interface UnitDefinition { unitId: string; tribeType: string; role: string; displayName: string; trainingBuilding?: string; requiredBuildingLevel?: number; stats: { speed: number; carryCapacity: number; wheatUpkeep: number; attack:number; defenseInfantry:number; defenseCavalry:number; hitPoints:number }; matchups:Record<string,number>; trainingCost:{wood:number;iron:number;stone:number;wheat:number} }
 export const unitCatalog = new Map<string, UnitDefinition>();

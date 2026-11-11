@@ -33,8 +33,8 @@ public sealed partial class GameRoom
         }
         if (command.Kind == CommandKind.ProposeAlliance)
         {
-            if (!players.TryGetValue(command.TargetId, out var recipient) || recipient.IsBot || command.TargetId == actor)
-                throw new GameRuleException("alliance", "Choose another human commander.");
+            if (!players.TryGetValue(command.TargetId, out var recipient) || command.TargetId == actor)
+                throw new GameRuleException("alliance", "Choose another commander.");
             if (alliances.ContainsKey(AlliancePair(actor, command.TargetId)))
                 throw new GameRuleException("alliance", "You are already allied with this commander.");
             if (allianceRequests.Any(r => r.SenderId == actor && r.RecipientId == command.TargetId))
@@ -71,6 +71,11 @@ public sealed partial class GameRoom
     public AllianceRequestSnapshot[] AllianceRequestView(Guid viewer) => allianceRequests
         .Where(r => r.SenderId == viewer || r.RecipientId == viewer)
         .Select(r => new AllianceRequestSnapshot(r.Id, r.SenderId, r.RecipientId, r.CreatedAt)).ToArray();
+
+    internal int AllianceCount(Guid playerId) => alliances.Keys.Count(p => p.First == playerId || p.Second == playerId);
+    internal bool IsAllied(Guid first, Guid second) => alliances.ContainsKey(AlliancePair(first, second));
+    internal bool HasPendingRequest(Guid first, Guid second) => allianceRequests.Any(r => (r.SenderId == first && r.RecipientId == second) || (r.SenderId == second && r.RecipientId == first));
+    internal IReadOnlyList<AllianceRequest> PendingRequestsFor(Guid playerId) => allianceRequests.Where(r => r.RecipientId == playerId).ToArray();
 }
 
 

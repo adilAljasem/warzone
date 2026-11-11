@@ -41,6 +41,7 @@ internal sealed class RoomPlayer(Guid id, string name, TribeType tribe, string f
     public bool Ready { get; set; }
     public VillageEconomy? Economy { get; set; }
     public double NextBotAction { get; set; }
+    public double NextSocialAction { get; set; }
     public Guid? SelectedVillageId { get; set; }
     public Dictionary<Guid, (string Fingerprint, CommandResult Result)> Receipts { get; } = [];
 }
@@ -64,6 +65,7 @@ public sealed partial class GameRoom : IGameCommands
     public DateTimeOffset LastOccupiedAt { get; internal set; }
     public IEnumerable<Guid> HumanIds => players.Values.Where(x => !x.IsBot).Select(x => x.Id);
     public bool Contains(Guid playerId) => players.ContainsKey(playerId);
+    internal IReadOnlyDictionary<Guid, RoomPlayer> Players => players;
 
     public GameRoom(Guid hostId, string playerName, TribeType tribe, string name, RoomSettings settings, DateTimeOffset now)
     {
@@ -203,6 +205,7 @@ public sealed partial class GameRoom : IGameCommands
                 player.Economy = world.Primary(player.Id);
                 if (player.Economy is null) continue;
                 BotController.Act(this, player, Settings.BotDifficulty);
+                BotController.ActSocial(this, player);
                 if (ElapsedSeconds > 8) world.BotAct(player.Id, this, player.Personality!.Value, Settings.BotDifficulty);
                 player.NextBotAction = ElapsedSeconds + (Settings.BotDifficulty switch { BotDifficulty.Easy => 8, BotDifficulty.Hard => 2, _ => 4 });
             }
@@ -339,5 +342,41 @@ internal static class BotController
                     commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.Upgrade, tier.Id));
             }
         }
+    }
+
+    public static void ActSocial(GameRoom room, RoomPlayer player)
+    {
+        var pending = room.PendingRequestsFor(player.Id);
+        foreach (var req in pending)
+        {
+            var currentAlliances = room.AllianceCount(player.Id);
+            var maxAlliances = player.Personality == BotPersonality.Economic ? 2 : 1;
+            var accept = currentAlliances < maxAlliances;
+            room.Execute(player.Id, new(Guid.NewGuid(), CommandKind.RespondAlliance, req.Id, Enabled: accept));
+        }
+
+        if (room.ElapsedSeconds < 15 || player.NextSocialAction > room.ElapsedSeconds) return;
+        player.NextSocialAction = room.ElapsedSeconds + 35;
+
+        if (room.AllianceCount(player.Id) >= (player.Personality == BotPersonality.Economic ? 2 : 1)) return;
+
+        var candidates = room.Players.Values
+            .Where(p => p.Id != player.Id && p.Economy is not null
+                && !room.IsAllied(player.Id, p.Id)
+                && !room.HasPendingRequest(player.Id, p.Id))
+            .ToArray();
+
+        if (candidates.Length == 0) return;
+
+        RoomPlayer? chosen = null;
+        if (player.Personality == BotPersonality.Economic)
+            chosen = candidates.FirstOrDefault(c => c.Personality is BotPersonality.Economic or BotPersonality.Defensive) ?? candidates[0];
+        else if (player.Personality == BotPersonality.Defensive)
+            chosen = candidates.MinBy(c => player.Economy is not null && c.Economy is not null ? LogisticsWorld.Distance(player.Economy.Village.Position, c.Economy.Village.Position) : 1000);
+        else if (player.Personality == BotPersonality.Aggressive && candidates.Length > 1)
+            chosen = candidates.MaxBy(c => player.Economy is not null && c.Economy is not null ? LogisticsWorld.Distance(player.Economy.Village.Position, c.Economy.Village.Position) : 0);
+
+        if (chosen is not null)
+            room.Execute(player.Id, new(Guid.NewGuid(), CommandKind.ProposeAlliance, chosen.Id));
     }
 }

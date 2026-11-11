@@ -56,3 +56,249 @@
 @media(max-width:700px){.drawer[data-panel=dispatch]{z-index:45;background:#18332df7}}
 
 @media(min-width:701px) and (max-height:850px){.drawer[data-panel=report]{padding:14px}.drawer[data-panel=dispatch] .dispatch-formation{grid-template-columns:repeat(5,minmax(0,1fr))}.drawer[data-panel=dispatch] .dispatch-formation label{grid-template-columns:28px minmax(0,1fr);column-gap:3px;font-size:9px}.drawer[data-panel=dispatch] .dispatch-formation .unit-portrait{width:28px;height:34px}}
+
+/* Compact 2-column action buttons grid */
+.panel-action-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    width: 100%;
+}
+.panel-action-grid button.action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 8px;
+    font-size: 11px;
+    line-height: 1.2;
+    border-radius: 6px;
+    min-height: 36px;
+    white-space: normal;
+    text-align: center;
+    width: 100%;
+    margin: 0;
+    cursor: pointer;
+    background: #ffffff0a;
+    border: 1px solid var(--line);
+    color: var(--ink);
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.panel-action-grid button.action-btn:hover:not(:disabled) {
+    background: #ffffff18;
+    border-color: #d6b86566;
+}
+.panel-action-grid button.action-btn.grid-full {
+    grid-column: 1 / -1;
+}
+.panel-action-grid button.action-btn.action-capture {
+    background: #8b3a2a30;
+    border-color: #d9624566;
+    color: #f7a894;
+}
+.panel-action-grid button.action-btn.action-capture:hover:not(:disabled) {
+    background: #8b3a2a55;
+}
+.panel-action-grid button.action-btn.action-blockade {
+    background: #783a5430;
+    border-color: #c7567e66;
+    color: #f0a3bf;
+}
+.panel-action-grid button.action-btn.action-reinforce {
+    background: #2a5a4030;
+    border-color: #4fb37a66;
+    color: #a8e5c2;
+}
+.panel-action-grid button.action-btn.action-camp {
+    background: #5c4a2230;
+    border-color: #d8b24a66;
+    color: #f3d98b;
+}
+.panel-action-grid button.action-btn .btn-icon {
+    font-size: 14px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+/* Quick navigation circular badges for owned provinces and oases in the top bar */
+.realm-possessions {
+    display: flex;
+    align-items: center;
+    margin: 0 4px;
+}
+.possession-strip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 4px;
+    background: #ffffff07;
+    border-radius: 20px;
+    border: 1px solid #ffffff14;
+}
+.possession-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: #142820cc;
+    color: #e2e8e4;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+}
+.possession-badge:hover {
+    transform: scale(1.1);
+    border-color: var(--gold);
+    background: #1c3d30;
+}
+.possession-badge.active {
+    border-color: var(--gold);
+    box-shadow: 0 0 8px #d8b24a88;
+}
+.possession-badge .badge-icon {
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.possession-badge .badge-icon svg {
+    width: 14px;
+    height: 14px;
+}
+.possession-badge .badge-tag {
+    position: absolute;
+    bottom: -3px;
+    right: -3px;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 1px 3px;
+    border-radius: 4px;
+    background: #0f1d18f0;
+    border: 1px solid #d8b24a66;
+    color: var(--gold);
+}
+.possession-badge.oasis-wood { border-color: #6a9b4a66; }
+.possession-badge.oasis-wood .badge-tag { color: #88c75e; border-color: #6a9b4a66; }
+.possession-badge.oasis-iron { border-color: #7d96a666; }
+.possession-badge.oasis-iron .badge-tag { color: #b1cddf; border-color: #7d96a666; }
+.possession-badge.oasis-stone { border-color: #a89f8b66; }
+.possession-badge.oasis-stone .badge-tag { color: #ded6c3; border-color: #a89f8b66; }
+.possession-badge.oasis-wheat { border-color: #d4a73b66; }
+.possession-badge.oasis-wheat .badge-tag { color: #f5cb62; border-color: #d4a73b66; }
+
+/* Stationed troops in oasis panel */
+.oasis-garrison-section {
+    padding: 8px 10px;
+    background: #0e241c50;
+    border: 1px solid #ffffff12;
+    border-radius: 8px;
+    margin: 6px 0;
+}
+.oasis-garrison-section h3 {
+    margin: 0 0 6px 0;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--gold);
+}
+.oasis-stationed-forces {
+    padding: 2px 0;
+}
+.oasis-stationed-forces .report-unit-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+    gap: 6px;
+}
+.oasis-stationed-forces .report-unit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #ffffff0a;
+    border: 1px solid #ffffff18;
+    border-radius: 6px;
+    padding: 4px;
+}
+.oasis-stationed-forces .report-unit .unit-portrait {
+    width: 36px;
+    height: 36px;
+}
+.oasis-stationed-forces .unit-counts {
+    margin-top: 3px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+/* Top HUD navigation: Reports and Kingdoms positioned to the right of resources */
+.hud-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.hud-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    height: 38px;
+    background: #081c1544;
+    border: 1px solid #d6e7ce26;
+    border-radius: 8px;
+    color: #f2eddb;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    position: relative;
+    white-space: nowrap;
+}
+.hud-btn:hover {
+    background: #ffffff18;
+    border-color: #e3c17a88;
+    color: #ffe6a5;
+}
+.hud-btn svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    color: var(--gold);
+}
+.hud-btn .hud-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: #dc2626;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: bold;
+    box-shadow: 0 0 8px rgba(220, 38, 38, 0.7);
+    line-height: 1;
+}
+.hud-btn .hud-badge[hidden] {
+    display: none !important;
+}
+
+.hud .brand { order: 1; }
+.hud .resources { order: 2; }
+.hud .hud-nav { order: 3; }
+.hud .realm-possessions { order: 4; }
+.hud .muster-hud { order: 5; }
+.hud .language-control { order: 6; }
+.hud .match-status { order: 7; }
+
+[dir=rtl] .hud .brand { order: 1; }
+[dir=rtl] .hud .hud-nav { order: 2; }
+[dir=rtl] .hud .resources { order: 3; }
+[dir=rtl] .hud .realm-possessions { order: 4; }
+[dir=rtl] .hud .muster-hud { order: 5; }
+[dir=rtl] .hud .language-control { order: 6; }
+[dir=rtl] .hud .match-status { order: 7; }

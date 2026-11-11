@@ -43,9 +43,9 @@ public sealed partial class LogisticsWorld
     private static void TakeLoot(Army army, Resources loot)
     {
         if (loot.Total == 0) return;
-        var food = Math.Min(loot.Wheat, (long)Math.Max(0, army.Capacity - army.Wheat - army.Loot.Total));
-        army.Wheat += food; loot -= new Resources(0, 0, 0, food);
-        army.Loot += loot.Fraction(Math.Min(1, army.LootSpace / Math.Max(1, loot.Total)));
+        var space = army.LootSpace;
+        if (space <= 0) return;
+        army.Loot += space >= loot.Total ? loot : loot.Fraction(space / (double)loot.Total);
     }
     private bool ApplyPolitics(Guid actor, GameCommand command, double now)
     {
@@ -197,7 +197,7 @@ public sealed partial class LogisticsWorld
         if (warTime >= protectionUntil)
         {
             var activeSiege = sieges.FirstOrDefault(s => s.Status == "Active" && s.City.Village.OwnerId == actor);
-            var approachingThreat = armies.FirstOrDefault(a => a.OwnerId != actor && !a.Routing && a.Order == "Approaching"
+            var approachingThreat = armies.FirstOrDefault(a => a.OwnerId != actor && !CampAllied(actor, a.OwnerId) && !a.Routing && a.Order == "Approaching"
                 && villages.TryGetValue(a.TargetId ?? Guid.Empty, out var c) && c.Village.OwnerId == actor);
             var invader = activeSiege?.Attacker ?? approachingThreat;
             if (invader is not null && !Engaged(invader) && !invader.Routing)
@@ -274,7 +274,7 @@ public sealed partial class LogisticsWorld
             var maxFieldArmies = difficulty == BotDifficulty.Hard ? 3 : personality == BotPersonality.Aggressive ? 3 : 2;
             if (personality == BotPersonality.Aggressive && ownArmies.Length < maxFieldArmies && HomeCombatTroops(home) >= 34)
             {
-                var targetCity = villages.Values.Where(x => x.Village.OwnerId != actor && !x.Ruined && !x.Besieged)
+                var targetCity = villages.Values.Where(x => x.Village.OwnerId != actor && !CampAllied(actor, x.Village.OwnerId) && !x.Ruined && !x.Besieged)
                     .OrderBy(x => Distance(x.Village.Position, home.Village.Position)).FirstOrDefault();
                 if (targetCity is not null)
                 {
@@ -296,7 +296,19 @@ public sealed partial class LogisticsWorld
 
         var scanRange = personality == BotPersonality.Aggressive ? 240 : personality == BotPersonality.Defensive ? 135 : 100;
         var powerRatio = personality == BotPersonality.Aggressive ? .85 : 1.05;
-        var enemy = armies.Where(x => x.OwnerId != actor && !Engaged(x) && !x.Routing && Distance(x.Position, strikeArmy.Position) < scanRange
+
+        // Clear threatening hostile camps near homeland
+        var hostileCamp = armies.Where(x => x.OwnerId != actor && !CampAllied(actor, x.OwnerId) && x.CampRadius is not null && !Engaged(x) && !x.Routing
+                && Distance(x.Position, home.Village.Position) < 320
+                && Fighters(strikeArmy) >= Math.Max(10, Fighters(x) * powerRatio))
+            .OrderBy(x => Distance(x.Position, home.Village.Position)).FirstOrDefault();
+        if (hostileCamp is not null)
+        {
+            commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, strikeArmy.Id, DestinationId: hostileCamp.Id));
+            return true;
+        }
+
+        var enemy = armies.Where(x => x.OwnerId != actor && !CampAllied(actor, x.OwnerId) && !Engaged(x) && !x.Routing && Distance(x.Position, strikeArmy.Position) < scanRange
                 && Fighters(strikeArmy) >= Math.Max(10, Fighters(x) * powerRatio))
             .OrderBy(x => Distance(x.Position, strikeArmy.Position)).FirstOrDefault();
         if (enemy is not null)
@@ -307,7 +319,7 @@ public sealed partial class LogisticsWorld
 
         if (personality != BotPersonality.Defensive)
         {
-            var convoy = convoys.Where(c => c.OwnerId != actor && !c.InBattle && Distance(c.Position, strikeArmy.Position) < 150
+            var convoy = convoys.Where(c => c.OwnerId != actor && !CampAllied(actor, c.OwnerId) && !c.InBattle && Distance(c.Position, strikeArmy.Position) < 150
                     && Fighters(strikeArmy) > c.Troops.Where(t => t.Unit is not SupplyWagon).Sum(t => t.Count) + 4)
                 .OrderBy(c => Distance(c.Position, strikeArmy.Position)).FirstOrDefault();
             if (convoy is not null)
@@ -320,7 +332,7 @@ public sealed partial class LogisticsWorld
         var minSiegeSoldiers = personality == BotPersonality.Aggressive ? 24 : personality == BotPersonality.Defensive ? 36 : 40;
         if (Fighters(strikeArmy) >= minSiegeSoldiers)
         {
-            var city = villages.Values.Where(x => x.Village.OwnerId != actor && !x.Ruined && !x.Besieged)
+            var city = villages.Values.Where(x => x.Village.OwnerId != actor && !CampAllied(actor, x.Village.OwnerId) && !x.Ruined && !x.Besieged)
                 .Select(x => (City: x, Defense: x.Garrison().Sum(t => t.Count) + x.BuildingLevel(BuildingType.Wall) * 5 + Guards(x.Village.Id, actor).Sum(Fighters)))
                 .Where(x => Fighters(strikeArmy) >= Math.Max(18, x.Defense * (personality == BotPersonality.Aggressive ? .8 : 1.0)))
                 .OrderBy(x => Distance(x.City.Village.Position, strikeArmy.Position) + x.Defense * 4)

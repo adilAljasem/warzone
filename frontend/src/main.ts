@@ -4,7 +4,7 @@ import { AlertInbox } from "./alerts";
 import { currentLanguage, setLanguage, localizeNow, t } from "./locale";
 import { settlementStage } from "./settlements";
 import { biomeAt } from "./landscape";
-import { loadUnits, unitPortrait, unitCatalog, provisionEstimate, initUnitTooltips } from "./units";
+import { loadUnits, unitPortrait, unitArtwork, unitCatalog, provisionEstimate, initUnitTooltips } from "./units";
 import "./style.css";
 import "./gameplay-v3.css";
 import "./command-deck.css";
@@ -16,7 +16,7 @@ import { GameMenu } from './game-menu';
 import './game-menu.css';
 import { type Production, type Report, productionPanel, musterPanel, reportsPanel, reportPanel, liveReport, cargoView } from "./intelligence";
 import { HubConnectionBuilder, HubConnectionState, LogLevel } from "@microsoft/signalr";
-import { WorldMap, type MapPlayer, type MapSelection, type WorldView, type RankView } from "./map";
+import { WorldMap, type MapPlayer, type MapSelection, type WorldView, type RankView, type ArmyView } from "./map";
 import { buildingArt } from "./art";
 import { marketPanel, marketOffersSection, type MarketDraft } from "./market";
 interface Resources {
@@ -171,15 +171,22 @@ const select = (id: string, label: string, items: (string | {value:string;label:
 const map = new WorldMap(el("map"), pick => {
     if (!state?.world) return;
     selection = pick; map.select(pick); page = 0;
-    if(pick.kind==="battle"){openReport(pick.id);return;}
+    if(pick.kind==="battle"){buildingOasisId=null;openReport(pick.id);return;}
     if (pick.kind === "village" && pick.ownerId === state.you) {
         buildingOasisId=null;
         void perform(async () => { if (state?.economy?.villageId !== pick.id) await command("SelectVillage", pick.id); openPanel("village", pick.id); renderBuildings(); });
     } else if (pick.kind === "army") {
+        buildingOasisId=null;
         if (pick.ownerId === state.you) { activeArmy = pick.id; loadArmy(); }
         openPanel("army", pick.id);
-    } else if (pick.kind === "ground") openPanel("biome", String(biomeAt(state.world.regions ?? [], pick.position)?.id ?? ""));
-    else openPanel(pick.kind, pick.id);
+    } else if (pick.kind === "ground") {
+        buildingOasisId=null;
+        openPanel("biome", String(biomeAt(state.world.regions ?? [], pick.position)?.id ?? ""));
+    }
+    else {
+        if (pick.kind !== "oasis") buildingOasisId=null;
+        openPanel(pick.kind, pick.id);
+    }
 });
 const progressFeedback = new ProgressFeedback((point,message)=>map.celebrate(point,message));
 gameAudio.setScene(()=>map.combatSounds());
@@ -296,8 +303,8 @@ function renderBuildings() {
     }).join('') : '';
     localizeNow(strip);
 }
-function openPanel(kind: Panel, id = "", tab = "overview") { if(kind==="oasis")buildingOasisId=id; if(kind==="village")buildingOasisId=null; reportDetail = ""; panel = kind; panelId = id; panelTab = tab; page = 0; el("drawer").hidden = false; el("game").classList.add("has-drawer"); renderDrawer(true); renderBuildings(); }
-function closePanel() { panel = null; el("drawer").hidden = true; el("game").classList.remove("has-drawer"); renderBuildings(); }
+function openPanel(kind: Panel, id = "", tab = "overview") { buildingOasisId = kind === "oasis" ? id : null; reportDetail = ""; panel = kind; panelId = id; panelTab = tab; page = 0; el("drawer").hidden = false; el("game").classList.add("has-drawer"); renderDrawer(true); renderBuildings(); renderArmiesStrip(); }
+function closePanel() { buildingOasisId = null; panel = null; el("drawer").hidden = true; el("game").classList.remove("has-drawer"); renderBuildings(); renderArmiesStrip(); }
 function openBuilding(id: string) { const t = state?.economy?.targets.find(t => t.id === id); if (!t)
     return; selectedUnit = ""; openPanel("building", id, t.name === "Market" ? "trade" : ["Barracks", "Stable", "SiegeWorkshop"].includes(t.name) ? "training" : "overview"); }
 function loadArmy() { const a = army(); if (!a)
@@ -309,6 +316,7 @@ function affordable(cost: Resources | null, multiplier = 1) { return !!cost && O
 function render(snapshot: Snapshot | null) { if (snapshot && snapshot.id === state?.id && snapshot.revision < state.revision)
     return; const previous = state; state = snapshot; gameAudio.update(snapshot); clockReceived = performance.now(); el("welcome").hidden = !!snapshot || panel === "rooms"; if (!snapshot) {
     el('resources').innerHTML='';el('muster-hud').hidden=true;el('village-biome').hidden=true;
+    const armyStrip = document.getElementById('army-strip'); if (armyStrip) armyStrip.innerHTML = '';
     alertBanner = ""; el("important-alerts").innerHTML = ""; el("important-alerts").hidden = true; el("game").classList.remove("has-live-events");
     el("work-queue").innerHTML = "";
     el("match-clock").textContent = "A new adventure";
@@ -327,8 +335,210 @@ function render(snapshot: Snapshot | null) { if (snapshot && snapshot.id === sta
 } const economy = snapshot.economy; el("resources").innerHTML = economy ? Object.entries(economy.resources).map(([name, count]) => {
     const p = economy.production?.find(p => p.resource.toLowerCase() === name);
     return `<button class="resource" data-action="production" data-id="${name}" title="${p ? `${p.netPerMinute.toFixed(1)} ${name}/minute net / ${p.percent.toFixed(1)}% of normal output` : name}">${icon(name)}<span><strong>${count.toLocaleString()}<i class="production-percent ${(p?.netPerMinute ?? 0) < 0 ? "negative" : "positive"}">${(p?.percent ?? 100).toFixed(0)}%</i></strong><small>${name.toUpperCase()}</small></span></button>`;
-}).join("") : ""; el("army-count").textContent = String(ownArmies().length); map.setAlliances(snapshot.alliances, snapshot.you); map.update(snapshot.world, snapshot.players, snapshot.you); renderWorld(); renderBuildings(); renderImportantAlerts(); renderTimers(); renderDrawer(); renderIntelligence(); status(); progressFeedback.update(previous,snapshot); if (snapshot.result && !previous?.result)
+}).join("") : ""; const armyCountBadge = document.getElementById("army-count"); if (armyCountBadge) armyCountBadge.textContent = String(ownArmies().length); map.setAlliances(snapshot.alliances, snapshot.you); map.update(snapshot.world, snapshot.players, snapshot.you); renderWorld(); renderPossessions(); renderArmiesStrip(); renderBuildings(); renderImportantAlerts(); renderTimers(); renderDrawer(); renderIntelligence(); status(); progressFeedback.update(previous,snapshot); if (snapshot.result && !previous?.result)
     openPanel("standings"); }
+function renderPossessions() {
+    const container = el("realm-possessions");
+    if (!container) return;
+    if (!state?.you || !state?.world || state.status !== "Running") {
+        container.innerHTML = "";
+        return;
+    }
+    const myVillages = (state.world.warfare?.settlements ?? []).filter(s => s.ownerId === state!.you && !s.ruined);
+    const myOases = (state.world.oases ?? []).filter(o => o.ownerId === state!.you);
+    if (myVillages.length === 0 && myOases.length === 0) {
+        container.innerHTML = "";
+        return;
+    }
+    const villageBadges = myVillages.map((v, i) => {
+        const isCurrent = state?.economy?.villageId === v.id;
+        return `<button class="possession-badge village-badge ${isCurrent ? 'active' : ''}" data-action="focus-possession" data-type="village" data-id="${v.id}" title="Province ${i + 1} · Level ${v.level}">
+            <span class="badge-icon">🏛</span><span class="badge-tag">P${i + 1}</span>
+        </button>`;
+    }).join("");
+    const oasisBadges = myOases.map(o => {
+        const res = o.resource.toLowerCase();
+        return `<button class="possession-badge oasis-badge oasis-${res}" data-action="focus-possession" data-type="oasis" data-id="${o.id}" title="${esc(o.name)} · +50% ${o.resource}">
+            <span class="badge-icon">${icon(res)}</span><span class="badge-tag">${o.resource[0]}</span>
+        </button>`;
+    }).join("");
+    container.innerHTML = `<div class="possession-strip">${villageBadges}${oasisBadges}</div>`;
+    localizeNow(container);
+}
+function getArmyStatus(a: ArmyView, isReinforcement: boolean): { kind: "defender" | "attacker" | "idle" | "other"; label: string } {
+    if (!state?.world) return { kind: "idle", label: "Idle" };
+
+    const battles = state.world.warfare?.battles ?? [];
+    for (const b of battles) {
+        if (b.status !== "Active") continue;
+        if (b.defenderId === a.id || b.defenderArmyIds?.includes(a.id)) {
+            return { kind: "defender", label: "Defending" };
+        }
+        if (b.attackerId === a.id || b.attackerArmyIds?.includes(a.id)) {
+            return { kind: "attacker", label: "Attacking" };
+        }
+    }
+
+    const oasisSieges = state.world.oasisSieges ?? [];
+    for (const os of oasisSieges) {
+        if (os.armyId === a.id || os.armyIds?.includes(a.id) || (os.attackerOwners?.includes(a.ownerId) && a.order === "Sieging")) {
+            return { kind: "attacker", label: "Sieging Oasis" };
+        }
+        if (a.defendingSiteId === os.oasisId && (a.order === "Guarding" || a.order === "Battle")) {
+            return { kind: "defender", label: "Defending Oasis" };
+        }
+    }
+
+    const sieges = state.world.warfare?.sieges ?? [];
+    for (const s of sieges) {
+        if (s.status !== "Active") continue;
+        if (s.armyId === a.id || s.armyIds?.includes(a.id)) {
+            return { kind: "attacker", label: "Sieging City" };
+        }
+        if (a.defendingSiteId === s.villageId && (a.order === "Guarding" || a.order === "Battle")) {
+            return { kind: "defender", label: "Defending City" };
+        }
+    }
+
+    if (["Attacking", "Approaching", "Sieging", "Intercepting"].includes(a.order)) {
+        return { kind: "attacker", label: a.order };
+    }
+
+    if (a.order === "Battle") {
+        if (a.defendingSiteId || isReinforcement) return { kind: "defender", label: "Defending" };
+        return { kind: "attacker", label: "Attacking" };
+    }
+
+    if (a.order === "Idle" || a.order === "Camped" || a.order === "Guarding") {
+        return { kind: "idle", label: a.order };
+    }
+
+    return { kind: "other", label: a.order };
+}
+function renderArmiesStrip() {
+    const strip = document.getElementById("army-strip");
+    if (!strip) return;
+    if (!state?.you || !state?.world || state.status !== "Running") {
+        strip.innerHTML = "";
+        return;
+    }
+
+    const myVillages = (state.world.warfare?.settlements ?? []).filter(s => s.ownerId === state!.you && !s.ruined);
+    const myVillageIds = new Set(myVillages.map(v => v.id));
+    const myOases = (state.world.oases ?? []).filter(o => o.ownerId === state!.you);
+    const myOasisIds = new Set(myOases.map(o => o.id));
+
+    const foreignReinforcements = (state.world.armies ?? []).filter(a => {
+        if (a.ownerId === state!.you) return false;
+        if (a.supportedOwnerId === state!.you) return true;
+        if (a.defendingSiteId && (myVillageIds.has(a.defendingSiteId) || myOasisIds.has(a.defendingSiteId))) return true;
+        return false;
+    });
+
+    const myArmies = ownArmies();
+    const shelf = document.querySelector('.army-shelf') as HTMLElement;
+    if (myArmies.length === 0 && foreignReinforcements.length === 0) {
+        if (shelf) shelf.hidden = true;
+        strip.innerHTML = "";
+        return;
+    }
+    if (shelf) shelf.hidden = false;
+
+    const cards: string[] = [];
+
+    // 1. Own armies
+    myArmies.forEach((a, index) => {
+        const isSelected = activeArmy === a.id || selection?.id === a.id;
+        const status = getArmyStatus(a, false);
+        let statusBadge = "";
+        if (status.kind === "defender") {
+            statusBadge = `<span class="army-status-badge status-defender" title="${t('Defending in battle')}"><svg viewBox="0 0 24 24"><path d="M12 2 3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6Z" fill="#38bdf8"/><path d="M12 5 5 8v4c0 4.2 2.9 8.1 7 9.2 4.1-1.1 7-5 7-9.2V8Z" fill="#0284c7"/></svg></span>`;
+        } else if (status.kind === "attacker") {
+            statusBadge = `<span class="army-status-badge status-attacker" title="${t('Attacking')}"><svg viewBox="0 0 24 24"><path d="m14 4 6 6-11 11-5-1 1-5L15 4Zm4-2 3 3-2 2-3-3 2-2Z" fill="#ef4444"/><path d="m10 4-6 6 11 11 5-1-1-5L9 4Zm-4-2-3 3 2 2 3-3-2-2Z" fill="#f87171"/></svg></span>`;
+        } else if (status.kind === "idle") {
+            statusBadge = `<span class="army-status-badge status-idle" title="${t('Idle')}"><span class="badge-zzz">ZzZz</span></span>`;
+        } else {
+            statusBadge = `<span class="army-status-badge status-moving" title="${esc(t(status.label))}"><span class="badge-move">${a.order === "Returning" ? "↩" : "➜"}</span></span>`;
+        }
+
+        const formation = a.formation ?? {};
+        const entries = Object.entries(formation).filter(([, n]) => n > 0).sort((x, y) => y[1] - x[1]);
+        const topUnitId = entries[0]?.[0];
+
+        let leadArtHtml = "";
+        if (topUnitId) {
+            leadArtHtml = `<div class="army-lead-art" title="${esc(unitCatalog.get(topUnitId)?.displayName ?? topUnitId)}">${unitArtwork(topUnitId)}</div>`;
+        } else if (a.wagons > 0 && a.soldiers === 0) {
+            leadArtHtml = `<div class="army-lead-art lead-icon" title="${t('Wagons')}">🛒</div>`;
+        } else {
+            leadArtHtml = `<div class="army-lead-art lead-icon" title="${t('Troops')}">⚔</div>`;
+        }
+
+        const armyTitle = `${currentLanguage() === 'ar' ? 'جيش' : 'Army'} ${index + 1}`;
+        const totalUnits = a.soldiers + a.wagons;
+        const countHtml = `<strong class="army-total-count">${totalUnits.toLocaleString()}</strong>`;
+
+        cards.push(`<article class="army-card ${isSelected ? 'selected' : ''}">
+            <button class="army-card-btn" data-action="focus-army" data-id="${a.id}" aria-label="${esc(armyTitle)}">
+                <div class="army-card-header">
+                    <span class="army-name-tag">${esc(armyTitle)}</span>
+                    ${statusBadge}
+                </div>
+                ${leadArtHtml}
+                <div class="army-card-bottom">${countHtml}</div>
+            </button>
+        </article>`);
+    });
+
+    // 2. Foreign reinforcements stationed in our villages or oases
+    foreignReinforcements.forEach((a) => {
+        const isSelected = selection?.id === a.id;
+        const status = getArmyStatus(a, true);
+        let statusBadge = "";
+        if (status.kind === "defender") {
+            statusBadge = `<span class="army-status-badge status-defender" title="${t('Defending in battle')}"><svg viewBox="0 0 24 24"><path d="M12 2 3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6Z" fill="#38bdf8"/><path d="M12 5 5 8v4c0 4.2 2.9 8.1 7 9.2 4.1-1.1 7-5 7-9.2V8Z" fill="#0284c7"/></svg></span>`;
+        } else if (status.kind === "attacker") {
+            statusBadge = `<span class="army-status-badge status-attacker" title="${t('Attacking')}"><svg viewBox="0 0 24 24"><path d="m14 4 6 6-11 11-5-1 1-5L15 4Zm4-2 3 3-2 2-3-3 2-2Z" fill="#ef4444"/><path d="m10 4-6 6 11 11 5-1-1-5L9 4Zm-4-2-3 3 2 2 3-3-2-2Z" fill="#f87171"/></svg></span>`;
+        } else if (status.kind === "idle") {
+            statusBadge = `<span class="army-status-badge status-idle" title="${t('Idle')}"><span class="badge-zzz">ZzZz</span></span>`;
+        } else {
+            statusBadge = `<span class="army-status-badge status-moving" title="${esc(t(status.label))}"><span class="badge-move">${a.order === "Returning" ? "↩" : "➜"}</span></span>`;
+        }
+
+        const formation = a.formation ?? {};
+        const entries = Object.entries(formation).filter(([, n]) => n > 0).sort((x, y) => y[1] - x[1]);
+        const topUnitId = entries[0]?.[0];
+
+        let leadArtHtml = "";
+        if (topUnitId) {
+            leadArtHtml = `<div class="army-lead-art" title="${esc(unitCatalog.get(topUnitId)?.displayName ?? topUnitId)}">${unitArtwork(topUnitId)}</div>`;
+        } else if (a.wagons > 0 && a.soldiers === 0) {
+            leadArtHtml = `<div class="army-lead-art lead-icon" title="${t('Wagons')}">🛒</div>`;
+        } else {
+            leadArtHtml = `<div class="army-lead-art lead-icon" title="${t('Troops')}">⚔</div>`;
+        }
+
+        const ownerName = owner(a.ownerId);
+        const villageName = currentLanguage() === 'ar' ? `قرية ${ownerName}` : `${ownerName}'s village`;
+        const armyTitle = currentLanguage() === 'ar' ? 'تعزيز' : 'Support';
+        const totalUnits = a.soldiers + a.wagons;
+        const countHtml = `<strong class="army-total-count">${totalUnits.toLocaleString()}</strong>`;
+
+        cards.push(`<article class="army-card reinforcement ${isSelected ? 'selected' : ''}">
+            <button class="army-card-btn" data-action="focus-army" data-id="${a.id}" aria-label="${esc(armyTitle)} · ${esc(villageName)}">
+                <div class="army-card-header">
+                    <span class="army-name-tag">${esc(armyTitle)}</span>
+                    ${statusBadge}
+                </div>
+                ${leadArtHtml}
+                <div class="army-card-bottom">${countHtml}<small class="army-foreign-origin" title="${esc(villageName)}">${esc(villageName)}</small></div>
+            </button>
+        </article>`);
+    });
+
+    strip.innerHTML = cards.join("");
+    localizeNow(strip);
+}
 function renderTimers() { if (!state)
     return; const elapsed = now(); el("match-clock").textContent = state.status === "Running" ? `${time(elapsed)} · ${state.shieldRemainingSeconds > 0 ? "Protected" : "Open frontier"}` : state.status; renderImportantAlerts(); el("work-queue").innerHTML = state.economy?.jobs.slice(0, 4).map(j => `<button class="work-item" data-action="job" data-id="${j.targetId}">⚔ ${esc(state!.economy!.targets.find(t => t.id === j.targetId)?.name)}<strong>${time(j.completesAt - elapsed)}</strong></button>`).join("") ?? ""; document.querySelectorAll<HTMLElement>("[data-deadline]").forEach(item => item.textContent = time(Number(item.dataset.deadline) - elapsed)); document.querySelectorAll<HTMLProgressElement>('[data-training-start]').forEach(bar => { const start=Number(bar.dataset.trainingStart),end=Number(bar.dataset.trainingEnd);bar.value=Math.min(1,Math.max(0,(elapsed-start)/Math.max(.01,end-start))); }); renderBuildings(); }
 const descriptions: Record<string, string> = { Market: "Exchange goods with other players. Each level adds an offer slot. Goods and wagons are reserved until cancellation or trade delivery.", MainHall: "The heart of your province. Higher levels unlock more automatic training queues.", Warehouse: "Protect and store your supplies. Upgrade to increase the capacity of every resource.", Barracks: "Recruit infantry and archers. Prepare your next expedition here.", Stable: "Train cavalry, scouts and wagons to keep your armies moving.", SiegeWorkshop: "Build catapults, rams and siege towers to overcome fortified cities.", Smithy: "Improve the weapons and armor of forces based in this village.", Hospital: "Wounded soldiers return here and recover automatically, using iron and wheat.", Wall: "Protect your garrison. Higher walls resist automatic attacks and siege engines." };
@@ -439,7 +649,20 @@ function villagePanel() {
     const city = state!.world?.warfare?.settlements.find(c => c.id === panelId);
     if (!city) return '<p class="empty">This settlement is no longer available.</p>';
     const mine = city.ownerId === state!.you, scouted = !mine ? scoutedSiteUnits(city.id, city.position) : null;
-    return `<div class="panel-hero">${buildingArt("MainHall", city.tribe)}<span class="level-seal">${city.level}<small>LEVEL</small></span></div><div class="stat-line"><span>Commander</span><b>${esc(owner(city.ownerId))}</b></div><div class="stat-line"><span>Settlement</span><b>${settlementStage(city.level)}</b></div><small>Town at level 6. City at level 12.</small><div class="stat-line"><span>People</span><b>${city.tribe}</b></div><div class="stat-line"><span>Location</span><b>${Math.round(city.position.x)} : ${Math.round(city.position.y)}</b></div><div class="stat-line"><span>Status</span><b>${city.ruined ? "Ruins" : city.besieged ? "Under siege" : "Independent"}</b></div>${scouted ? (Object.keys(scouted).length ? formationPortraits(scouted, "Scouted composition", "hostile") : '<small class="muted">Scouted: no defending troops inside.</small>') : ""}${villageAlliances(city.ownerId)}${!city.ruined ? allianceControls(city.ownerId) : ""}<div class="panel-footer">${mine ? button("Manage buildings", "enter", city.id, "primary wide", city.ruined) : button("Plan an attack →", "plan-attack", city.id, "primary wide", !running() || city.ruined || state!.shieldRemainingSeconds > 0)}${!mine && state!.shieldRemainingSeconds > 0 ? `<small>Protection expires in ${time(state!.shieldRemainingSeconds)}</small>` : ""}${!mine ? button("Send scouts", "scout-target", city.id, "quiet wide", !running() || city.ruined) : ""}${button("Send reinforcements", "reinforce", city.id, "quiet wide", !running() || city.ruined)}${button("Camp here", "plan-camp", "", "primary wide", !running() || city.ruined)}${mine ? button("Send an expedition", "rally", "", "quiet wide", !running()) : ""}</div>${resourceTransfer(city.id, city.ruined)}`;
+    const villageActions: string[] = [];
+    if (mine) {
+        villageActions.push(`<button data-action="enter" data-id="${city.id}" class="action-btn primary grid-full" ${city.ruined ? 'disabled' : ''}><span class="btn-icon">🏛</span><span>Manage buildings</span></button>`);
+        villageActions.push(`<button data-action="reinforce" data-id="${city.id}" class="action-btn action-reinforce" ${!running() || city.ruined ? 'disabled' : ''}><span class="btn-icon">🛡</span><span>Send reinforcements</span></button>`);
+        villageActions.push(`<button data-action="plan-camp" data-id="${city.id}" class="action-btn action-camp" ${!running() || city.ruined ? 'disabled' : ''}><span class="btn-icon">⛺</span><span>Camp here</span></button>`);
+        villageActions.push(`<button data-action="rally" class="action-btn grid-full" ${!running() ? 'disabled' : ''}><span class="btn-icon">⚔</span><span>Send an expedition</span></button>`);
+    } else {
+        villageActions.push(`<button data-action="plan-attack" data-id="${city.id}" class="action-btn action-capture primary" ${!running() || city.ruined || state!.shieldRemainingSeconds > 0 ? 'disabled' : ''}><span class="btn-icon">⚔</span><span>Plan an attack →</span></button>`);
+        villageActions.push(`<button data-action="scout-target" data-id="${city.id}" class="action-btn action-scout" ${!running() || city.ruined ? 'disabled' : ''}><span class="btn-icon">👁</span><span>Send scouts</span></button>`);
+        villageActions.push(`<button data-action="reinforce" data-id="${city.id}" class="action-btn action-reinforce" ${!running() || city.ruined ? 'disabled' : ''}><span class="btn-icon">🛡</span><span>Send reinforcements</span></button>`);
+        villageActions.push(`<button data-action="plan-camp" data-id="${city.id}" class="action-btn action-camp" ${!running() || city.ruined ? 'disabled' : ''}><span class="btn-icon">⛺</span><span>Camp here</span></button>`);
+    }
+    const villageGrid = `<div class="panel-action-grid">${villageActions.join('')}</div>`;
+    return `<div class="panel-hero">${buildingArt("MainHall", city.tribe)}<span class="level-seal">${city.level}<small>LEVEL</small></span></div><div class="stat-line"><span>Commander</span><b>${esc(owner(city.ownerId))}</b></div><div class="stat-line"><span>Settlement</span><b>${settlementStage(city.level)}</b></div><small>Town at level 6. City at level 12.</small><div class="stat-line"><span>People</span><b>${city.tribe}</b></div><div class="stat-line"><span>Location</span><b>${Math.round(city.position.x)} : ${Math.round(city.position.y)}</b></div><div class="stat-line"><span>Status</span><b>${city.ruined ? "Ruins" : city.besieged ? "Under siege" : "Independent"}</b></div>${scouted ? (Object.keys(scouted).length ? formationPortraits(scouted, "Scouted composition", "hostile") : '<small class="muted">Scouted: no defending troops inside.</small>') : ""}${villageAlliances(city.ownerId)}${!city.ruined ? allianceControls(city.ownerId) : ""}<div class="panel-footer">${!mine && state!.shieldRemainingSeconds > 0 ? `<small>Protection expires in ${time(state!.shieldRemainingSeconds)}</small>` : ""}${villageGrid}</div>${resourceTransfer(city.id, city.ruined)}`;
 }
 function loadDispatchFormation() {
     formation = {};
@@ -448,22 +671,12 @@ function loadDispatchFormation() {
         formation = Object.fromEntries(Object.entries(selected?.formation ?? {}).filter(([, count]) => count > 0));
         return;
     }
-    const garrison = state?.economy?.garrison ?? {};
-    if (dispatchMission === "scout") {
-        const scoutId = Object.keys(garrison).find(id => role(id) === "scout");
-        if (scoutId) formation[scoutId] = Math.min(5, garrison[scoutId]!);
-    } else {
-        const id = Object.keys(garrison).find(id => role(id) === "infantry");
-        if (id) formation[id] = Math.min(10, garrison[id]!);
-        const wagon = Object.keys(garrison).find(id => role(id) === "wagon");
-        if (wagon) formation[wagon] = Math.min(1, garrison[wagon]!);
-    }
 }
 function openDispatch(mission: "attack" | "reinforce" | "blockade" | "scout" | "camp" = "attack") {
     dispatchMission = mission; attackObjective = "Raid"; campLoadedOnly = true;
     dispatchArmy = preferredDispatchArmy && ownArmies().some(a => a.id === preferredDispatchArmy && !["Battle", "Sieging", "Returning"].includes(a.order)) ? preferredDispatchArmy : "new";
     preferredDispatchArmy = "";
-    afterAttack = selection?.kind === "oasis" && mission !== "scout" ? "Hold" : "Return";
+    afterAttack = ((selection?.kind === "oasis" && mission !== "scout") || mission === "camp") ? "Hold" : "Return";
     page = 0; loadDispatchFormation(); openPanel("dispatch");
 }
 function highlightDispatchArmy(focus = false) {
@@ -494,7 +707,7 @@ function dispatchPanel() {
         : target === "oasis" ? "Capture this oasis to increase your home village production. No resource loot." : "Choose units and send your orders.";
     const sendLabel = dispatchMission === "camp" ? "Establish camp" : dispatchMission === "scout" ? "Send scouts" : dispatchMission === "reinforce" ? "Send reinforcements" : dispatchMission === "blockade" ? "Besiege oasis" : target === "oasis" ? "Capture oasis" : "Send army";
     const formationEditor = units.length ? `<div class="dispatch-formation">${units.slice(page * 9, page * 9 + 9).map(([id, count]) => `<div class="dispatch-unit-card">${unitPortrait(id)}<span class="dispatch-unit-meta"><strong>${esc(unitCatalog.get(id)?.displayName ?? pretty(role(id)))}</strong><small>${count} available</small></span><div class="dispatch-input-row"><input data-formation="${id}" aria-label="${role(id)} count" type="number" inputmode="numeric" min="0" max="${count}" value="${formation[id] ?? 0}"/><button type="button" class="dispatch-quick-btn" data-action="formation-quick" data-id="${id}" data-max="${count}" title="Half / All">½</button></div></div>`).join("")}</div>${units.length > 9 ? pager(units.length, 9) : ""}` : '<p class="empty">No suitable units are available for this order.</p>';
-    return `<div class="dispatch-destination"><strong>${esc(selection?.name ?? "Open meadow")}</strong><small>${description}</small></div>${oasis ? `<small class="oasis-specialty">${icon(oasis.resource.toLowerCase())} +50% ${oasis.resource} / +25% other resources</small>` : ""}${dispatchArmyLocation()}${dispatchArmy === "new" ? select("dispatch-source", "Dispatch from village", (state?.world?.warfare?.settlements ?? []).filter(c => c.ownerId === state?.you && !c.ruined).map((c, i) => ({ value: c.id, label: `Province ${i + 1} / Level ${c.level}` })), e.villageId) : ""}${candidateArmies.length ? select("dispatch-army", "Choose your force", [{ value: "new", label: "Raise a new expedition" }, ...candidateArmies.map((a, i) => ({ value: a.id, label: `Army ${i + 1} / ${a.soldiers + a.wagons} units` }))], dispatchArmy) : ""}${formationEditor}${dispatchArmy === "new" ? '<div id="dispatch-provisions"></div>' : '<p class="muted">Only the selected units receive this order. The remainder keeps its current assignment, food and loot.</p>'}<div id="attack-objectives"></div><div class="dispatch-directives">${dispatchMission === "camp" ? `<label class="check"><input id="camp-loaded-only" type="checkbox" ${campLoadedOnly ? "checked" : ""}/> Raid only loaded caravans and armies</label>` : ["reinforce", "scout"].includes(dispatchMission) ? "" : afterSelect()}</div><div class="panel-footer">${button(sendLabel, "dispatch-send", "", "primary wide", !running())}<small>Automatic supplies depart only when provisions run low.</small></div>`;
+    return `<div class="dispatch-destination"><strong>${esc(selection?.name ?? "Open meadow")}</strong><small>${description}</small></div>${oasis ? `<small class="oasis-specialty">${icon(oasis.resource.toLowerCase())} +50% ${oasis.resource} / +25% other resources</small>` : ""}${dispatchArmyLocation()}${dispatchArmy === "new" ? select("dispatch-source", "Dispatch from village", (state?.world?.warfare?.settlements ?? []).filter(c => c.ownerId === state?.you && !c.ruined).map((c, i) => ({ value: c.id, label: `Province ${i + 1} / Level ${c.level}` })), e.villageId) : ""}${candidateArmies.length ? select("dispatch-army", "Choose your force", [{ value: "new", label: "Raise a new expedition" }, ...candidateArmies.map((a, i) => ({ value: a.id, label: `Army ${i + 1} / ${a.soldiers + a.wagons} units` }))], dispatchArmy) : ""}${formationEditor}${dispatchArmy === "new" ? '<div id="dispatch-provisions"></div>' : '<p class="muted">Only the selected units receive this order. The remainder keeps its current assignment, food and loot.</p>'}<div id="attack-objectives"></div><div class="dispatch-directives">${dispatchMission === "camp" ? `<label class="check"><input id="camp-loaded-only" type="checkbox" ${campLoadedOnly ? "checked" : ""}/> Raid only loaded caravans and armies</label>` : ""}${["reinforce", "scout"].includes(dispatchMission) ? "" : afterSelect()}</div><div class="panel-footer">${button(sendLabel, "dispatch-send", "", "primary wide", !running())}<small>Automatic supplies depart only when provisions run low.</small></div>`;
 }
 function objectiveAllowed(objective=attackObjective) {
     if(selection?.kind!=="village"||dispatchMission!=="attack")return true;
@@ -624,11 +837,41 @@ function renderDrawer(force = false) {
     }
     else if (panel === "oasis") {
         const oasis = state?.world?.oases.find(o => o.id === panelId);
-        title = oasis?.name ?? "Oasis"; kicker = "OASIS CONTROL";
+        title = oasis?.name ?? "Oasis";
+        if (oasis?.ownerId) {
+            const linkedCity = state?.world?.warfare?.settlements.find(c => c.id === oasis.villageId);
+            const vOwner = owner(linkedCity?.ownerId ?? oasis.ownerId);
+            const isMine = (linkedCity?.ownerId ?? oasis.ownerId) === state?.you;
+            const vName = isMine
+                ? (currentLanguage() === 'ar' ? 'قريتك' : 'Your village')
+                : (currentLanguage() === 'ar' ? `قرية ${vOwner}` : `${vOwner}'s village`);
+            kicker = currentLanguage() === 'ar' ? `هذه الواحة تابعة لـ ${vName}` : `Linked to ${vName}`;
+        } else {
+            kicker = currentLanguage() === 'ar' ? 'واحة حرة غير محتلة' : 'Unclaimed oasis';
+        }
+
+        let effectiveGarrison = { ...(oasis?.garrison ?? {}) };
+        if (oasis && state?.world?.armies && state?.you) {
+            const you = state.you;
+            const stationedArmies = state.world.armies.filter(a =>
+                a.defendingSiteId === oasis.id ||
+                (Math.hypot(a.position.x - oasis.position.x, a.position.y - oasis.position.y) <= 40 &&
+                 (a.ownerId === you || a.supportedOwnerId === you || oasis.ownerId === you))
+            );
+            for (const a of stationedArmies) {
+                for (const [unitId, count] of Object.entries(a.formation ?? {})) {
+                    if (count > 0 && !(oasis.garrison && oasis.garrison[unitId])) {
+                        effectiveGarrison[unitId] = (effectiveGarrison[unitId] ?? 0) + count;
+                    }
+                }
+            }
+        }
+        const oasisWithGarrison = oasis ? { ...oasis, garrison: effectiveGarrison } : null;
+
         const protectedEnemy = !!oasis?.ownerId && oasis.ownerId !== state?.you && (state?.shieldRemainingSeconds ?? 0) > 0;
-        html = oasis ? oasisPanel(oasis,state!.you,owner(oasis.ownerId),running(),protectedEnemy,
-            (state?.world?.warfare?.settlements??[]).filter(c=>c.ownerId===state!.you&&!c.ruined).length>1,
-            state?.world?.warfare?.settlements.find(c=>c.id===oasis.villageId)?.position) : '<p class="empty">Oasis not found.</p>';
+        html = oasisWithGarrison && state ? oasisPanel(oasisWithGarrison, state.you, owner(oasisWithGarrison.ownerId), running(), protectedEnemy,
+            (state.world?.warfare?.settlements ?? []).filter(c => c.ownerId === state!.you && !c.ruined).length > 1,
+            state.world?.warfare?.settlements.find(c => c.id === oasisWithGarrison.villageId)?.position) : '<p class="empty">Oasis not found.</p>';
     }
     else if (panel === "village") {
         title = owner(state!.world?.warfare?.settlements.find(c => c.id === panelId)?.ownerId) + "'s village";
@@ -790,6 +1033,46 @@ document.addEventListener("click", event => {
         else openPanel('alerts');return;
     }
     if(action==='oasis-wall-info'){selection=state?.world?.oases.find(o=>o.id===id)?{...state.world.oases.find(o=>o.id===id)!,kind:'oasis'}:null;openPanel('oasis',id);return;}
+    if(action==='focus-possession'){
+        const type = b.dataset.type;
+        if (type === 'village') {
+            const v = (state?.world?.warfare?.settlements ?? []).find(s => s.id === id);
+            if (v) {
+                map.focus(v.position);
+                selection = { ...v, kind: 'village', name: owner(v.ownerId) };
+                map.select(selection);
+                void perform(async () => {
+                    if (state?.economy?.villageId !== v.id) await command("SelectVillage", v.id);
+                    openPanel("village", v.id);
+                    renderBuildings();
+                });
+            }
+        } else if (type === 'oasis') {
+            const o = (state?.world?.oases ?? []).find(s => s.id === id);
+            if (o) {
+                map.focus(o.position);
+                selection = { ...o, kind: 'oasis' };
+                map.select(selection);
+                openPanel("oasis", o.id);
+            }
+        }
+        return;
+    }
+    if (action === 'focus-army') {
+        const a = state?.world?.armies.find(x => x.id === id);
+        if (a) {
+            selection = { ...a, kind: 'army', name: owner(a.ownerId) };
+            map.focus(a.position);
+            map.select(selection);
+            if (a.ownerId === state?.you) {
+                activeArmy = a.id;
+                loadArmy();
+            }
+            openPanel('army', a.id);
+            renderArmiesStrip();
+        }
+        return;
+    }
     if(action==='plan-blockade'){openDispatch('blockade');return;}
     if(action==='plan-camp'){openDispatch('camp');return;}
     if(action==='scout-target'){openDispatch('scout');return;}
@@ -961,16 +1244,16 @@ el('language-select').onchange = () => setLanguage(el<HTMLInputElement>('languag
 el<HTMLInputElement>('language-select').value=currentLanguage();
 el('village-biome').onclick=()=>{selection=null;openPanel('biome',el('village-biome').dataset.id??'');};
 window.addEventListener('languagechange',()=>{map.refreshLanguage();renderDrawer(true);localizeNow();});
-el("view-buildings").onclick = () => void perform(async () => {
+document.getElementById("view-buildings")?.addEventListener("click", () => void perform(async () => {
     buildingOasisId=null;
     const primary = state?.players.find(p => p.id === state?.you)?.villageId;
     if (primary && state?.economy?.villageId !== primary) await command("SelectVillage", primary);
     closePanel(); renderBuildings();
-});
-el("view-world").onclick = () => showMap();
+}));
+document.getElementById("view-world")?.addEventListener("click", () => showMap());
 el("view-reports").onclick = () => openPanel("reports", "", "all");
 el("muster-hud").onclick = () => openPanel("muster");
-el("view-armies").onclick = () => openPanel("armies");
+document.getElementById("view-armies")?.addEventListener("click", () => openPanel("armies"));
 el("view-standings").onclick = () => openPanel("standings");
 el("realm-menu").onclick = () => gameMenu.open();
 el("close-drawer").onclick = () => { closePanel(); if (!state)

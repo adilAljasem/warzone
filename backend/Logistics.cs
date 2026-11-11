@@ -206,6 +206,7 @@ public sealed partial class LogisticsWorld
                 selected.Destination = campSite; selected.DefendingSiteId = null; selected.SupportedOwnerId = null; selected.CampRadius = null;
                 selected.Order = "Camping"; selected.TargetId = null; selected.ActionSeconds = 0; selected.AttackOrderedAt = 0;
                 selected.CampLoadedOnly = command.LoadedOnly;
+                selected.AfterAttack = command.AfterAttack;
                 break;
             case CommandKind.RecallArmy:
                 ApplyRetreatLoss(selected, now);
@@ -327,14 +328,46 @@ public sealed partial class LogisticsWorld
             if (Distance(convoy.Position, destination) > 3) continue;
             if (!convoy.Returning && target is not null)
             {
-                var delivered = Math.Min(convoy.WheatCargo, Math.Max(0, target.Capacity - target.Wheat - target.Loot.Total));
-                target.Wheat += delivered; convoy.WheatCargo -= delivered; target.AdjustMorale(12);
+                var returnTravel = Distance(convoy.Position, ConvoyCityDestination(convoy, home)) / convoy.Speed;
+                var returnUpkeep = convoy.Troops.Sum(x => x.Count * x.Unit.WheatUpkeep) / 60;
+                var returnProvisions = Math.Ceiling(returnUpkeep * (returnTravel + 45));
+                var availableToGive = Math.Max(0, convoy.WheatCargo - returnProvisions);
+
+                var spaceForFood = Math.Max(0, target.Capacity - target.Wheat - target.Loot.Total);
+                var delivered = Math.Min(availableToGive, spaceForFood);
+                if (delivered > 0)
+                {
+                    target.Wheat += delivered;
+                    convoy.WheatCargo -= delivered;
+                    target.AdjustMorale(12);
+                }
+
+                var convoyCapacity = convoy.Troops.Sum(x => (double)x.Count * x.Unit.CarryCapacity);
+                var convoySpace = Math.Max(0, convoyCapacity - convoy.WheatCargo - convoy.Cargo.Total);
+                if (target.Loot.Total > 0 && convoySpace > 0)
+                {
+                    var lootFraction = Math.Min(1.0, convoySpace / (double)target.Loot.Total);
+                    var lootTaken = convoySpace >= target.Loot.Total ? target.Loot : target.Loot.Fraction(lootFraction);
+                    target.Loot -= lootTaken;
+                    convoy.Cargo += lootTaken;
+                    Note(convoy.OwnerId, now, $"Collection wagon gathered {ResourceText(lootTaken)} from your camp and is returning to the village.", "camp-loot", targetId: target.Id);
+                }
+                else if (delivered > 0)
+                {
+                    Note(convoy.OwnerId, now, $"Supply delivered: {Math.Floor(delivered)} wheat. The convoy is returning.");
+                }
+
                 convoy.Returning = true;
-                Note(convoy.OwnerId, now, $"Supply delivered: {Math.Floor(delivered)} wheat. The convoy is returning.");
             }
             else
             {
                 if (home.Besieged) continue;
+                if (convoy.Cargo.Total > 0)
+                {
+                    home.ReceiveCargo(convoy.Cargo);
+                    Note(convoy.OwnerId, now, $"Convoy safely returned with camp cargo: {ResourceText(convoy.Cargo)}.", "camp-loot-delivered", targetId: home.Village.Id);
+                    convoy.Cargo = new();
+                }
                 home.Arrive(convoy.Troops, convoy.WheatCargo);
                 convoys.Remove(convoy);
             }
@@ -343,9 +376,8 @@ public sealed partial class LogisticsWorld
     private void Supply(Army army, double now)
     {
         if(OasisFoodSource(army) is not null){army.SupplyStatus="Supplied by oasis wheat";return;}
-        if (!army.AutoSupplyEnabled) { army.SupplyStatus = "Manual supply"; return; }
         if (army.Order == "Returning") { army.SupplyStatus = "Returning home"; return; }
-        if (convoys.Any(x => x.TargetArmyId == army.Id)) { army.SupplyStatus = "Convoy in transit"; return; }
+        if (convoys.Any(x => x.TargetArmyId == army.Id && !x.Returning)) { army.SupplyStatus = "Convoy in transit"; return; }
         if (now < army.NextSupplyAt) return;
         var home = villages[army.SupplyVillageId];
         if (home.Besieged) { army.SupplyStatus = "Source village blockaded"; return; }
@@ -354,24 +386,44 @@ public sealed partial class LogisticsWorld
         var speed = GameCatalog.Units[wagonId].Stats.Speed;
         if (army.Escorts > 0) speed = Math.Min(speed, GameCatalog.Units[escortId].Stats.Speed);
         var travel = Distance(home.Village.Position, army.Position) / speed;
-        var desired = Math.Min(army.Capacity, Math.Ceiling(army.Upkeep * (2 * travel + 180)));
-        if (army.Wheat > army.Upkeep * (travel + 100)) { army.SupplyStatus = "Well supplied"; return; }
+
+        var isCamp = army.CampRadius is not null || army.Order is "Camped" or "Camping";
+        var lootFull = isCamp && army.Loot.Total > 0 && (army.LootSpace <= 50 || (army.Capacity > 0 && (army.Wheat + army.Loot.Total) >= army.Capacity * 0.9));
+        var needsFood = army.Wheat <= army.Upkeep * (travel + 100);
+
+        if (!army.AutoSupplyEnabled && !lootFull) { army.SupplyStatus = "Manual supply"; return; }
+        if (!needsFood && !lootFull) { army.SupplyStatus = "Well supplied"; return; }
+
+        var wagonCapacity = GameCatalog.Units[wagonId].Stats.CarryCapacity;
+        var desiredFood = Math.Min(army.Capacity, Math.Ceiling(army.Upkeep * (2 * travel + 180)));
+        var foodWagons = Math.Clamp((int)Math.Ceiling(desiredFood / wagonCapacity), 1, 20);
+        var lootWagons = lootFull ? (int)Math.Max(1, Math.Ceiling(army.Loot.Total / (double)wagonCapacity)) : 0;
+        var wagonsNeeded = army.SupplyWagons == 0 ? Math.Max(foodWagons, lootWagons) : Math.Max(army.SupplyWagons, lootWagons);
+
+        var availWagons = home.Available(wagonId);
+        if (availWagons < 1) { army.SupplyStatus = "Waiting for wagons"; army.NextSupplyAt = now + 5; return; }
+        if (army.Escorts > 0 && home.Available(escortId) < army.Escorts)
+        { army.SupplyStatus = "Waiting for escorts"; army.NextSupplyAt = now + 5; return; }
+
+        var count = Math.Min(wagonsNeeded, availWagons);
         var escortUpkeep = army.Escorts * GameCatalog.Units[escortId].Stats.WheatUpkeep / 60;
         var wagonUpkeep = GameCatalog.Units[wagonId].Stats.WheatUpkeep / 60;
-        desired += Math.Ceiling((escortUpkeep + wagonUpkeep) * (2 * travel + 60));
-        var wagonCapacity = GameCatalog.Units[UnitId(home, UnitRole.Wagon)].Stats.CarryCapacity;
-        var count = army.SupplyWagons == 0 ? Math.Clamp((int)Math.Ceiling(desired / wagonCapacity), 1, 20) : army.SupplyWagons;
-        desired += Math.Ceiling((count - 1) * wagonUpkeep * (2 * travel + 60));
-        var cargo = (long)Math.Floor(Math.Min(desired, Math.Min(count * wagonCapacity, home.Resources.Wheat)));
+        var convoyTripProvisions = (long)Math.Ceiling((escortUpkeep + count * wagonUpkeep) * (2 * travel + 60));
+
+        var wheatToDeliver = needsFood ? (long)Math.Floor(Math.Min(desiredFood, Math.Max(0.0, Math.Min(count * wagonCapacity - convoyTripProvisions, (double)(home.Resources.Wheat - convoyTripProvisions))))) : 0L;
+        var cargo = Math.Min(convoyTripProvisions + wheatToDeliver, home.Resources.Wheat);
+
         if (cargo < 1) { army.SupplyStatus = "Waiting for wheat"; army.NextSupplyAt = now + 5; return; }
-        if (home.Available(wagonId) < count || home.Available(escortId) < army.Escorts)
-        { army.SupplyStatus = "Waiting for wagons or escorts"; army.NextSupplyAt = now + 5; return; }
+
         var requested = new Dictionary<string, int> { [wagonId] = count };
         if (army.Escorts > 0) requested[escortId] = army.Escorts;
         var troops = home.Depart(requested, cargo);
         convoys.Add(new(army.OwnerId, home.Village.Position, home.Village.Id, army.Id, troops, cargo));
         army.NextSupplyAt = now + 10; army.SupplyStatus = "Convoy in transit";
-        Note(army.OwnerId, now, $"A supply convoy departed with {count} wagon(s) and {army.Escorts} escorts.");
+        if (lootFull && !needsFood)
+            Note(army.OwnerId, now, $"A collection wagon departed to retrieve loot from your camp ({count} wagon(s)).", "camp-loot", targetId: army.Id);
+        else
+            Note(army.OwnerId, now, $"A supply convoy departed with {count} wagon(s) and {army.Escorts} escorts.");
     }
     private static readonly UnitRole[] BotCombatRoles =
     [
@@ -536,8 +588,39 @@ public sealed partial class LogisticsWorld
             var maxDispatch = warTime < protectionUntil ? 16 : 60;
             var formation = BuildBotFormation(home, oasis.Position, maxDispatch, warTime >= protectionUntil, personality == BotPersonality.Aggressive && warTime >= protectionUntil, reserve);
             if (formation is not null)
+            {
                 commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
                     formation.Values.Sum(), true, oasis.Position.X, oasis.Position.Y, UnitId(home, UnitRole.Infantry), 0, 2, oasis.Id, Formation: formation));
+                return;
+            }
+        }
+
+        // Bot establishing a strategic camp
+        if (warTime >= protectionUntil && !ownArmies.Any(a => a.CampRadius is not null))
+        {
+            var rivalCity = villages.Values.Where(v => v.Village.OwnerId != actor && !CampAllied(actor, v.Village.OwnerId) && !v.Ruined)
+                .OrderBy(v => Distance(v.Village.Position, home.Village.Position)).FirstOrDefault();
+            if (rivalCity is not null)
+            {
+                if (availableArmy is not null && availableArmy.Order == "Idle" && Fighters(availableArmy) >= 16)
+                {
+                    commands.Execute(actor, new(Guid.NewGuid(), CommandKind.CampArmy, availableArmy.Id, X: availableArmy.Position.X, Y: availableArmy.Position.Y, LoadedOnly: true));
+                    return;
+                }
+                if (ownArmies.Length < maxArmies && homeTroops >= (personality == BotPersonality.Aggressive ? 22 : 30) && home.Available(UnitId(home, UnitRole.Wagon)) >= 1)
+                {
+                    var campX = home.Village.Position.X * 0.45 + rivalCity.Village.Position.X * 0.55;
+                    var campY = home.Village.Position.Y * 0.45 + rivalCity.Village.Position.Y * 0.55;
+                    var campPos = new Position(Math.Clamp(campX, 100, 2900), Math.Clamp(campY, 100, 2900));
+                    var campFormation = BuildBotFormation(home, campPos, personality == BotPersonality.Aggressive ? 24 : 18, false, false, 8);
+                    if (campFormation is not null)
+                    {
+                        commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
+                            campFormation.Values.Sum(), true, campPos.X, campPos.Y, UnitId(home, UnitRole.Infantry), 0, 2,
+                            Camp: true, LoadedOnly: true, Formation: campFormation));
+                    }
+                }
+            }
         }
     }
     private static bool IsScoutOnly(Army army) =>
