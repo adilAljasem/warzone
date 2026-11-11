@@ -155,7 +155,7 @@ let state: Snapshot | null = null, panel: Panel | null = null, panelId = "", pan
 let selection: MapSelection | null = null, busy = false, connecting = false, page = 0, toastTimer = 0;
 let amount = 5, afterAttack = "Return", supplySource = "", supplyWagons = 0, escorts = 2, autoSupply = true;
 let attackObjective = "Raid";
-let dispatchMission: "attack" | "reinforce" | "blockade" | "scout" | "camp" = "attack";
+let dispatchMission: "attack" | "reinforce" | "blockade" | "scout" | "camp" | "burn" = "attack";
 const marketDraft: MarketDraft = { offerResource: "Wood", offerAmount: 500, askResource: "Iron", askAmount: 500 };
 const transferDraft: Resources = { wood: 100, iron: 100, stone: 100, wheat: 100 };
 let transferSource = "", chatOpen = window.innerWidth > 700, chatKey = "";
@@ -289,11 +289,30 @@ function renderBuildings() {
     const e = state?.economy, strip = el("building-strip");
     const oasis=state?.world?.oases.find(o=>o.id===buildingOasisId);
     const mainHallLevel = e?.targets.find(t => t.kind === "Building" && t.name === "MainHall")?.level ?? 1;
-    const key = JSON.stringify([oasis&&[oasis.id,oasis.wallLevel,oasis.wallHealth,oasis.underAttack,oasis.ownerId,oasis.wallUpgradeCost&&affordable(oasis.wallUpgradeCost)],e?.villageId, mainHallLevel, e?.targets.filter(t => t.kind === 'Building').map(t => [t.id,t.level,t.upgradeCost && affordable(t.upgradeCost)]), running(), panelId, currentTribe(), currentLanguage()]);
+    const key = JSON.stringify([oasis&&[oasis.id,oasis.wallLevel,oasis.wallHealth,oasis.underAttack,oasis.ownerId,oasis.level,oasis.burnedRemainingSeconds,oasis.wallUpgradeCost&&affordable(oasis.wallUpgradeCost),oasis.levelUpgradeCost&&affordable(oasis.levelUpgradeCost)],e?.villageId, mainHallLevel, e?.targets.filter(t => t.kind === 'Building').map(t => [t.id,t.level,t.upgradeCost && affordable(t.upgradeCost)]), running(), panelId, currentTribe(), currentLanguage()]);
     if (key === buildingKey) return; buildingKey = key;
     if(oasis){
+        const isAr = currentLanguage() === 'ar';
         const owned=oasis.ownerId===state?.you, canPay=e?.villageId!==oasis.villageId||affordable(oasis.wallUpgradeCost);
-        strip.innerHTML=`<article class="building-card oasis-wall-card"><button class="building-open" data-action="oasis-wall-info" data-id="${oasis.id}">${buildingArt('Wall',currentTribe())}<span class="building-name">Oasis wall</span><strong class="building-level"><small>Level</small> ${oasis.wallLevel}</strong></button><button class="building-upgrade" data-action="oasis-wall" data-id="${oasis.id}" aria-label="Upgrade oasis wall" title="${oasis.wallUpgradeCost?Object.entries(oasis.wallUpgradeCost).map(([r,n])=>n+' '+r).join(' / '):'Maximum level reached'}" ${!running()||!owned||oasis.underAttack||!oasis.wallUpgradeCost||!canPay?'disabled':''}>+</button></article><div class="oasis-ribbon-info"><strong>${oasis.wallLevel?Math.ceil(oasis.wallHealth)+' / '+oasis.wallMaximum:'No wall built'}</strong><small>${owned?'Use + to build or upgrade the oasis wall.':'This oasis belongs to another commander.'}</small></div>`;
+        const canPayLevel=e?.villageId!==oasis.villageId||affordable(oasis.levelUpgradeCost);
+        const isBurned = (oasis.burnedRemainingSeconds ?? 0) > 0;
+        const maxReached = isAr ? 'تم الوصول للحد الأقصى للمستوى' : 'Maximum level reached';
+        const wallTitle = oasis.wallUpgradeCost ? Object.entries(oasis.wallUpgradeCost).map(([r,n])=>`${n} ${isAr ? t(r) : r}`).join(' / ') : maxReached;
+        const levelTitle = !oasis.levelUpgradeCost ? maxReached : Object.entries(oasis.levelUpgradeCost).map(([r,n])=>`${n} ${isAr ? t(r) : r}`).join(' / ');
+        const wallCardName = isAr ? 'سور الواحة' : 'Oasis wall';
+        const levelCardName = isAr ? 'مستوى الواحة' : 'Oasis level';
+        const levelSmall = isAr ? 'المستوى' : 'Level';
+        const ribbonStats = isAr
+            ? `المستوى ${oasis.level || 0} من 5 (+${(oasis.level || 0) * 5}٪) · ${oasis.wallLevel ? Math.ceil(oasis.wallHealth) + ' / ' + oasis.wallMaximum + ' سور' : 'بدون سور'}`
+            : `Level ${oasis.level || 0} / 5 (+${(oasis.level || 0) * 5}%) · ${oasis.wallLevel ? Math.ceil(oasis.wallHealth) + ' / ' + oasis.wallMaximum + ' Wall' : 'No wall'}`;
+        const ribbonStatus = isBurned
+            ? (isAr ? 'الواحة محروقة وفي حالة خراب.' : 'Oasis is burned to ashes.')
+            : owned
+            ? (isAr ? 'استخدم + لترقية مستوى الواحة أو سورها.' : 'Use + to upgrade oasis level or wall.')
+            : (isAr ? 'هذه الواحة تابعة لقائد آخر.' : 'This oasis belongs to another commander.');
+        strip.innerHTML=`<article class="building-card oasis-wall-card"><button class="building-open" data-action="oasis-wall-info" data-id="${oasis.id}">${buildingArt('Wall',currentTribe())}<span class="building-name">${wallCardName}</span><strong class="building-level"><small>${levelSmall}</small> ${oasis.wallLevel}</strong></button><button class="building-upgrade" data-action="oasis-wall" data-id="${oasis.id}" aria-label="${isAr ? 'ترقية سور الواحة' : 'Upgrade oasis wall'}" title="${wallTitle}" ${!running()||!owned||oasis.underAttack||!oasis.wallUpgradeCost||!canPay||isBurned?'disabled':''}>+</button></article>
+        <article class="building-card oasis-level-card"><button class="building-open" data-action="oasis-wall-info" data-id="${oasis.id}"><span style="font-size:26px;display:flex;align-items:center;justify-content:center;height:48px;">🌴</span><span class="building-name">${levelCardName}</span><strong class="building-level"><small>${levelSmall}</small> ${oasis.level || 0}</strong></button><button class="building-upgrade" data-action="oasis-level" data-id="${oasis.id}" aria-label="${isAr ? 'ترقية مستوى الواحة' : 'Upgrade oasis level'}" title="${levelTitle}" ${!running()||!owned||oasis.underAttack||!oasis.levelUpgradeCost||!canPayLevel||isBurned?'disabled':''}>+</button></article>
+        <div class="oasis-ribbon-info"><strong>${ribbonStats}</strong><small>${ribbonStatus}</small></div>`;
         localizeNow(strip);return;
     }
     strip.innerHTML = e ? e.targets.filter(t => t.kind === "Building").map(target => {
@@ -672,7 +691,7 @@ function loadDispatchFormation() {
         return;
     }
 }
-function openDispatch(mission: "attack" | "reinforce" | "blockade" | "scout" | "camp" = "attack") {
+function openDispatch(mission: "attack" | "reinforce" | "blockade" | "scout" | "camp" | "burn" = "attack") {
     dispatchMission = mission; attackObjective = "Raid"; campLoadedOnly = true;
     dispatchArmy = preferredDispatchArmy && ownArmies().some(a => a.id === preferredDispatchArmy && !["Battle", "Sieging", "Returning"].includes(a.order)) ? preferredDispatchArmy : "new";
     preferredDispatchArmy = "";
@@ -700,14 +719,24 @@ function dispatchPanel() {
     const units = dispatchMission === "scout" ? allUnits.filter(([id]) => role(id) === "scout") : allUnits;
     const oasis = state?.world?.oases.find(c => c.id === selection?.id);
     const candidateArmies = ownArmies().filter(a => !["Battle", "Sieging", "Returning"].includes(a.order) && (dispatchMission !== "scout" || (a.wagons === 0 && Object.entries(a.formation ?? {}).every(([id, n]) => n <= 0 || role(id) === "scout"))));
-    const description = dispatchMission === "camp" ? "March here and pitch tents. The camp automatically engages hostile armies and caravans inside its visible perimeter; allies are not attacked."
-        : dispatchMission === "scout" ? "Send fast scouts to spy on the target. If the target has more scouts than you send, your scouts will be killed and report nothing."
-        : dispatchMission === "reinforce" ? "Defend this site while keeping control of your army."
-        : dispatchMission === "blockade" ? "Surround this oasis to suspend its production bonus and resource collection."
-        : target === "oasis" ? "Capture this oasis to increase your home village production. No resource loot." : "Choose units and send your orders.";
-    const sendLabel = dispatchMission === "camp" ? "Establish camp" : dispatchMission === "scout" ? "Send scouts" : dispatchMission === "reinforce" ? "Send reinforcements" : dispatchMission === "blockade" ? "Besiege oasis" : target === "oasis" ? "Capture oasis" : "Send army";
+    const isAr = currentLanguage() === "ar";
+    const description = dispatchMission === "camp" ? (isAr ? "يسير الجيش إلى هذا الموقع وينصب خيامه. يشتبك المخيم تلقائيًا مع الجيوش والقوافل المعادية داخل دائرته الظاهرة، ولا يهاجم الحلفاء." : "March here and pitch tents. The camp automatically engages hostile armies and caravans inside its visible perimeter; allies are not attacked.")
+        : dispatchMission === "scout" ? (isAr ? "إرسال كشافة سريعة للتجسس على الهدف. إذا كان لدى الهدف كشافة أكثر مما أرسلت، فسيتم القضاء على كشافتك ولن يقدموا تقريرًا." : "Send fast scouts to spy on the target. If the target has more scouts than you send, your scouts will be killed and report nothing.")
+        : dispatchMission === "reinforce" ? (isAr ? "الدفاع عن هذا الموقع مع الاحتفاظ بالتحكم في جيشك." : "Defend this site while keeping control of your army.")
+        : dispatchMission === "blockade" ? (isAr ? "محاصرة هذه الواحة لتعليق مكافأة إنتاجها وجمع الموارد منها." : "Surround this oasis to suspend its production bonus and resource collection.")
+        : dispatchMission === "burn" ? (isAr ? "حرق هذه الواحة وتسويتها بالأرض. يستغرق الحرق دقيقة ونصف دون مقاومة. في حال النجاح، تدمر الواحة وتظل محروقة لمدة 5 دقائق." : "Burn this oasis to ashes. Burning takes 1.5 minutes uncontested. If successful, the oasis is destroyed and remains burned for 5 minutes.")
+        : target === "oasis" ? (isAr ? "احتلال هذه الواحة لزيادة إنتاج قريتك الرئيسية. لا توجد غنائم موارد." : "Capture this oasis to increase your home village production. No resource loot.")
+        : (isAr ? "اختر الوحدات وأرسل أوامرك." : "Choose units and send your orders.");
+    const sendLabel = dispatchMission === "camp" ? (isAr ? "نصب المخيم" : "Establish camp")
+        : dispatchMission === "scout" ? (isAr ? "إرسال كشافة" : "Send scouts")
+        : dispatchMission === "reinforce" ? (isAr ? "إرسال تعزيزات" : "Send reinforcements")
+        : dispatchMission === "blockade" ? (isAr ? "حصار الواحة" : "Besiege oasis")
+        : dispatchMission === "burn" ? (isAr ? "حرق الواحة" : "Burn oasis")
+        : target === "oasis" ? (isAr ? "احتلال الواحة" : "Capture oasis")
+        : (isAr ? "إرسال الجيش" : "Send army");
+    const destName = oasis ? (isAr ? t(oasis.name) : oasis.name) : (selection?.name ?? (isAr ? "مرج مفتوح" : "Open meadow"));
     const formationEditor = units.length ? `<div class="dispatch-formation">${units.slice(page * 9, page * 9 + 9).map(([id, count]) => `<div class="dispatch-unit-card">${unitPortrait(id)}<span class="dispatch-unit-meta"><strong>${esc(unitCatalog.get(id)?.displayName ?? pretty(role(id)))}</strong><small>${count} available</small></span><div class="dispatch-input-row"><input data-formation="${id}" aria-label="${role(id)} count" type="number" inputmode="numeric" min="0" max="${count}" value="${formation[id] ?? 0}"/><button type="button" class="dispatch-quick-btn" data-action="formation-quick" data-id="${id}" data-max="${count}" title="Half / All">½</button></div></div>`).join("")}</div>${units.length > 9 ? pager(units.length, 9) : ""}` : '<p class="empty">No suitable units are available for this order.</p>';
-    return `<div class="dispatch-destination"><strong>${esc(selection?.name ?? "Open meadow")}</strong><small>${description}</small></div>${oasis ? `<small class="oasis-specialty">${icon(oasis.resource.toLowerCase())} +50% ${oasis.resource} / +25% other resources</small>` : ""}${dispatchArmyLocation()}${dispatchArmy === "new" ? select("dispatch-source", "Dispatch from village", (state?.world?.warfare?.settlements ?? []).filter(c => c.ownerId === state?.you && !c.ruined).map((c, i) => ({ value: c.id, label: `Province ${i + 1} / Level ${c.level}` })), e.villageId) : ""}${candidateArmies.length ? select("dispatch-army", "Choose your force", [{ value: "new", label: "Raise a new expedition" }, ...candidateArmies.map((a, i) => ({ value: a.id, label: `Army ${i + 1} / ${a.soldiers + a.wagons} units` }))], dispatchArmy) : ""}${formationEditor}${dispatchArmy === "new" ? '<div id="dispatch-provisions"></div>' : '<p class="muted">Only the selected units receive this order. The remainder keeps its current assignment, food and loot.</p>'}<div id="attack-objectives"></div><div class="dispatch-directives">${dispatchMission === "camp" ? `<label class="check"><input id="camp-loaded-only" type="checkbox" ${campLoadedOnly ? "checked" : ""}/> Raid only loaded caravans and armies</label>` : ""}${["reinforce", "scout"].includes(dispatchMission) ? "" : afterSelect()}</div><div class="panel-footer">${button(sendLabel, "dispatch-send", "", "primary wide", !running())}<small>Automatic supplies depart only when provisions run low.</small></div>`;
+    return `<div class="dispatch-destination"><strong>${esc(destName)}</strong><small>${description}</small></div>${oasis ? `<small class="oasis-specialty">${icon(oasis.resource.toLowerCase())} +50% ${oasis.resource} / +25% other resources</small>` : ""}${dispatchArmyLocation()}${dispatchArmy === "new" ? select("dispatch-source", "Dispatch from village", (state?.world?.warfare?.settlements ?? []).filter(c => c.ownerId === state?.you && !c.ruined).map((c, i) => ({ value: c.id, label: `Province ${i + 1} / Level ${c.level}` })), e.villageId) : ""}${candidateArmies.length ? select("dispatch-army", "Choose your force", [{ value: "new", label: "Raise a new expedition" }, ...candidateArmies.map((a, i) => ({ value: a.id, label: `Army ${i + 1} / ${a.soldiers + a.wagons} units` }))], dispatchArmy) : ""}${formationEditor}${dispatchArmy === "new" ? '<div id="dispatch-provisions"></div>' : '<p class="muted">Only the selected units receive this order. The remainder keeps its current assignment, food and loot.</p>'}<div id="attack-objectives"></div><div class="dispatch-directives">${dispatchMission === "camp" ? `<label class="check"><input id="camp-loaded-only" type="checkbox" ${campLoadedOnly ? "checked" : ""}/> Raid only loaded caravans and armies</label>` : ""}${["reinforce", "scout"].includes(dispatchMission) ? "" : afterSelect()}</div><div class="panel-footer">${button(sendLabel, "dispatch-send", "", "primary wide", !running())}<small>Automatic supplies depart only when provisions run low.</small></div>`;
 }
 function objectiveAllowed(objective=attackObjective) {
     if(selection?.kind!=="village"||dispatchMission!=="attack")return true;
@@ -837,21 +866,28 @@ function renderDrawer(force = false) {
     }
     else if (panel === "oasis") {
         const oasis = state?.world?.oases.find(o => o.id === panelId);
-        title = oasis?.name ?? "Oasis";
+        const isAr = currentLanguage() === 'ar';
+        title = oasis ? (isAr ? t(oasis.name) : oasis.name) : (isAr ? "واحة" : "Oasis");
         if (oasis?.ownerId) {
             const linkedCity = state?.world?.warfare?.settlements.find(c => c.id === oasis.villageId);
             const vOwner = owner(linkedCity?.ownerId ?? oasis.ownerId);
             const isMine = (linkedCity?.ownerId ?? oasis.ownerId) === state?.you;
             const vName = isMine
-                ? (currentLanguage() === 'ar' ? 'قريتك' : 'Your village')
-                : (currentLanguage() === 'ar' ? `قرية ${vOwner}` : `${vOwner}'s village`);
-            kicker = currentLanguage() === 'ar' ? `هذه الواحة تابعة لـ ${vName}` : `Linked to ${vName}`;
+                ? (isAr ? 'قريتك' : 'Your village')
+                : (isAr ? `قرية ${vOwner}` : `${vOwner}'s village`);
+            kicker = isAr ? `هذه الواحة تابعة لـ ${vName}` : `Linked to ${vName}`;
         } else {
-            kicker = currentLanguage() === 'ar' ? 'واحة حرة غير محتلة' : 'Unclaimed oasis';
+            kicker = isAr ? 'واحة حرة غير محتلة' : 'Unclaimed oasis';
+        }
+        if ((oasis?.burnedRemainingSeconds ?? 0) > 0) {
+            kicker += isAr ? ' · [واحة محروقة]' : ' · [Burned oasis]';
+        } else if ((oasis?.burningProgress ?? 0) > 0) {
+            kicker += isAr ? ' · [جاري الحرق]' : ' · [Burning in progress]';
         }
 
-        let effectiveGarrison = { ...(oasis?.garrison ?? {}) };
-        if (oasis && state?.world?.armies && state?.you) {
+        let effectiveGarrison: Record<string, number> | null = null;
+        if (oasis && oasis.ownerId === state?.you && state?.world?.armies && state?.you) {
+            effectiveGarrison = { ...(oasis.garrison ?? {}) };
             const you = state.you;
             const stationedArmies = state.world.armies.filter(a =>
                 a.defendingSiteId === oasis.id ||
@@ -957,11 +993,11 @@ async function launch() {
         const before = new Set(ownArmies().map(a => a.id));
         ordered = dispatchMission === "camp" || dispatchMission !== "scout" && (dispatchMission === "reinforce" || kind === "oasis" || kind === "village");
         if (!await command("DispatchArmy",state.economy.villageId,{formation:chosen,wagons:0,enabled:dispatchAuto,escorts:0,x:selection.position.x,y:selection.position.y,afterAttack,
-            objective:attackObjective, destinationId: dispatchMission === "camp" ? null : ordered ? selection.id : null, reinforcement: dispatchMission === "reinforce",oasisMode:dispatchMission==='blockade'?'Blockade':'Capture',camp:dispatchMission==='camp',loadedOnly:campLoadedOnly})) return;
+            objective:attackObjective, destinationId: dispatchMission === "camp" ? null : ordered ? selection.id : null, reinforcement: dispatchMission === "reinforce",oasisMode:dispatchMission==='burn'?'Burn':dispatchMission==='blockade'?'Blockade':'Capture',camp:dispatchMission==='camp',loadedOnly:campLoadedOnly})) return;
         id = ownArmies().find(a => !before.has(a.id))?.id ?? '';
     }
     if (!id) return;
-    const action = dispatchMission === "camp" ? "CampArmy" : dispatchMission === 'scout' ? 'Scout' : dispatchMission === 'reinforce' ? 'Reinforce' : kind === 'village' && city?.ownerId !== state.you ? 'BeginSiege' : kind === 'army' && selection.ownerId !== state.you ? 'AttackArmy' : kind === 'convoy' ? 'InterceptConvoy' : kind === 'oasis' ? dispatchMission==='blockade'?'BesiegeOasis':'CaptureOasis' : 'MoveArmy';
+    const action = dispatchMission === "camp" ? "CampArmy" : dispatchMission === 'scout' ? 'Scout' : dispatchMission === 'reinforce' ? 'Reinforce' : kind === 'village' && city?.ownerId !== state.you ? 'BeginSiege' : kind === 'army' && selection.ownerId !== state.you ? 'AttackArmy' : kind === 'convoy' ? 'InterceptConvoy' : kind === 'oasis' ? (dispatchMission==='burn'?'BurnOasis':dispatchMission==='blockade'?'BesiegeOasis':'CaptureOasis') : 'MoveArmy';
     if (ordered || await command(action,id,{destinationId:dispatchMission === "camp" || kind === "ground" ? null : selection.id,x:selection.position.x,y:selection.position.y,afterAttack,objective:attackObjective,formation:chosen,loadedOnly:campLoadedOnly})) {
         activeArmy=id; loadArmy(); openPanel('army',id);
     }
@@ -1074,8 +1110,10 @@ document.addEventListener("click", event => {
         return;
     }
     if(action==='plan-blockade'){openDispatch('blockade');return;}
+    if(action==='plan-burn'){openDispatch('burn');return;}
     if(action==='plan-camp'){openDispatch('camp');return;}
     if(action==='scout-target'){openDispatch('scout');return;}
+    if(action==='oasis-level'){void perform(async()=>{const oasis=state?.world?.oases.find(o=>o.id===id);if(!oasis)return;await command('UpgradeOasisLevel',id);});return;}
     if(action?.startsWith('oasis-')){void perform(async()=>{const oasis=state?.world?.oases.find(o=>o.id===id);if(!oasis)return;await command(action==='oasis-auto'?'SetOasisTransport':action==='oasis-wall'?'UpgradeOasisWall':'CollectOasis',id,{enabled:!oasis.autoTransport});});return;}
     if (action === "unit-detail") { reportDetail = b.dataset.detail ?? ""; el("report-detail").textContent = reportDetail; return; }
     if (action === "production") { openPanel("production", id); return; }

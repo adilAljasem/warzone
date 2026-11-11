@@ -6,7 +6,7 @@ import {ArmyLayout} from './army-layout';
 import { drawCamp } from './camp-art';
 import { biomeAt, drawLandscape, previewRegions, type BiomeRegion, type Landscape } from "./landscape";
 import { settlementArt, settlementStage } from "./settlements";
-import { t } from "./locale";
+import { t, currentLanguage } from "./locale";
 import type { Muster, Report, Cargo } from "./intelligence";
 import type { MarketOffer } from "./market";
 import { Application, Container, Graphics, Sprite, Text } from "pixi.js";
@@ -17,7 +17,7 @@ export interface Point { x: number; y: number }
 export interface MapPlayer { tribe?: string; id: string; name: string; villageId: string | null; position: Point | null; level: number | null; ruined?: boolean; flagColor?: string }
 export interface ArmyView { id: string; ownerId: string; homeVillageId: string; position: Point; destination: Point; order: string; soldiers: number; wagons: number; speed: number; wheat: number | null; capacity: number; morale: number | null; autoSupply: boolean; supplyWagons: number; escorts: number; supplyStatus: string | null; targetId: string | null; actionSeconds: number }
 export interface ConvoyView { id: string; ownerId: string; targetArmyId: string | null; position: Point; destination: Point; returning: boolean; wagons: number; escorts: number; wheat: number | null; speed: number; cargo: Cargo | null; recipientId: string | null }
-export interface OasisView { id: string; name: string; position: Point; resource: string; ownerId: string | null; villageId: string | null; defenders: number; stock: Cargo | null; capacity: number; productionPerMinute: Cargo; autoTransport: boolean | null; transportStatus: string | null; convoyId: string | null; wallLevel: number; wallHealth: number; wallMaximum: number; wallUpgradeCost: Cargo | null; underAttack: boolean; blockaded:boolean; siegeReportId:string|null; wheatUpkeepPerMinute:number|null; garrison?: Record<string, number> | null }
+export interface OasisView { id: string; name: string; position: Point; resource: string; ownerId: string | null; villageId: string | null; defenders: number; stock: Cargo | null; capacity: number; productionPerMinute: Cargo; autoTransport: boolean | null; transportStatus: string | null; convoyId: string | null; wallLevel: number; wallHealth: number; wallMaximum: number; wallUpgradeCost: Cargo | null; underAttack: boolean; blockaded:boolean; siegeReportId:string|null; wheatUpkeepPerMinute:number|null; garrison?: Record<string, number> | null; level: number; levelUpgradeCost: Cargo | null; burnedRemainingSeconds: number; burningProgress: number }
 export interface ArmyView { supplyVillageId: string; formation: Record<string, number> | null; mapFigures?:Record<string,number>|null; loot: Cargo | null }
 export interface ArmyView { afterAttack: string; tribe: string; defendingSiteId: string | null; supportedOwnerId: string | null; campRadius: number | null }
 export interface ConvoyView { kind: "Supply" | "Trade" | "Oasis" | "Shipment"; inBattle: boolean }
@@ -86,6 +86,8 @@ export class WorldMap {
   private losses: LossIndicator[] = [];
   private burningVillages=new Map<string,VillageFire>();
   private smokingVillages=new Map<string,VillageSmoke>();
+  private burningOases=new Map<string,VillageFire>();
+  private smokingOases=new Map<string,VillageSmoke>();
   private fireLayer=new Container();
   private smoke: {sprite:Graphics; origin:Point; phase:number}[]=[];
   private celebrations: {root:Container; at:number; ring:Graphics; caption:Text}[]=[];
@@ -229,7 +231,7 @@ export class WorldMap {
       players = Array.from({ length: 8 }, (_, i) => ({ id: `preview-${i}`, villageId: `v-${i}`, tribe: ["Romans","Germans","Greeks","Mongols","Persians"][i % 5], name: ["Your new beginning", "Willowbrook", "Golden Fields", "Rosewood", "Suncove", "Windfall", "Oakridge", "Bluehaven"][i]!, level: i === 0 ? 6 : 1,
         position: { x: 1500 + Math.cos(i * Math.PI / 4) * 1150, y: 1500 + Math.sin(i * Math.PI / 4) * 1150 } }));
       viewer = "preview-0";
-      world = { regions:previewRegions, armies: [], convoys: [], oases: [{ id: "preview-oasis", name: "Wood oasis", resource: "Wood", position: { x: 1005, y: 525 }, ownerId: null, villageId: null, defenders: 0, stock:null, capacity:15000, productionPerMinute:{wood:240,iron:120,stone:120,wheat:120}, autoTransport:null, transportStatus:null, convoyId:null, wallLevel:0, wallHealth:0, wallMaximum:0, wallUpgradeCost:null, underAttack:false,blockaded:false,siegeReportId:null,wheatUpkeepPerMinute:null }], notices: [] };
+      world = { regions:previewRegions, armies: [], convoys: [], oases: [{ id: "preview-oasis", name: "Wood oasis", resource: "Wood", position: { x: 1005, y: 525 }, ownerId: null, villageId: null, defenders: 0, stock:null, capacity:15000, productionPerMinute:{wood:240,iron:120,stone:120,wheat:120}, autoTransport:null, transportStatus:null, convoyId:null, wallLevel:0, wallHealth:0, wallMaximum:0, wallUpgradeCost:null, underAttack:false,blockaded:false,siegeReportId:null,wheatUpkeepPerMinute:null, level: 0, levelUpgradeCost: null, burnedRemainingSeconds: 0, burningProgress: 0 }], notices: [] };
     }
     for(const player of players){const color=player.flagColor?parseColor(player.flagColor):null;if(color!==null)this.ownerColors.set(player.id,color);}
     if (world.warfare) players = world.warfare.settlements.filter(city=>!city.ruined).map(city => ({ id: city.ownerId, villageId: city.id, position: city.position, level: city.level, ruined: city.ruined, tribe: city.tribe, name: players.find(player => player.id === city.ownerId)?.name ?? "Settlement", flagColor: players.find(player => player.id === city.ownerId)?.flagColor }));
@@ -240,7 +242,7 @@ export class WorldMap {
       this.landscape.setBoundaries(this.showBoundaries);
     }
     this.players = players; this.viewer = viewer;
-    const signature = JSON.stringify(players.map(x => [x.id, x.name, x.level, x.position, x.tribe, x.ruined])) + JSON.stringify(world.oases.map(x => [x.id,x.position,x.resource,x.ownerId,x.villageId,x.wallLevel,x.wallHealth>0]));
+    const signature = JSON.stringify(players.map(x => [x.id, x.name, x.level, x.position, x.tribe, x.ruined])) + JSON.stringify(world.oases.map(x => [x.id,x.position,x.resource,x.ownerId,x.villageId,x.wallLevel,x.wallHealth>0,x.level,(x.burnedRemainingSeconds??0)>0,(x.burningProgress??0)>0]));
     this.picks = [];
     if (signature !== this.signature) {
       this.signature = signature; this.smoke=[];
@@ -272,18 +274,31 @@ export class WorldMap {
         root.zIndex = p.y;
         const ring = new Graphics(); root.addChild(ring);
         root.addChild(oasisSprite(oasis.resource??'Wood',137));
+        const isBurned = (oasis.burnedRemainingSeconds ?? 0) > 0;
+        const isBurning = (oasis.burningProgress ?? 0) > 0;
         if(oasis.wallLevel>0){
           const wall=new Graphics();
           wall.ellipse(0,12,69,30).stroke({color:oasis.wallHealth>0?0x9b8b70:0x655c4a,width:oasis.wallHealth>0?7:3,alpha:.95});
           if(oasis.wallHealth>0)for(let i=0;i<13;i++){const a=i/13*Math.PI*2;wall.rect(Math.cos(a)*69-4,Math.sin(a)*30+6,8,10).fill(0xc6b89a);}
           root.addChild(wall);const level=label(''+oasis.wallLevel,11);level.position.set(-61,17);root.addChild(level);
         }
+        if (isBurned) {
+          const burnedOverlay = new Graphics();
+          burnedOverlay.ellipse(0, 15, 60, 26).fill({ color: 0x1f100c, alpha: 0.75 }).stroke({ color: 0xd94426, width: 2, alpha: 0.85 });
+          root.addChild(burnedOverlay);
+        }
         const ripple=new Graphics();ripple.position.set(0,8);root.addChild(ripple);this.oasisRipples.push(ripple);
         const badge = resourceBadge(oasis.resource ?? 'Wood'); badge.position.set(48, 14); root.addChild(badge);
-        if(oasis.ownerId)this.flag(root,this.colorFor(oasis.ownerId),18,56);
+        if(oasis.ownerId && !isBurned)this.flag(root,this.colorFor(oasis.ownerId),18,56);
+        const isAr = currentLanguage() === 'ar';
+        const localizedName = isAr ? t(oasis.name) : oasis.name;
+        const levelTag = oasis.level > 0 ? (isAr ? ` (مستوى ${oasis.level})` : ` (Lvl ${oasis.level})`) : '';
+        const statusTag = isBurned ? (isAr ? ' 🔥 [محروقة]' : ' 🔥 [Burned]') : isBurning ? (isAr ? ' ⏳ [جاري الحرق]' : ' ⏳ [Burning]') : '';
+        const nameStr = `${localizedName}${levelTag}${statusTag}`;
+        const plateWidth = Math.max(116, nameStr.length * 8 + 18);
         const plate = new Container(); plate.position.copyFrom(root.position);
-        plate.addChild(new Graphics().roundRect(-58,46,116,24,5).fill({color:0x213e32,alpha:.94}).roundRect(-58,46,116,24,5).stroke({color:0xd9c393,alpha:.6,width:1}));
-        const name=label(oasis.name,13,0xffedbb);name.anchor.set(.5,0);name.position.y=50;plate.addChild(name);
+        plate.addChild(new Graphics().roundRect(-plateWidth/2,46,plateWidth,24,5).fill({color:isBurned?0x3e1f1a:0x213e32,alpha:.94}).roundRect(-plateWidth/2,46,plateWidth,24,5).stroke({color:isBurned?0xd95a43:0xd9c393,alpha:.6,width:1}));
+        const name=label(nameStr,13,isBurned ? 0xff9988 : 0xffedbb);name.anchor.set(.5,0);name.position.y=50;plate.addChild(name);
         this.nameplates.addChild(plate); this.settlements.addChild(root);
         this.oasisMarkers.set(oasis.id, { ring, badge, plate, ownerId: oasis.ownerId });
 
@@ -420,6 +435,45 @@ export class WorldMap {
       const position=project(city.position);smoke.root.position.set(position.x,position.y);
     }
     for(const [id,smoke] of this.smokingVillages)if(!smoking.has(id)){smoke.destroy();this.smokingVillages.delete(id);}
+    const burningOasisIds = new Set<string>();
+    const smokingOasisIds = new Set<string>();
+    for (const oasis of world.oases) {
+      const isBurned = (oasis.burnedRemainingSeconds ?? 0) > 0;
+      const isBurning = (oasis.burningProgress ?? 0) > 0;
+      if (isBurning) {
+        burningOasisIds.add(oasis.id);
+        let fire = this.burningOases.get(oasis.id);
+        if (!fire) {
+          fire = new VillageFire();
+          this.burningOases.set(oasis.id, fire);
+          this.fireLayer.addChild(fire.root);
+        }
+        const p = project(oasis.position);
+        fire.root.position.set(p.x, p.y + 12);
+      } else if (isBurned) {
+        smokingOasisIds.add(oasis.id);
+        let smoke = this.smokingOases.get(oasis.id);
+        if (!smoke) {
+          smoke = new VillageSmoke();
+          this.smokingOases.set(oasis.id, smoke);
+          this.fireLayer.addChild(smoke.root);
+        }
+        const p = project(oasis.position);
+        smoke.root.position.set(p.x, p.y + 12);
+      }
+    }
+    for (const [id, fire] of this.burningOases) {
+      if (!burningOasisIds.has(id)) {
+        fire.destroy();
+        this.burningOases.delete(id);
+      }
+    }
+    for (const [id, smoke] of this.smokingOases) {
+      if (!smokingOasisIds.has(id)) {
+        smoke.destroy();
+        this.smokingOases.delete(id);
+      }
+    }
     if (war?.castle.active) {
       const root = new Container(); const p = project(war.castle.position); root.position.set(p.x, p.y);
       const color = war.castle.controllerId ? this.colorFor(war.castle.controllerId) : 0xe4b758;
@@ -561,7 +615,9 @@ export class WorldMap {
       this.clouds.forEach((cloud, i) => { cloud.x += .04 + i * .01; if (cloud.x > this.host.clientWidth + 50) cloud.x = -50; });
     }
     if(!document.hidden)for(const fire of this.burningVillages.values())fire.animate(now,this.reduced);
+    if(!document.hidden)for(const fire of this.burningOases.values())fire.animate(now,this.reduced);
     if(!document.hidden)for(const smoke of this.smokingVillages.values())smoke.animate(now,this.reduced);
+    if(!document.hidden)for(const smoke of this.smokingOases.values())smoke.animate(now,this.reduced);
     for(const clash of this.clashes.values()){
       this.positionClash(clash);
       if(!document.hidden)clash.effect.animate(now,this.reduced);

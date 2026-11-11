@@ -8,7 +8,7 @@ internal sealed class OasisSiegeState(Army army, ResourceOasis oasis, double now
     public Guid Id { get; } = Guid.NewGuid();
     public List<Army> Attackers { get; } = [army];
     public Army Attacker => Attackers[0];
-    public OasisMode Mode => Attackers.Any(a=>a.OasisMode==OasisMode.Capture&&a.Order is "Occupying" or "Battle")?OasisMode.Capture:OasisMode.Blockade;
+    public OasisMode Mode => Attackers.Any(a=>a.OasisMode==OasisMode.Capture&&a.Order is "Occupying" or "Battle")?OasisMode.Capture:Attackers.Any(a=>a.OasisMode==OasisMode.Burn&&a.Order is "Occupying" or "Burning" or "Battle")?OasisMode.Burn:OasisMode.Blockade;
     public ResourceOasis Oasis { get; } = oasis;
     public Guid Defender { get; } = oasis.OwnerId!.Value;
     public double Started { get; } = now;
@@ -19,7 +19,7 @@ internal sealed class OasisSiegeState(Army army, ResourceOasis oasis, double now
 public sealed partial class LogisticsWorld
 {
     private readonly List<OasisSiegeState> oasisSieges=[];
-    private bool ValidOasisArmy(OasisSiegeState s,Army a)=>armies.Contains(a)&&!a.Routing&&Fighters(a)>0&&a.Order is "Occupying" or "Blockading" or "Battle"&&a.TargetId==s.Oasis.Id&&a.OwnerId!=s.Defender&&Distance(a.Position,s.Oasis.Position)<=20;
+    private bool ValidOasisArmy(OasisSiegeState s,Army a)=>armies.Contains(a)&&!a.Routing&&Fighters(a)>0&&a.Order is "Occupying" or "Blockading" or "Burning" or "Battle"&&a.TargetId==s.Oasis.Id&&a.OwnerId!=s.Defender&&Distance(a.Position,s.Oasis.Position)<=20;
     private bool ValidOasisSiege(OasisSiegeState s)=>s.Status=="Active"&&s.Oasis.OwnerId==s.Defender&&s.Attackers.Any(a=>ValidOasisArmy(s,a));
     private bool OasisBlockaded(ResourceOasis oasis)=>oasisSieges.Any(s=>s.Oasis==oasis&&ValidOasisSiege(s));
     private void BeginOasisSiege(Army army,ResourceOasis oasis,double now)

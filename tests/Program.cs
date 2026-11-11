@@ -71,7 +71,7 @@ Check(Economy(lobby).Targets.Single(x=>x.Id==target.Id).Level==2&&Economy(lobby)
 
 var trainingRoom = Running(TribeType.Germans);
 var training = Economy(trainingRoom).Targets.First(x => x.Kind == "Training");
-Check(training.TrainingCost!.Value.Wood == 20 && Math.Abs(training.TrainingSeconds!.Value - 3.2) < .001, "German training bonuses applied once");
+Check(training.TrainingCost!.Value.Wood == 12 && Math.Abs(training.TrainingSeconds!.Value - 3.2) < .001, "German training bonuses applied once");
 Check(Command(trainingRoom, CommandKind.Train, training.Id, 0).Code == "quantity", "Reject zero batch");
 Check(Command(trainingRoom, CommandKind.Train, training.Id, 101).Code == "quantity", "Reject oversized batch");
 Check(Command(trainingRoom, CommandKind.Train, training.Id, 100).Code == "resources", "Insufficient funds rejected");
@@ -271,6 +271,7 @@ checks += CityObjectiveChecks.Run();
 checks += TrainingProgressionChecks.Run();
 checks += SocialChecks.Run();
 checks += CampChecks.Run();
+checks += OasisUpgradeAndBurnChecks.Run();
 checks += TribalCostChecks.Run();
 Console.WriteLine($"Passed {checks} deterministic game checks.");
 

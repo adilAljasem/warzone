@@ -142,10 +142,14 @@ public sealed partial class LogisticsWorld
                 throw new GameRuleException("target", "Choose an open map position for the camp.");
             if (command.Camp && !requested.Keys.Any(id => GameCatalog.Units[id].Role is not (UnitRole.Wagon or UnitRole.Governor)))
                 throw new GameRuleException("troops", "Fighting troops are required to establish a camp.");
+            if (target is not null && target.BurnedUntil > now)
+                throw new GameRuleException("burned", "This oasis is burned and in ruins.");
             if (target is not null && target.OwnerId != actor && target.OwnerId is not null && now < shieldUntil)
                 throw new GameRuleException("protected", "Wait until the protection shield expires.");
             if (command.OasisMode==OasisMode.Blockade&&(target?.OwnerId is null||target.OwnerId==actor))
                 throw new GameRuleException("target","Choose another player's oasis to blockade.");
+            if (command.OasisMode==OasisMode.Burn&&target is null)
+                throw new GameRuleException("target","Choose a valid oasis to burn.");
             if ((target is not null || command.Reinforcement) && !requested.Keys.Any(id => GameCatalog.Units[id].Role is not (UnitRole.Wagon or UnitRole.Governor)))
                 throw new GameRuleException("troops", "Fighting troops are required.");
             if (command.Reinforcement)
@@ -222,12 +226,14 @@ public sealed partial class LogisticsWorld
                 break;
             case CommandKind.CaptureOasis:
             case CommandKind.BesiegeOasis:
+            case CommandKind.BurnOasis:
                 var oasis = oases.FirstOrDefault(x => x.Id == command.DestinationId) ?? throw new GameRuleException("target", "Oasis not found.");
+                if (oasis.BurnedUntil > now) throw new GameRuleException("burned", "This oasis is burned and in ruins.");
                 if (OrderFighters(selected, command.Formation) == 0) throw new GameRuleException("troops", "Fighting troops are required.");
                 if (oasis.OwnerId is not null && oasis.OwnerId != actor && now < shieldUntil) throw new GameRuleException("protected", "Wait until the protection shield expires.");
                 if(command.Kind==CommandKind.BesiegeOasis&&(oasis.OwnerId is null||oasis.OwnerId==actor))throw new GameRuleException("target","Choose another player's oasis to blockade.");
                 selected = Detach(selected, command.Formation, now);
-                selected.OasisMode=command.Kind==CommandKind.BesiegeOasis?OasisMode.Blockade:OasisMode.Capture;
+                selected.OasisMode=command.Kind==CommandKind.BesiegeOasis?OasisMode.Blockade:command.Kind==CommandKind.BurnOasis?OasisMode.Burn:OasisMode.Capture;
                 selected.TargetId = oasis.Id; selected.DefendingSiteId = null; selected.SupportedOwnerId = null; selected.Destination = oasis.Position; selected.Order = "Occupying"; selected.ActionSeconds = 0; selected.CampRadius = null;
                 selected.AttackOrderedAt = now;
                 selected.AfterAttack = command.AfterAttack;
@@ -461,16 +467,16 @@ public sealed partial class LogisticsWorld
         }
         var wagonId = UnitId(home, UnitRole.Wagon);
         var availWagons = home.Available(wagonId);
-        if (availWagons < 1) return null;
-        formation[wagonId] = Math.Clamp((formation.Values.Sum() + 19) / 20, 1, Math.Min(5, availWagons));
+        if (availWagons > 0)
+            formation[wagonId] = Math.Clamp((formation.Values.Sum() + 19) / 20, 1, Math.Min(5, availWagons));
         var upkeep = formation.Sum(x => x.Value * GameCatalog.Units[x.Key].Stats.WheatUpkeep) / 60;
         var slowest = formation.Min(x => GameCatalog.Units[x.Key].Stats.Speed);
         var carry = formation.Sum(x => (double)x.Value * GameCatalog.Units[x.Key].Stats.CarryCapacity);
         var trip = Distance(home.Village.Position, destination) / Math.Max(.1, slowest * .8);
         var required = (long)Math.Ceiling(upkeep * (trip * 2 + 180));
-        while (required > carry && formation[wagonId] < availWagons && formation[wagonId] < 8)
+        while (required > carry && availWagons > 0 && formation.GetValueOrDefault(wagonId) < availWagons && formation.GetValueOrDefault(wagonId) < 8)
         {
-            formation[wagonId]++;
+            formation[wagonId] = formation.GetValueOrDefault(wagonId) + 1;
             upkeep = formation.Sum(x => x.Value * GameCatalog.Units[x.Key].Stats.WheatUpkeep) / 60;
             carry = formation.Sum(x => (double)x.Value * GameCatalog.Units[x.Key].Stats.CarryCapacity);
             required = (long)Math.Ceiling(upkeep * (trip * 2 + 180));
@@ -480,18 +486,20 @@ public sealed partial class LogisticsWorld
 
     private ResourceOasis? BestOasisForBot(Guid actor, VillageEconomy home, Position from, int armyFighters)
     {
-        var targeted = armies.Where(a => a.OwnerId == actor && a.Order is "Occupying" or "Blockading" && a.TargetId is not null)
+        var targeted = armies.Where(a => a.OwnerId == actor && a.Order is "Occupying" or "Blockading" or "Burning" && a.TargetId is not null)
             .Select(a => a.TargetId!.Value).ToHashSet();
         var wheatLow = home.FoodShortage || home.Resources.Wheat < 500;
         return oases.Where(o => o.OwnerId != actor && !targeted.Contains(o.Id) && (o.OwnerId is null || warTime >= protectionUntil))
-            .Where(o => o.OwnerId is null || armyFighters >= Math.Max(12, Guards(o.Id, actor).Sum(Fighters) + o.WallLevel * 6 + 4))
+            .Where(o => o.BurnedUntil <= warTime)
+            .Where(o => o.OwnerId is null || armyFighters >= Math.Max(10, Guards(o.Id, actor).Sum(Fighters) + o.WallLevel * 6 + 4))
             .OrderBy(o =>
             {
                 var dist = Distance(from, o.Position);
-                var unclaimedBonus = o.OwnerId is null ? -350 : 0;
+                var unclaimedBonus = o.OwnerId is null ? -600 : 0;
+                var levelBonus = o.Level * -120;
                 var wheatBonus = wheatLow && o.Resource == ResourceType.Wheat ? -220 : 0;
                 var defensePenalty = o.OwnerId is null ? 0 : (Guards(o.Id, actor).Sum(Fighters) + o.WallLevel * 6) * 8;
-                return dist + unclaimedBonus + wheatBonus + defensePenalty;
+                return dist + unclaimedBonus + levelBonus + wheatBonus + defensePenalty;
             })
             .FirstOrDefault();
     }
@@ -530,6 +538,14 @@ public sealed partial class LogisticsWorld
                 commands.Execute(actor, new(Guid.NewGuid(), CommandKind.Train, target.Id, Quantity: batch));
         }
 
+        if (!home.Besieged && home.Resources.Wood > 800 && home.Resources.Stone > 800 && home.Resources.Iron > 600 && home.Resources.Wheat > 600)
+        {
+            var maxLvl = difficulty == BotDifficulty.Hard ? 5 : personality == BotPersonality.Economic ? 4 : 3;
+            var upgradeTarget = oases.FirstOrDefault(o => o.OwnerId == actor && o.VillageId == home.Village.Id && !OasisUnderAttack(o)
+                && o.BurnedUntil <= warTime && o.Level < maxLvl && o.LevelUpgradeCost is { } lc && home.Resources.Covers(lc));
+            if (upgradeTarget is not null)
+                commands.Execute(actor, new(Guid.NewGuid(), CommandKind.UpgradeOasisLevel, upgradeTarget.Id));
+        }
         if (!home.Besieged && home.Resources.Wood > 1100 && home.Resources.Stone > 1100 && home.Resources.Iron > 800)
         {
             var maxWall = personality == BotPersonality.Defensive ? 4 : personality == BotPersonality.Economic ? 3 : 2;
@@ -573,7 +589,19 @@ public sealed partial class LogisticsWorld
 
         var availableArmy = ownArmies.FirstOrDefault(a => a.Order == "Idle"
             || (a.Order == "Guarding" && (home.OwnedOases == 0 || ownArmies.Count(x => x.DefendingSiteId == a.DefendingSiteId) > 1 || (warTime >= protectionUntil && Fighters(a) >= 24))));
-        var maxArmies = warTime < protectionUntil ? 2 : difficulty == BotDifficulty.Hard ? 3 : personality == BotPersonality.Aggressive ? 3 : 2;
+
+        var burningOasis = oases.FirstOrDefault(o => o.OwnerId == actor && (o.BurningSeconds > 0 || armies.Any(a => a.TargetId == o.Id && a.Order == "Burning")));
+        if (burningOasis is not null)
+        {
+            var arsonist = armies.FirstOrDefault(a => a.TargetId == burningOasis.Id && a.OwnerId != actor && a.Order is "Burning" or "Occupying");
+            if (arsonist is not null && availableArmy is not null && Fighters(availableArmy) >= 6)
+            {
+                commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, availableArmy.Id, DestinationId: arsonist.Id));
+                return;
+            }
+        }
+
+        var maxArmies = warTime < protectionUntil ? 4 : difficulty == BotDifficulty.Hard ? 6 : personality == BotPersonality.Aggressive ? 5 : 4;
         var candidateFighters = availableArmy is not null ? Fighters(availableArmy) : Math.Max(0, homeTroops - (warTime >= protectionUntil ? 8 : 0));
         var oasis = BestOasisForBot(actor, home, availableArmy?.Position ?? home.Village.Position, candidateFighters);
         if (oasis is null) return;
@@ -582,15 +610,18 @@ public sealed partial class LogisticsWorld
             commands.Execute(actor, new(Guid.NewGuid(), CommandKind.CaptureOasis, availableArmy.Id, DestinationId: oasis.Id));
             return;
         }
-        if (ownArmies.Length < maxArmies && homeTroops >= (warTime < protectionUntil ? 10 : 18) && home.Available(UnitId(home, UnitRole.Wagon)) >= 1)
+        var minTroops = oasis.OwnerId is null ? (warTime < protectionUntil ? 8 : 10) : (warTime < protectionUntil ? 12 : 18);
+        if (ownArmies.Length < maxArmies && homeTroops >= minTroops)
         {
-            var reserve = warTime < protectionUntil ? 0 : personality == BotPersonality.Defensive ? 12 : 6;
-            var maxDispatch = warTime < protectionUntil ? 16 : 60;
+            var reserve = warTime < protectionUntil ? 0 : personality == BotPersonality.Defensive ? 10 : 4;
+            var maxDispatch = oasis.OwnerId is null ? 16 : warTime < protectionUntil ? 20 : 60;
             var formation = BuildBotFormation(home, oasis.Position, maxDispatch, warTime >= protectionUntil, personality == BotPersonality.Aggressive && warTime >= protectionUntil, reserve);
             if (formation is not null)
             {
+                var burnMission = personality == BotPersonality.Aggressive && warTime >= protectionUntil && oasis.OwnerId is not null && oasis.Level >= 2;
                 commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
-                    formation.Values.Sum(), true, oasis.Position.X, oasis.Position.Y, UnitId(home, UnitRole.Infantry), 0, 2, oasis.Id, Formation: formation));
+                    formation.Values.Sum(), true, oasis.Position.X, oasis.Position.Y, UnitId(home, UnitRole.Infantry), 0, 2, oasis.Id,
+                    OasisMode: burnMission ? OasisMode.Burn : OasisMode.Capture, Formation: formation));
                 return;
             }
         }

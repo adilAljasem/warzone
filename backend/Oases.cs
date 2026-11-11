@@ -3,7 +3,8 @@ namespace Warzone;
 public sealed record OasisSnapshot(Guid Id, string Name, Position Position, ResourceType Resource,
     Guid? OwnerId, Guid? VillageId, int Defenders, Resources? Stock, long Capacity, Resources ProductionPerMinute,
     bool? AutoTransport, string? TransportStatus, Guid? ConvoyId, int WallLevel, double WallHealth, double WallMaximum, Resources? WallUpgradeCost, bool UnderAttack,
-    bool Blockaded, Guid? SiegeReportId, double? WheatUpkeepPerMinute, IReadOnlyDictionary<string, int>? Garrison = null);
+    bool Blockaded, Guid? SiegeReportId, double? WheatUpkeepPerMinute, IReadOnlyDictionary<string, int>? Garrison = null,
+    int Level = 0, Resources? LevelUpgradeCost = null, double BurnedRemainingSeconds = 0, double BurningProgress = 0);
 
 internal sealed class ResourceOasis(Position position, ResourceType resource)
 {
@@ -23,6 +24,14 @@ internal sealed class ResourceOasis(Position position, ResourceType resource)
     public double WallHealth { get; set; }
     public double WallMaximum => WallLevel * 150;
     public Resources? WallUpgradeCost => WallLevel >= 20 ? null : new((long)(120 * Math.Pow(WallLevel + 1, 1.6)), (long)(60 * Math.Pow(WallLevel + 1, 1.6)), (long)(160 * Math.Pow(WallLevel + 1, 1.6)), 0);
+    public int Level { get; set; }
+    public double BurnedUntil { get; set; }
+    public double BurningSeconds { get; set; }
+    public Resources? LevelUpgradeCost => Level >= 5 ? null : new(
+        (long)(350 * Math.Pow(Level + 1, 1.5)),
+        (long)(350 * Math.Pow(Level + 1, 1.5)),
+        (long)(350 * Math.Pow(Level + 1, 1.5)),
+        (long)(250 * Math.Pow(Level + 1, 1.5)));
     public static ResourceOasis[] Generate(Position[] settlements, int seed)
     {
         var random = new Random(seed ^ 0x4f415349);
@@ -54,26 +63,40 @@ public sealed partial class LogisticsWorld
         var mine = oasis.OwnerId == viewer;
         var convoy = convoys.Find(c => c.OasisId == oasis.Id);
         var blockaded = OasisBlockaded(oasis);
-        var status = blockaded ? "Oasis blockaded: collection suspended" : convoy is not null ? convoy.InBattle ? "Caravan under attack" : convoy.Returning ? "Resources returning" : "Wagons collecting"
+        var isBurned = oasis.BurnedUntil > warTime;
+        var status = isBurned ? $"Oasis burned for {Math.Ceiling(oasis.BurnedUntil - warTime)}s"
+            : blockaded ? "Oasis blockaded: collection suspended" : convoy is not null ? convoy.InBattle ? "Caravan under attack" : convoy.Returning ? "Resources returning" : "Wagons collecting"
             : !oasis.AutoTransport ? "Automatic transport paused" : oasis.Stock.Total < 2000 ? "Waiting for 2000 resources" : "Waiting for available wagons and provisions";
-        var guarding = armies.Where(a => a.DefendingSiteId == oasis.Id || (Distance(a.Position, oasis.Position) <= 35 && a.Order is "Guarding" or "Camped" or "Idle" or "Battle" or "Camping")).ToArray();
+        var guarding = armies.Where(a => a.DefendingSiteId == oasis.Id || (Distance(a.Position, oasis.Position) <= 35 && a.Order is "Guarding" or "Camped" or "Idle" or "Battle" or "Camping" or "Burning")).ToArray();
         var visibleArmies = guarding.Where(a => mine || a.OwnerId == viewer || a.SupportedOwnerId == viewer || scoutedArmies.Contains((viewer, a.Id))).ToArray();
         var garrison = visibleArmies.SelectMany(a => a.Troops).GroupBy(t => t.Unit.UnitId)
             .ToDictionary(g => g.Key, g => g.Sum(t => t.Count));
+        var burnedRemaining = Math.Max(0, oasis.BurnedUntil - warTime);
+        var burningProgress = Math.Clamp(oasis.BurningSeconds / 90.0, 0, 1);
         return new(oasis.Id, oasis.Name, oasis.Position, oasis.Resource, oasis.OwnerId, oasis.VillageId,
-            guarding.Sum(Fighters),
-            mine ? oasis.Stock : null, ResourceOasis.StorageCapacity, oasis.ProductionPerMinute,
+            mine ? guarding.Sum(Fighters) : 0,
+            mine && !isBurned ? oasis.Stock : null, ResourceOasis.StorageCapacity, isBurned ? default : oasis.ProductionPerMinute,
             mine ? oasis.AutoTransport : null, mine ? status : null, mine ? convoy?.Id : null,
-            oasis.WallLevel, oasis.WallHealth, oasis.WallMaximum, mine ? oasis.WallUpgradeCost : null, OasisUnderAttack(oasis),
+            oasis.WallLevel, oasis.WallHealth, oasis.WallMaximum, mine && !isBurned ? oasis.WallUpgradeCost : null, OasisUnderAttack(oasis),
             blockaded, oasisSieges.Find(s=>s.Oasis==oasis&&s.Status=="Active")?.Id,
             mine ? armies.Where(a=>OasisFoodSource(a)==oasis).Sum(a=>a.Upkeep)*60 : null,
-            garrison.Count > 0 ? garrison : null);
+            mine && garrison.Count > 0 ? garrison : null,
+            oasis.Level,
+            mine && !isBurned ? oasis.LevelUpgradeCost : null,
+            burnedRemaining,
+            burningProgress);
     }
     private void AdvanceOasisProduction(double seconds, double speed)
     {
         foreach (var oasis in oases)
         {
-            var rates = Enumerable.Range(0,4).Select(i=>(long)((i==(int)oasis.Resource?240:120)*speed)).ToArray();
+            if (oasis.BurnedUntil > warTime)
+            {
+                oasis.ProductionPerMinute = default;
+                continue;
+            }
+            var levelMultiplier = 1.0 + (oasis.Level * 0.05);
+            var rates = Enumerable.Range(0,4).Select(i=>(long)((i==(int)oasis.Resource?240:120)*speed*levelMultiplier)).ToArray();
             oasis.ProductionPerMinute = new(rates[0],rates[1],rates[2],rates[3]);
             if (oasis.OwnerId is not null)
                 for(var i=0;i<4;i++) oasis.Stockpile[i]=Math.Min(ResourceOasis.StorageCapacity,oasis.Stockpile[i]+(decimal)(rates[i]*seconds/60));
@@ -81,16 +104,28 @@ public sealed partial class LogisticsWorld
     }
     private bool ApplyOasis(Guid actor, GameCommand command, double now)
     {
-        if (command.Kind is not (CommandKind.SetOasisTransport or CommandKind.CollectOasis or CommandKind.UpgradeOasisWall)) return false;
+        if (command.Kind is not (CommandKind.SetOasisTransport or CommandKind.CollectOasis or CommandKind.UpgradeOasisWall or CommandKind.UpgradeOasisLevel)) return false;
         var oasis = oases.Find(o => o.Id == command.TargetId && o.OwnerId == actor)
             ?? throw new GameRuleException("not_owned", "This oasis does not belong to you.");
         var city = EconomyTarget(actor, oasis.VillageId ?? Guid.Empty);
+        if (oasis.BurnedUntil > now) throw new GameRuleException("burned", "A burned oasis cannot be managed.");
         if (command.Kind == CommandKind.SetOasisTransport) { oasis.AutoTransport = command.Enabled; oasis.NextTransportAt = now; return true; }
         if (command.Kind == CommandKind.CollectOasis) { SendOasisConvoy(oasis, city, now); return true; }
-        if (OasisUnderAttack(oasis)) throw new GameRuleException("siege", "An oasis wall cannot be upgraded while under attack.");
-        var cost = oasis.WallUpgradeCost ?? throw new GameRuleException("level", "Maximum wall level reached.");
-        city.Pay(cost); oasis.WallLevel++; oasis.WallHealth = oasis.WallMaximum;
-        Note(actor, now, "Oasis wall upgraded.", "build", targetId: oasis.Id); return true;
+        if (OasisUnderAttack(oasis)) throw new GameRuleException("siege", "An oasis cannot be upgraded while under attack.");
+        if (command.Kind == CommandKind.UpgradeOasisWall)
+        {
+            var cost = oasis.WallUpgradeCost ?? throw new GameRuleException("level", "Maximum wall level reached.");
+            city.Pay(cost); oasis.WallLevel++; oasis.WallHealth = oasis.WallMaximum;
+            Note(actor, now, "Oasis wall upgraded.", "build", targetId: oasis.Id); return true;
+        }
+        if (command.Kind == CommandKind.UpgradeOasisLevel)
+        {
+            var cost = oasis.LevelUpgradeCost ?? throw new GameRuleException("level", "Maximum oasis level reached.");
+            city.Pay(cost); oasis.Level++;
+            RefreshOasisBonuses();
+            Note(actor, now, $"{oasis.Name} upgraded to Level {oasis.Level}.", "build", targetId: oasis.Id); return true;
+        }
+        return false;
     }
     private void WarnOasisAttack(Army army, ResourceOasis oasis, double now)
     {
@@ -99,7 +134,7 @@ public sealed partial class LogisticsWorld
     }
     private void AdvanceOasisTransport(double now)
     {
-        foreach (var oasis in oases.Where(o => o.OwnerId is not null && o.AutoTransport && o.Stock.Total >= 2000 && !OasisBlockaded(o) && now >= o.NextTransportAt))
+        foreach (var oasis in oases.Where(o => o.OwnerId is not null && o.BurnedUntil <= now && o.AutoTransport && o.Stock.Total >= 2000 && !OasisBlockaded(o) && now >= o.NextTransportAt))
         {
             oasis.NextTransportAt = now + 5;
             if (convoys.Any(c => c.OasisId == oasis.Id)) continue;
@@ -110,6 +145,7 @@ public sealed partial class LogisticsWorld
     }
     private void SendOasisConvoy(ResourceOasis oasis, VillageEconomy city, double now)
     {
+        if (oasis.BurnedUntil > now) throw new GameRuleException("burned", "A burned oasis cannot send collection wagons.");
         if (city.Besieged) throw new GameRuleException("siege", "A blockaded village cannot send collection wagons.");
         if (OasisBlockaded(oasis)) throw new GameRuleException("siege", "Oasis blockaded: collection suspended");
         if (oasis.Stock.Total < 1) throw new GameRuleException("resources", "The oasis has no stored resources yet.");
@@ -148,7 +184,11 @@ public sealed partial class LogisticsWorld
     private (Position Position, Guid? Owner) DefenseSite(Guid id)
     {
         if (villages.GetValueOrDefault(id) is { Ruined: false } city) return (city.Village.Position, city.Village.OwnerId);
-        if (oases.Find(o => o.Id == id) is { } oasis) return (oasis.Position, oasis.OwnerId);
+        if (oases.Find(o => o.Id == id) is { } oasis)
+        {
+            if (oasis.BurnedUntil > warTime) throw new GameRuleException("burned", "This oasis is burned and in ruins.");
+            return (oasis.Position, oasis.OwnerId);
+        }
         throw new GameRuleException("target", "This defense site is no longer available.");
     }
     private void OrderReinforcement(Army army, Guid destination, double now, IReadOnlyDictionary<string, int>? formation = null)
@@ -168,11 +208,13 @@ public sealed partial class LogisticsWorld
         foreach (var city in villages.Values) { Array.Clear(city.OasisBonuses); city.OwnedOases = 0; }
         foreach (var oasis in oases)
         {
+            if (oasis.BurnedUntil > warTime) continue;
             if (oasis.VillageId is not { } id || villages.GetValueOrDefault(id) is not { Ruined: false } city || city.Village.OwnerId != oasis.OwnerId)
             { oasis.OwnerId = null; oasis.VillageId = null; oasis.WallLevel = 0; oasis.WallHealth = 0; continue; }
             city.OwnedOases++;
             if (OasisBlockaded(oasis)) continue;
-            for (var i = 0; i < 4; i++) city.OasisBonuses[i] += i == (int)oasis.Resource ? .5 : .25;
+            var levelBonus = oasis.Level * 0.05;
+            for (var i = 0; i < 4; i++) city.OasisBonuses[i] += (i == (int)oasis.Resource ? .5 : .25) + levelBonus;
         }
     }
     private void AdvanceOasisAndReinforcements(Army army, double seconds, double now, double shieldUntil)
@@ -204,9 +246,9 @@ public sealed partial class LogisticsWorld
             var oasisSiege = oasisSieges.Find(s=>s.Oasis.Id==army.DefendingSiteId&&ValidOasisSiege(s));
             if(newlyArrived&&oasisSiege is not null&&now>=shieldUntil){var besieger=oasisSiege.Attackers.FirstOrDefault(a=>ValidOasisArmy(oasisSiege,a));if(besieger is not null)StartBattle(army,besieger,now);}
         }
-        if (army.Order is not ("Occupying" or "Blockading") || Distance(army.Position, army.Destination) > 4) return;
+        if (army.Order is not ("Occupying" or "Blockading" or "Burning") || Distance(army.Position, army.Destination) > 4) return;
         var oasis = oases.Find(o => o.Id == army.TargetId);
-        if (oasis is null) { CompleteAttack(army); return; }
+        if (oasis is null || oasis.BurnedUntil > now) { CompleteAttack(army); return; }
         if (oasis.OwnerId is { } owner && owner != army.OwnerId && now < shieldUntil)
         { army.ActionSeconds = 0; return; }
         if(oasis.OwnerId is not null&&oasis.OwnerId!=army.OwnerId) BeginOasisSiege(army,oasis,now);
@@ -224,19 +266,51 @@ public sealed partial class LogisticsWorld
         var guard = Guards(oasis.Id, army.OwnerId).FirstOrDefault();
         if (guard is not null) { army.ActionSeconds = 0; StartBattle(army, guard, now); return; }
         if (armies.Any(a => a.DefendingSiteId == oasis.Id && a.OwnerId != army.OwnerId && a.Order == "Battle")) return;
+
+        if (army.OasisMode == OasisMode.Burn)
+        {
+            army.Order = "Burning";
+            army.ActionSeconds += seconds;
+            oasis.BurningSeconds = army.ActionSeconds;
+            if (army.ActionSeconds < 90) return;
+
+            var formerOwner = oasis.OwnerId;
+            oasis.BurnedUntil = now + 300;
+            oasis.BurningSeconds = 0;
+            oasis.Level = 0;
+            oasis.WallLevel = 0;
+            oasis.WallHealth = 0;
+            oasis.OwnerId = null;
+            oasis.VillageId = null;
+            Array.Clear(oasis.Stockpile);
+            foreach (var convoy in convoys.Where(c => c.OasisId == oasis.Id).ToArray())
+                convoy.Returning = true;
+            foreach (var siege in oasisSieges.Where(s => s.Oasis == oasis && s.Status == "Active").ToArray())
+                EndOasisSiege(siege, "Burned", now, army.OwnerId);
+            RefreshOasisBonuses();
+            var report = BeginReport(Guid.NewGuid(), "OasisBurned", now, army, formerOwner, null, oasis.Position);
+            ReportEvent(report.Id, now, $"{oasis.Name} burned to ashes! It is in ruins and cannot be captured or utilized for 5 minutes.", "Victory", army.OwnerId);
+            Note(army.OwnerId, now, $"{oasis.Name} burned to ashes for 5 minutes.", "war", targetId: oasis.Id);
+            if (formerOwner is { } former && former != army.OwnerId)
+                Note(former, now, $"Your {oasis.Name} was burned to ashes! Its production bonus has ended.", "oasis-loss", targetId: oasis.Id);
+            army.ActionSeconds = 0;
+            CompleteAttack(army);
+            return;
+        }
+
         army.ActionSeconds += seconds;
         if (army.ActionSeconds < 15) return;
-        var formerOwner = oasis.OwnerId;
-        if (formerOwner != army.OwnerId) { oasis.WallLevel = 0; oasis.WallHealth = 0; oasis.AutoTransport = true; }
+        var formerOwner2 = oasis.OwnerId;
+        if (formerOwner2 != army.OwnerId) { oasis.WallLevel = 0; oasis.WallHealth = 0; oasis.AutoTransport = true; }
         oasis.OwnerId = army.OwnerId; oasis.VillageId = army.HomeVillageId;
         var parentReport=oasisSieges.Find(s=>s.Oasis==oasis&&s.Status=="Active")?.Id;
         foreach(var siege in oasisSieges.Where(s=>s.Oasis==oasis&&s.Status=="Active").ToArray()) EndOasisSiege(siege,"Captured",now,army.OwnerId);
         RefreshOasisBonuses();
-        var report = BeginReport(Guid.NewGuid(), "Occupation", now, army, formerOwner, null, oasis.Position);
-        report.ParentReportId=parentReport;
-        ReportEvent(report.Id, now, $"{oasis.Name} captured. Home production gains +50% {oasis.Resource} and +25% other resources. No resources were looted.", "Victory", army.OwnerId);
+        var report2 = BeginReport(Guid.NewGuid(), "Occupation", now, army, formerOwner2, null, oasis.Position);
+        report2.ParentReportId=parentReport;
+        ReportEvent(report2.Id, now, $"{oasis.Name} captured. Home production gains +50% {oasis.Resource} and +25% other resources. No resources were looted.", "Victory", army.OwnerId);
         Note(army.OwnerId, now, $"{oasis.Name} now supports its occupying village.", "war");
-        if (formerOwner is { } former && former != army.OwnerId) Note(former, now, "Your oasis was captured. Its production bonus has ended.", "oasis-loss", targetId: oasis.Id);
+        if (formerOwner2 is { } former2 && former2 != army.OwnerId) Note(former2, now, "Your oasis was captured. Its production bonus has ended.", "oasis-loss", targetId: oasis.Id);
         army.ActionSeconds = 0;
         if (army.AfterAttack == AfterAttack.Return) CompleteAttack(army);
         else { army.Order = "Guarding"; army.DefendingSiteId = oasis.Id; army.SupportedOwnerId = army.OwnerId; }
