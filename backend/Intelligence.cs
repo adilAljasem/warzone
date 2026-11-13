@@ -8,7 +8,7 @@ public sealed record ReportUnit(string UnitId, int Sent, int Dead, int Wounded, 
 public sealed record ReportLoad(int Wagons, double Capacity, double Loaded);
 public sealed record ReportEvent(double At, string Text);
 public sealed record ReportArmy(Guid ArmyId, Guid OwnerId, bool Attacking, bool Active, ReportUnit[] Units);
-public sealed record CityAttackSnapshot(AttackObjective Objective, string Phase, double Progress, int RemainingBuildingLevels, double Wall, double Gate, double GarrisonMorale, double Loyalty);
+public sealed record CityAttackSnapshot(AttackObjective Objective, string Phase, double Progress, int RemainingBuildingLevels, double Wall, double Gate, double Loyalty);
 internal sealed class ReportForce(Army army,bool attacking){public Army Army=army;public bool Attacking=attacking;public Dictionary<string,int> Sent=[];public Dictionary<string,ReportLoss> Losses=[];}
 public sealed record CombatReport(Guid Id, string Kind, double StartedAt, double UpdatedAt, Guid Attacker, Guid? Defender,
     Guid? VillageId, Position Position, string Status, Guid? Winner, Resources AttackerLoot, Resources DefenderLoss, Resources DefenderLoot, Resources AttackerResourceLoss,
@@ -46,14 +46,14 @@ internal sealed class ReportState(Guid id, string kind, double now, Army attacke
             AttackerLosses.Values.ToArray(), hideDefender ? [] : DefenderLosses.Values.ToArray(), Events.ToArray(),
             Units(AttackerSent, AttackerLosses), hideDefender ? [] : Units(DefenderSent, DefenderLosses),
             AttackerLoad, hideDefender ? null : DefenderLoad, OasisDefense,
-            Forces.Where(f => !hideDefender || f.Attacking).Select(f => new ReportArmy(f.Army.Id, f.Army.OwnerId, f.Attacking, Status == "Active" && !f.Army.Routing && f.Army.Order is "Battle" or "Sieging" or "Occupying" or "Blockading" or "Guarding", Units(f.Sent, f.Losses))).ToArray(),
+            Forces.Where(f => !hideDefender || f.Attacking).OrderByDescending(f => f.Attacking).Select(f => new ReportArmy(f.Army.Id, f.Army.OwnerId, f.Attacking, Status == "Active" && !f.Army.Routing && f.Army.Order is "Battle" or "Sieging" or "Occupying" or "Blockading" or "Guarding", Units(f.Sent, f.Losses))).ToArray(),
             ParentReportId, CityAttack, hideDefender ? [] : Units(GarrisonSent, GarrisonLosses));
     }
 }
 
 public sealed partial class LogisticsWorld
 {
-    public const double MapCenter = 1500, MapMinimum = 30, MapMaximum = 2970, SettlementRadius = 1150;
+    public const double MapSize = 4500, MapCenter = 2250, MapMinimum = 45, MapMaximum = 4455, SettlementRadius = 1750;
     private readonly List<ReportState> reports = [];
     private ReportState BeginReport(Guid id, string kind, double now, Army army, Guid? defender, Guid? village, Position position)
     {
@@ -91,7 +91,7 @@ public sealed partial class LogisticsWorld
         var report = reports.Find(r => r.Id == id); if (report is null) return;
         report.UpdatedAt = now;
         if (sieges.Find(s=>s.Id==id) is { } siege)
-            report.CityAttack=new(siege.Objective,siege.Phase,siege.Progress,siege.City.Village.Buildings.Sum(b=>b.Level),siege.Wall,siege.Gate,siege.Morale,siege.Loyalty);
+            report.CityAttack=new(siege.Objective,siege.Phase,siege.Progress,siege.City.Village.Buildings.Sum(b=>b.Level),siege.Wall,siege.Gate,siege.Loyalty);
         RefreshReportForces(report);
         if (report.VillageId is { } city && villages[city].Village.OwnerId == report.Defender)
             TrackCommitted(villages[city].Garrison(), report.GarrisonSent, report.GarrisonLosses);
@@ -118,8 +118,18 @@ public sealed partial class LogisticsWorld
     {
         if(report.Forces.Any(f=>f.Army==army))return;
         if(report.ParentReportId is { } parentId && reports.Find(r=>r.Id==parentId) is { } parent)
-            AddReportArmy(parent,army,army.OwnerId==parent.Attacker);
-        var force=new ReportForce(army,attacking);TrackCommitted(army.Troops,force.Sent,force.Losses);report.Forces.Add(force);RefreshReportForces(report);
+        {
+            var parentAttacking = parent.Defender is { } parentDefender
+                ? army.OwnerId != parentDefender && army.SupportedOwnerId != parentDefender && !CampAllied(army.OwnerId, parentDefender)
+                : army.OwnerId == parent.Attacker || CampAllied(army.OwnerId, parent.Attacker);
+            AddReportArmy(parent, army, parentAttacking);
+        }
+        var force=new ReportForce(army,attacking);
+        TrackCommitted(army.Troops,force.Sent,force.Losses);
+        // Keep attacking forces grouped above defending forces while preserving join order per side.
+        var insertAt=attacking?report.Forces.FindLastIndex(f=>f.Attacking)+1:report.Forces.Count;
+        report.Forces.Insert(insertAt,force);
+        RefreshReportForces(report);
     }
     private void RefreshReportForces(ReportState report)
     {

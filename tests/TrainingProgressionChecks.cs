@@ -25,7 +25,7 @@ internal static class TrainingProgressionChecks
         foreach (var tribe in Enum.GetValues<TribeType>())
         {
             var city = new VillageEconomy(Guid.NewGuid(),tribe,new(500,500));
-            Check(city.Training.Count == 14, "Every tribe has fourteen recruits");
+            Check(city.Training.Count == 10, "Every tribe has ten recruits");
             foreach (var unit in city.Training)
             {
                 var view = city.Snapshot().Targets.Single(t=>t.Id==unit.QueueId);
@@ -47,9 +47,9 @@ internal static class TrainingProgressionChecks
                 {
                     Upgrade(city,building);
                     var view=city.Snapshot();
-                    Check(Math.Abs(view.Targets.Single(t=>t.Id==recruit.QueueId).TrainingSeconds!.Value-baseline/(1+.025*(level-1)))<1e-9,
-                        "Every facility upgrade adds 2.5 percentage points of speed, including tribe bonuses");
-                    Check(Math.Abs(view.Targets.Single(t=>t.Id==building.QueueId).TrainingSpeedBonusPercent-2.5*(level-1))<1e-9,
+                    Check(Math.Abs(view.Targets.Single(t=>t.Id==recruit.QueueId).TrainingSeconds!.Value-baseline/(1+.07*(level-1)))<1e-9,
+                        "Every facility upgrade adds 7 percentage points of speed, including tribe bonuses");
+                    Check(Math.Abs(view.Targets.Single(t=>t.Id==building.QueueId).TrainingSpeedBonusPercent-7*(level-1))<1e-9,
                         "UI speed bonus matches server duration");
                     Check(view.Targets.Where(t=>t.TrainingBuilding==facility.ToString()).All(t=>t.Unlocked==(level>=t.RequiredBuildingLevel)),
                         "Units unlock at exactly the facility requirement");
@@ -66,12 +66,13 @@ internal static class TrainingProgressionChecks
             "Upgrading preserves the paid batch's start and completion times");
         running.Advance(8,18,0);
         Check(running.Available(infantry.Unit.UnitId)==22,"Existing paid batch completes exactly once");
-        var archer=running.Training.Single(t=>t.Unit.Role==UnitRole.Archer);
-        running.Apply(new(Guid.NewGuid(),CommandKind.SetAutoQueue,archer.QueueId),18);
+        Upgrade(running,barracks);
+        var swordsman=running.Training.Single(t=>t.Unit.Role==UnitRole.Swordsman);
+        running.Apply(new(Guid.NewGuid(),CommandKind.SetAutoQueue,swordsman.QueueId),18);
         running.DamageBuilding(BuildingType.Barracks);
-        Check(!archer.AutoQueueEnabled && !running.Snapshot().Targets.Single(t=>t.Id==archer.QueueId).Unlocked,
+        Check(!swordsman.AutoQueueEnabled && !running.Snapshot().Targets.Single(t=>t.Id==swordsman.QueueId).Unlocked,
             "Demolition below the requirement disables repeat recruitment and relocks the unit");
-        Reject(()=>running.Apply(new(Guid.NewGuid(),CommandKind.Train,archer.QueueId),19),"unit_locked");
+        Reject(()=>running.Apply(new(Guid.NewGuid(),CommandKind.Train,swordsman.QueueId),19),"unit_locked");
         return checks;
     }
 }

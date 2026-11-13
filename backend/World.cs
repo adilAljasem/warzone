@@ -59,7 +59,8 @@ public sealed class Army : MapEntity
     public Guid HomeVillageId { get; internal set; }
     public Guid SupplyVillageId { get; internal set; }
     public IReadOnlyList<TroopStack> Troops { get; internal set; }
-    public double Morale { get; private set; } = 100;
+    public double StarvationTimer { get; internal set; }
+    public bool StarvingNotified { get; internal set; }
     public bool AutoSupplyEnabled { get; private set; } = true;
     public Position Destination { get; internal set; }
     public double Wheat { get; internal set; }
@@ -73,6 +74,8 @@ public sealed class Army : MapEntity
     public double LootSpace => Math.Max(0, Troops.Sum(x => (double)x.Count * x.Unit.CarryCapacity) - Wheat - Loot.Total);
     public string Order { get; internal set; } = "Marching";
     public Guid? TargetId { get; internal set; }
+    public Guid? MergeGroupId { get; internal set; }
+    internal Guid? MergeVillageId { get; set; }
     public Guid? DefendingSiteId { get; internal set; }
     public Guid? SupportedOwnerId { get; internal set; }
     public double? CampRadius { get; internal set; }
@@ -83,10 +86,12 @@ public sealed class Army : MapEntity
     public double NextSupplyAt { get; internal set; }
     public int SupplyWagons { get; internal set; }
     public int Escorts { get; internal set; }
+    public int WoundedCount { get; internal set; }
+    public int DeadCount { get; internal set; }
+    public int FledCount { get; internal set; }
     public bool Routing { get; internal set; }
     public string SupplyStatus { get; internal set; } = "Ready";
     internal void SetSupply(bool enabled) => AutoSupplyEnabled = enabled;
-    internal void AdjustMorale(double delta) => Morale = Math.Clamp(Morale + delta, 0, 100);
 
     public Army(Guid ownerId, Position position, Guid homeVillageId, IEnumerable<TroopStack> troops) : base(ownerId, position)
     {

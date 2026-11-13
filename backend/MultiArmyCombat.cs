@@ -11,78 +11,233 @@ internal sealed class BattleMember(Army army, Convoy? convoy = null)
 
 public sealed partial class LogisticsWorld
 {
-    private static bool Allied(Army a, Army b) => a.OwnerId == b.OwnerId
+    private bool Allied(Army a, Army b) => a.OwnerId == b.OwnerId || CampAllied(a.OwnerId, b.OwnerId)
         || a.DefendingSiteId is not null && a.DefendingSiteId == b.DefendingSiteId && a.SupportedOwnerId == b.SupportedOwnerId;
-    private static Army[] Fighting(IEnumerable<BattleMember> members) => members.Where(m=>!m.Withdrawn && !m.Army.Routing && Count(m.Army)>0 && m.Army.Morale>0).Select(m=>m.Army).ToArray();
+    private bool SideAlliedWith(IEnumerable<BattleMember> side, Guid actor) =>
+        side.Any(m => !m.Withdrawn && !m.Army.Routing && Count(m.Army) > 0 && (m.Army.OwnerId == actor || CampAllied(m.Army.OwnerId, actor)));
+    private bool SideAlliedWith(IEnumerable<BattleMember> side, Army army) =>
+        side.Any(m => !m.Withdrawn && !m.Army.Routing && Count(m.Army) > 0 && Allied(m.Army, army));
+    private bool CanAttackIntoActiveBattle(Guid actor, Army target)
+    {
+        var battle = battles.Find(b => b.Status == "Active" && b.ActiveContains(target));
+        if (battle is null) return true;
+        var targetIsAttacker = battle.Attackers.Any(m => !m.Withdrawn && m.Army == target);
+        var targetSide = targetIsAttacker ? battle.Attackers : battle.Defenders;
+        var opposingSide = targetIsAttacker ? battle.Defenders : battle.Attackers;
+        return !SideAlliedWith(targetSide, actor) && SideAlliedWith(opposingSide, actor);
+    }
+    private bool CanAttackIntoActiveBattle(Army attacker, Army target)
+    {
+        var battle = battles.Find(b => b.Status == "Active" && b.ActiveContains(target));
+        if (battle is null) return true;
+        var targetIsAttacker = battle.Attackers.Any(m => !m.Withdrawn && m.Army == target);
+        var targetSide = targetIsAttacker ? battle.Attackers : battle.Defenders;
+        var opposingSide = targetIsAttacker ? battle.Defenders : battle.Attackers;
+        return !SideAlliedWith(targetSide, attacker) && SideAlliedWith(opposingSide, attacker);
+    }
+    private static Army[] Fighting(IEnumerable<BattleMember> members) => members.Where(m=>!m.Withdrawn && !m.Army.Routing && Count(m.Army)>0).Select(m=>m.Army).ToArray();
     private void JoinBattle(BattleState battle, Army army, bool attacking, double now)
     {
-        if(battle.Contains(army)||army.Routing||Fighters(army)==0||battles.Any(b=>b.Status=="Active"&&b.Contains(army)))return;
+        if(battle.Contains(army)||army.Routing||Fighters(army)==0||battles.Any(b=>b.Status=="Active"&&b.ActiveContains(army)))return;
         var side=attacking?battle.Attackers:battle.Defenders;
-        if(!side.Any(m=>Allied(m.Army,army)))return;
+        var opposingSide=attacking?battle.Defenders:battle.Attackers;
+        if(!SideAlliedWith(side,army)||SideAlliedWith(opposingSide,army))return;
         side.Add(new(army));army.Order="Battle";
         AddReportArmy(reports.Single(r=>r.Id==battle.Id),army,attacking);
         ReportEvent(battle.Id,now,"Another army joined the battle.");
     }
     private void JoinNearbyForces(BattleState battle,double now)
     {
-        foreach(var army in armies.Where(a=>!a.Routing&&a.Order is "Idle" or "Guarding" or "Reinforcing" or "Occupying" or "Blockading" or "Attacking" or "Approaching" or "Sieging").ToArray())
+        foreach(var army in armies.Where(a=>!a.Routing&&a.Order is "Idle" or "Guarding" or "Reinforcing" or "Occupying" or "Blockading" or "Capturing" or "Attacking" or "Approaching" or "Sieging").ToArray())
         {
             if(battle.Contains(army))continue;
-            var attack=battle.Attackers.Any(m=>Allied(army,m.Army));
-            var defense=battle.Defenders.Any(m=>Allied(army,m.Army));
+            var attack=SideAlliedWith(battle.Attackers,army);
+            var defense=SideAlliedWith(battle.Defenders,army);
             if(attack==defense)continue;
             var side=attack?battle.Attackers:battle.Defenders;
-            if(side.Any(m=>Distance(army.Position,m.Army.Position)<=45))JoinBattle(battle,army,attack,now);
+            if(side.Any(m=>!m.Withdrawn&&Distance(army.Position,m.Army.Position)<=45))JoinBattle(battle,army,attack,now);
         }
     }
-    private double GroupPower(Army[] own,Army[] enemy,bool attack)
+    private readonly record struct TierSlot(Army Army, int StackIndex, TroopStack Stack);
+    private sealed record SideRoundPlan(Dictionary<Army, int[]> LossByArmy, List<((Guid ArmyId, string UnitId) Key, double NextDamage)> PoolUpdates);
+
+    private static bool HasFrontline(Army[] side) =>
+        side.Any(a => a.Troops.Any(t => t.Unit is not (SupplyWagon or SiegeEngine)));
+
+    private static TierSlot[] ActiveTierSlots(Army[] side, bool rearOnly = false)
     {
-        var total=Math.Max(1,enemy.Sum(Count));
-        return own.Sum(a=>enemy.Sum(e=>Power(a,e,attack)*Count(e)/total));
+        var takeRear = rearOnly || !HasFrontline(side);
+        var list = new List<TierSlot>();
+        foreach (var a in side)
+            for (var i = 0; i < a.Troops.Count; i++)
+            {
+                var t = a.Troops[i];
+                var isRear = t.Unit is SupplyWagon or SiegeEngine;
+                if (isRear == takeRear) list.Add(new(a, i, t));
+            }
+        return list.ToArray();
     }
-    private int DefenderLoss(Army[] attackers,Army[] defenders)
+
+    // Scales round tempo gently for larger battles and accelerates prolonged stalemates so fights always finish naturally.
+    private static double RoundPaceFactor(int totalFighters, int round)
     {
-        var total=defenders.Sum(Count);if(total==0||attackers.Sum(Fighters)==0)return 0;
-        var hp=defenders.SelectMany(a=>a.Troops).Sum(t=>t.Count*t.Unit.Definition.Stats.HitPoints)/total;
-        var armor=.5+GroupPower(defenders,attackers,false)/total/100;
-        return Math.Max(1,(int)Math.Ceiling(GroupPower(attackers,defenders,true)*.12/Math.Max(1,hp*armor)));
+        var sizeBoost = 1.0 + Math.Min(0.6, Math.Max(0, totalFighters - 300) / 1500.0);
+        var roundBoost = round <= 10 ? 1.0 : 1.0 + Math.Min(2.0, (round - 10) * 0.12);
+        return 0.25 * sizeBoost * roundBoost;
     }
-    private int AttackerLoss(Army[] attackers,Army[] defenders)
+
+    private double ComputeTierSlotDamage(TierSlot target, int tierTotal, TierSlot[] activeOpponents, bool targetsAttacking, double damageMultiplier, double paceFactor)
     {
-        var total=attackers.Sum(Count);if(total==0||defenders.Sum(Fighters)==0)return 0;
-        var hp=attackers.SelectMany(a=>a.Troops).Sum(t=>t.Count*t.Unit.Definition.Stats.HitPoints)/total;
-        var offense=.5+GroupPower(attackers,defenders,true)/total/100;
-        return Math.Max(1,(int)Math.Ceiling(GroupPower(defenders,attackers,false)*.12/Math.Max(1,hp*offense)));
+        if (tierTotal <= 0) return 0;
+        var share = target.Stack.Count / (double)tierTotal;
+        var targetMounted = UnitBalance.Mounted(target.Stack.Unit);
+        var incoming = activeOpponents.Sum(enemy =>
+        {
+            var enemyMounted = UnitBalance.Mounted(enemy.Stack.Unit);
+            var oppStat = !targetsAttacking
+                ? enemy.Stack.Unit.Attack
+                : (targetMounted ? enemy.Stack.Unit.DefenseCavalry : enemy.Stack.Unit.DefenseInfantry);
+            var oppMatchup = UnitBalance.Matchup(enemy.Stack.Unit, target.Stack.Unit.Definition.Role, !targetsAttacking);
+            var targetDef = enemyMounted ? target.Stack.Unit.DefenseCavalry : target.Stack.Unit.DefenseInfantry;
+            var mitigation = 100.0 / (100.0 + Math.Max(0, targetDef));
+            return enemy.Stack.Count * oppStat * oppMatchup * ForceModifier(enemy.Army) * mitigation;
+        });
+        return share * incoming * damageMultiplier * paceFactor;
     }
-    private void DamageGroup(Army[] armies,int losses,double now,Guid enemy,bool preserve)
+
+    private SideRoundPlan PlanSideRoundDamage(Army[] targets, Army[] opponents, bool targetsAttacking, double damageMultiplier, double paceFactor,
+        Dictionary<(Guid ArmyId, string UnitId), double> damagePool, Func<Army, Guid> poolKeySelector)
     {
-        var total=armies.Sum(Count);var left=Math.Min(losses,Math.Max(0,total-(preserve?1:0)));
-        var allocations=armies.Select(a=>(Army:a,Loss:(int)Math.Floor(left*Count(a)/(double)Math.Max(1,total)))).ToArray();
-        var extra=left-allocations.Sum(a=>a.Loss);
-        foreach(var (army,n) in allocations){var amount=n;if(extra>0&&amount<Count(army)){amount++;extra--;}Damage(army,amount,now,enemy,true);}
+        var lossByArmy = targets.ToDictionary(a => a, a => new int[a.Troops.Count]);
+        var poolUpdates = new List<((Guid ArmyId, string UnitId) Key, double NextDamage)>();
+        if (targets.Sum(Count) == 0 || opponents.Sum(Count) == 0)
+            return new(lossByArmy, poolUpdates);
+
+        var activeOpponents = ActiveTierSlots(opponents);
+        if (activeOpponents.Length == 0) return new(lossByArmy, poolUpdates);
+
+        var hasFront = HasFrontline(targets);
+        var front = ActiveTierSlots(targets, rearOnly: false);
+        var frontTotal = front.Sum(x => x.Stack.Count);
+        var (frontKilled, totalFrontDamage, unspentFrontDamage) = PlanTierSlots(front, frontTotal, activeOpponents, targetsAttacking, damageMultiplier, paceFactor, damagePool, poolKeySelector, lossByArmy, poolUpdates);
+
+        if (hasFront && frontTotal > 0 && frontKilled >= frontTotal && unspentFrontDamage > 0 && totalFrontDamage > 0)
+        {
+            var rear = ActiveTierSlots(targets, rearOnly: true);
+            var rearTotal = rear.Sum(x => x.Stack.Count);
+            if (rearTotal > 0)
+            {
+                var spilloverFraction = Math.Clamp(unspentFrontDamage / totalFrontDamage, 0, 1);
+                PlanTierSlots(rear, rearTotal, activeOpponents, targetsAttacking, damageMultiplier * spilloverFraction, paceFactor, damagePool, poolKeySelector, lossByArmy, poolUpdates);
+            }
+        }
+        return new(lossByArmy, poolUpdates);
     }
-    private void AdvanceBattle(BattleState battle,double now)
+
+    private (int Killed, double TotalDamage, double UnspentDamage) PlanTierSlots(TierSlot[] tier, int tierTotal, TierSlot[] activeOpponents,
+        bool targetsAttacking, double damageMultiplier, double paceFactor,
+        Dictionary<(Guid ArmyId, string UnitId), double> damagePool, Func<Army, Guid> poolKeySelector,
+        Dictionary<Army, int[]> lossByArmy, List<((Guid ArmyId, string UnitId) Key, double NextDamage)> poolUpdates)
     {
-        JoinNearbyForces(battle,now);
-        var attackers=Fighting(battle.Attackers);var defenders=Fighting(battle.Defenders);
-        if(attackers.Length==0||defenders.Length==0){EndBattle(battle,attackers.Length==0?battle.Defender:battle.Attacker,now);return;}
-        if(now<battle.NextRound)return;
-        battle.NextRound=now+5;battle.Round++;
-        foreach(var member in battle.ConvoyMembers.Where(m=>!m.Withdrawn)){var convoy=member.Convoy!;member.Army.Wheat=convoy.WheatCargo;member.Army.AdjustMorale(convoy.WheatCargo==0?-20:.9);}
-        var attackingLoss=AttackerLoss(attackers,defenders);var defendingLoss=DefenderLoss(attackers,defenders);
-        var preserve=now-battle.Started<30;
-        DamageGroup(attackers,attackingLoss,now,defenders[0].OwnerId,preserve);
-        DamageGroup(defenders,defendingLoss,now,attackers[0].OwnerId,preserve);
-        foreach(var member in battle.ConvoyMembers){var carrier=member.Convoy!;carrier.Troops=member.Army.Troops;carrier.WheatCargo=Math.Min(carrier.WheatCargo,carrier.WheatCapacity);}
-        ReportEvent(battle.Id,now,$"Round {battle.Round}: attackers {attackers.Sum(Count)} remaining, morale {attackers.Average(a=>a.Morale):0}%; defenders {defenders.Sum(Count)} remaining, morale {defenders.Average(a=>a.Morale):0}%.");
-        if(preserve)return;
-        attackers=Fighting(battle.Attackers);defenders=Fighting(battle.Defenders);
-        if(attackers.Length==0||defenders.Length==0||now-battle.Started>=120)
-            EndBattle(battle,attackers.Length==0?battle.Defender:defenders.Length==0?battle.Attacker:GroupPower(attackers,defenders,true)>=GroupPower(defenders,attackers,false)?battle.Attacker:battle.Defender,now);
+        if (tierTotal == 0) return (0, 0, 0);
+        var killedTotal = 0;
+        var damageTotal = 0d;
+        var unspentTotal = 0d;
+        var rawDamages = tier.Select(slot => ComputeTierSlotDamage(slot, tierTotal, activeOpponents, targetsAttacking, damageMultiplier, paceFactor)).ToArray();
+        // Keep side-level incoming damage balanced while splitting mixed-unit casualties by 1 / (10 + roleStat):
+        // Attackers distribute losses by Attack (weaker Attack dies faster); defenders by weighted Defense vs enemy mix.
+        var tierDamage = rawDamages.Sum();
+        var totalOppCount = activeOpponents.Sum(e => e.Stack.Count);
+        var oppCavShare = totalOppCount > 0
+            ? activeOpponents.Where(e => UnitBalance.Mounted(e.Stack.Unit)).Sum(e => e.Stack.Count) / (double)totalOppCount
+            : 0d;
+        var oppInfShare = 1.0 - oppCavShare;
+        var vulnScores = tier.Select(slot =>
+        {
+            var roleStat = targetsAttacking
+                ? slot.Stack.Unit.Attack
+                : oppInfShare * slot.Stack.Unit.DefenseInfantry + oppCavShare * slot.Stack.Unit.DefenseCavalry;
+            return slot.Stack.Count * (1.0 / (10.0 + Math.Max(0, roleStat)));
+        }).ToArray();
+        var vulnTotal = vulnScores.Sum();
+        var slotDamages = vulnTotal > 0 ? vulnScores.Select(v => tierDamage * (v / vulnTotal)).ToArray() : rawDamages;
+        for (var i = 0; i < tier.Length; i++)
+        {
+            var slot = tier[i];
+            var dmg = slotDamages[i];
+            damageTotal += dmg;
+            var key = (poolKeySelector(slot.Army), slot.Stack.Unit.UnitId);
+            var pool = damagePool.GetValueOrDefault(key) + dmg;
+            var hp = Math.Max(1, slot.Stack.Unit.Definition.Stats.HitPoints);
+            var kills = Math.Min(slot.Stack.Count, (int)Math.Floor(pool / hp));
+            killedTotal += kills;
+            lossByArmy[slot.Army][slot.StackIndex] += kills;
+            var leftover = Math.Max(0, pool - kills * hp);
+            if (kills >= slot.Stack.Count)
+            {
+                unspentTotal += leftover;
+                poolUpdates.Add((key, 0));
+            }
+            else
+            {
+                poolUpdates.Add((key, leftover));
+            }
+        }
+        return (killedTotal, damageTotal, unspentTotal);
+    }
+
+    private int CommitSideRoundPlan(Army[] targets, SideRoundPlan plan, Dictionary<(Guid ArmyId, string UnitId), double> damagePool, double now, Guid enemyOwner, bool deployed)
+    {
+        foreach (var (key, next) in plan.PoolUpdates)
+        {
+            if (next <= 0) damagePool.Remove(key);
+            else damagePool[key] = next;
+        }
+        var appliedTotal = 0;
+        foreach (var army in targets)
+        {
+            var stackLosses = plan.LossByArmy[army];
+            var armyTotalLost = stackLosses.Sum();
+            if (armyTotalLost == 0) continue;
+            appliedTotal += armyTotalLost;
+            var wagonsBefore = RoleCount(army, UnitRole.Wagon);
+            var surviving = new List<TroopStack>();
+            for (var i = 0; i < army.Troops.Count; i++)
+            {
+                var stack = army.Troops[i];
+                var lost = stackLosses[i];
+                RegisterLoss(army, stack.Unit, lost, now, enemyOwner, deployed);
+                if (stack.Count > lost) surviving.Add(new(stack.Unit, stack.Count - lost));
+            }
+            FinalizeArmyDamage(army, surviving, armyTotalLost, wagonsBefore);
+        }
+        return appliedTotal;
+    }
+
+    private void AdvanceBattle(BattleState battle, double now)
+    {
+        JoinNearbyForces(battle, now);
+        var attackers = Fighting(battle.Attackers); var defenders = Fighting(battle.Defenders);
+        if (attackers.Length == 0 || defenders.Length == 0) { EndBattle(battle, attackers.Length == 0 ? battle.Defender : battle.Attacker, now); return; }
+        if (now < battle.NextRound) return;
+        battle.NextRound = now + 5; battle.Round++;
+        foreach (var member in battle.ConvoyMembers.Where(m => !m.Withdrawn)) { member.Army.Wheat = member.Convoy!.WheatCargo; }
+
+        var pace = RoundPaceFactor(attackers.Sum(Count) + defenders.Sum(Count), battle.Round);
+        var attPlan = PlanSideRoundDamage(attackers, defenders, true, 1, pace, battle.DamagePool, a => a.Id);
+        var defPlan = PlanSideRoundDamage(defenders, attackers, false, 1, pace, battle.DamagePool, a => a.Id);
+        CommitSideRoundPlan(attackers, attPlan, battle.DamagePool, now, defenders[0].OwnerId, true);
+        CommitSideRoundPlan(defenders, defPlan, battle.DamagePool, now, attackers[0].OwnerId, true);
+
+        foreach (var member in battle.ConvoyMembers) { var carrier = member.Convoy!; carrier.Troops = member.Army.Troops; carrier.WheatCargo = Math.Min(carrier.WheatCargo, carrier.WheatCapacity); }
+        ReportEvent(battle.Id, now, $"Round {battle.Round}: attackers {attackers.Sum(Count)} remaining; defenders {defenders.Sum(Count)} remaining.");
+        attackers = Fighting(battle.Attackers); defenders = Fighting(battle.Defenders);
+        if (attackers.Length == 0 || defenders.Length == 0)
+            EndBattle(battle, attackers.Length == 0 ? battle.Defender : battle.Attacker, now);
     }
     private void ApplyRetreatLoss(Army army,double now)
     {
-        var battle=battles.FirstOrDefault(b=>b.Status=="Active"&&b.Contains(army));
+        var battle=battles.FirstOrDefault(b=>b.Status=="Active"&&b.ActiveContains(army));
         var siege=sieges.FirstOrDefault(s=>s.Status=="Active"&&s.Attackers.Contains(army));
         var oasisSiege=oasisSieges.FirstOrDefault(s=>s.Status=="Active"&&s.Attackers.Contains(army));
         if(battle is null&&siege is null&&oasisSiege is null)return;
@@ -95,7 +250,7 @@ public sealed partial class LogisticsWorld
     }
     private void WithdrawFromCombat(Army army,double now)
     {
-        foreach(var battle in battles.Where(b=>b.Status=="Active"&&b.Contains(army)).ToArray())
+        foreach(var battle in battles.Where(b=>b.Status=="Active"&&b.ActiveContains(army)).ToArray())
         {
             battle.Members.Single(m=>m.Army==army).Withdrawn=true;
             ReportEvent(battle.Id,now,"An army was recalled from the battle.");
@@ -124,7 +279,6 @@ public sealed partial class LogisticsWorld
             {
                 var cargo=convoy.Cargo+new Resources(0,0,0,(long)convoy.WheatCargo);loot+=cargo;Distribute(cargo);
                 DestroyWagons(member.Army,1,now,winner.OwnerId);convoy.Cargo=new();convoy.WheatCargo=0;convoy.Returning=true;
-                armies.Find(a=>a.Id==convoy.TargetArmyId)?.AdjustMorale(-25);
                 Note(convoy.OwnerId,now,"Your caravan was intercepted and its cargo was lost.","convoy-loss",targetId:convoy.Id);
             }
             convoy.Troops=member.Army.Troops;if(convoy.Troops.Count==0)convoys.Remove(convoy);
@@ -135,8 +289,8 @@ public sealed partial class LogisticsWorld
         if(report is not null){if(attacking){report.AttackerLoot+=captured;report.DefenderLoss+=loot;}else{report.DefenderLoot+=captured;report.AttackerResourceLoss+=loot;}}
         ReportEvent(battle.Id,now,$"Engagement ended. Captured cargo: {ResourceText(captured)}. Survivors follow their withdrawal orders.",battle.Winner is null?"Draw":"Resolved",battle.Winner);
         foreach(var force in lost){if(convoyArmies.Contains(force))continue;if(Count(force)>0)Route(force);else armies.Remove(force);}
-        foreach(var force in won){if(convoyArmies.Contains(force))continue;if(Count(force)==0){armies.Remove(force);continue;}if(force.Morale==0)Route(force);else{ResumeBattleWinner(battle,force);force.AdjustMorale(8);}}
-        foreach(var owner in won.Select(a=>a.OwnerId).Distinct())Note(owner,now,"Victory in the field. Survivors follow their orders.");
+        foreach(var force in won){if(convoyArmies.Contains(force))continue;if(Count(force)==0){armies.Remove(force);continue;}ResumeBattleWinner(battle,force);}
+        if(survivors.Length>0)foreach(var owner in won.Select(a=>a.OwnerId).Distinct())Note(owner,now,"Victory in the field. Survivors follow their orders.");
         foreach(var owner in lost.Select(a=>a.OwnerId).Distinct())Note(owner,now,"The engagement is lost. Survivors are withdrawing; wounded are heading to hospital.");
     }
 }

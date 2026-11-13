@@ -49,7 +49,7 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
     {
         lock (gate) return memberships.ContainsKey(actor) ? RoomFor(actor).Snapshot(actor, Online) : null;
     }
-    public RoomSnapshot Create(Guid actor, string playerName, TribeType tribe, string name, RoomSettings settings)
+    public RoomSnapshot Create(Guid actor, string playerName, TribeType? tribe, string name, RoomSettings settings)
     {
         lock (gate)
         {
@@ -61,7 +61,7 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             return room.Snapshot(actor, Online);
         }
     }
-    public RoomSnapshot Join(Guid actor, string roomId, string playerName, TribeType tribe)
+    public RoomSnapshot Join(Guid actor, string roomId, string playerName, TribeType? tribe)
     {
         lock (gate)
         {
@@ -84,6 +84,14 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
     public RoomSnapshot Ready(Guid actor, bool ready)
     {
         lock (gate) { var room = RoomFor(actor); room.SetReady(actor, ready); return room.Snapshot(actor, Online); }
+    }
+    public RoomSnapshot ChangeTribe(Guid actor, Guid targetId, string tribeOrRandom)
+    {
+        lock (gate) { var room = RoomFor(actor); room.ChangeTribe(actor, targetId, tribeOrRandom); return room.Snapshot(actor, Online); }
+    }
+    public RoomSnapshot ChangeTeam(Guid actor, Guid targetId, int team)
+    {
+        lock (gate) { var room = RoomFor(actor); room.ChangeTeam(actor, targetId, team); return room.Snapshot(actor, Online); }
     }
     public RoomSnapshot Start(Guid actor)
     {

@@ -3,6 +3,24 @@ import { unitArtwork } from './unit-art';
 export { unitArtwork } from './unit-art';
 export {initUnitTooltips} from './unit-tooltip';
 export interface UnitDefinition { unitId: string; tribeType: string; role: string; displayName: string; trainingBuilding?: string; requiredBuildingLevel?: number; stats: { speed: number; carryCapacity: number; wheatUpkeep: number; attack:number; defenseInfantry:number; defenseCavalry:number; hitPoints:number }; matchups:Record<string,number>; trainingCost:{wood:number;iron:number;stone:number;wheat:number} }
+
+const UNIT_ROLE_ORDER = [
+    'infantry', 'spearman', 'swordsman', 'archer', 'crossbowman',
+    'scout', 'lightcavalry', 'cavalry', 'heavycavalry',
+    'ram', 'catapult', 'siegetower',
+    'governor', 'wagon',
+];
+
+/** Canonical unit ordering: soldiers -> scouts/cavalry -> siege engines -> governor -> wagons. */
+export function unitOrderIndex(unitId: string): number {
+    const role = unitId.split('-')[1]?.toLowerCase() ?? '';
+    const idx = UNIT_ROLE_ORDER.indexOf(role);
+    return idx >= 0 ? idx : 99;
+}
+
+export function compareUnitIds(aId: string, bId: string): number {
+    return unitOrderIndex(aId) - unitOrderIndex(bId) || aId.localeCompare(bId);
+}
 export const unitCatalog = new Map<string, UnitDefinition>();
 export async function loadUnits() { const response = await fetch('/api/catalog'); if (!response.ok) throw Error('Unit catalog is unavailable.'); for (const unit of await response.json() as UnitDefinition[]) unitCatalog.set(unit.unitId, unit); }
 export function unitPortrait(id:string,help=true){

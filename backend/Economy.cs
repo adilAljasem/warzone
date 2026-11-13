@@ -101,7 +101,7 @@ public sealed class GameRuleException(string code, string message) : Exception(m
 
 public enum CommandKind { Upgrade, Train, SetAutoQueue, DispatchArmy, MoveArmy, CampArmy, RecallArmy, ConfigureSupply, CaptureOasis, InterceptConvoy,
     AttackArmy, BeginSiege, CaptureCastle, RelocateVillage, SelectVillage, SetAfterAttack, Reinforce, PostMarketOffer, AcceptMarketOffer, CancelMarketOffer, SetOasisTransport, CollectOasis, UpgradeOasisWall, UpgradeOasisLevel, BesiegeOasis, BurnOasis, Scout,
-    SendResources, SendChat, ProposeAlliance, RespondAlliance, CancelAllianceRequest }
+    SendResources, SendChat, ProposeAlliance, RespondAlliance, CancelAllianceRequest, MergeArmies }
 public enum OasisMode { Capture, Blockade, Burn }
 public enum AfterAttack { Hold, Return }
 public enum AttackObjective { Raid, Conquest, Raze, Blockade }
@@ -110,7 +110,7 @@ public sealed record GameCommand(Guid RequestId, CommandKind Kind, Guid TargetId
     AttackObjective Objective = AttackObjective.Raid,
     IReadOnlyDictionary<string, int>? Formation = null, AfterAttack AfterAttack = AfterAttack.Hold,
     ResourceType OfferResource = ResourceType.Wood, long OfferAmount = 0, ResourceType AskResource = ResourceType.Iron, long AskAmount = 0, bool Reinforcement = false, OasisMode OasisMode = OasisMode.Capture,
-    Resources Shipment = default, string? Message = null, bool Camp = false, bool LoadedOnly = true);
+    Resources Shipment = default, string? Message = null, bool Camp = false, bool LoadedOnly = true, Guid[]? TargetIds = null);
 public sealed record CommandResult(Guid RequestId, bool Accepted, string Code, string Message);
 public sealed record TrainingOrder(Guid TargetId, string Lane, int Quantity, double CompletesAt, double StartedAt);
 public sealed record TargetSnapshot(Guid Id, string Name, string Kind, int Level, int MaxLevel, bool Auto,
@@ -209,7 +209,7 @@ public sealed class VillageEconomy
         (long)Math.Ceiling(value.Wood * multiplier), (long)Math.Ceiling(value.Iron * multiplier),
         (long)Math.Ceiling(value.Stone * multiplier), (long)Math.Ceiling(value.Wheat * multiplier));
     private Resources TrainingCost(UnitTraining target, int count) => Scale(target.Unit.TrainingCost, bonuses.TrainingCostMultiplier * count);
-    private double TrainingSeconds(UnitTraining target, int count) => Math.Max(1,
+    private double TrainingSeconds(UnitTraining target, int count) => Math.Max(.25,
         target.Unit.TrainingDuration.TotalSeconds * count * bonuses.TrainingTimeMultiplier
         / ((1 + TrainingRules.SpeedBonusPercent(Facility(target), BuildingLevel(Facility(target))) / 100)
             * (1 + .05 * (target.Level - 1))));
@@ -356,13 +356,16 @@ public sealed class VillageEconomy
         Village.TransferTo(owner);
     }
 
+    private static int BaseProductionPerMinute(ResourceType resource) => resource == ResourceType.Wheat ? 360 : 240;
+
     internal void Advance(double seconds, double now, double resourceSpeed)
     {
         if (Ruined) return;
         var upkeep = HomeUpkeep / 60;
         for (var i = 0; i < stock.Length; i++)
         {
-            var rate = 4 * resourceSpeed * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, (ResourceType)i) * (1 + OasisBonuses[i]) * (Besieged && i == 3 ? .5 : 1) - (i == 3 ? upkeep : 0);
+            var resource = (ResourceType)i;
+            var rate = BaseProductionPerMinute(resource) / 60d * resourceSpeed * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, resource) * (1 + OasisBonuses[i]) * (Besieged && resource == ResourceType.Wheat ? .5 : 1) - (resource == ResourceType.Wheat ? upkeep : 0);
             stock[i] = Math.Clamp(stock[i] + (decimal)(rate * seconds), 0, Math.Max(Capacity, stock[i]));
         }
         FoodShortage = stock[3] == 0 && upkeep > 0;
@@ -393,7 +396,7 @@ public sealed class VillageEconomy
 
     public ProductionSnapshot[] Production(double resourceSpeed = 1) => Enum.GetValues<ResourceType>().Select(resource =>
     {
-        const int normal = 240;
+        var normal = BaseProductionPerMinute(resource);
         var gross = Ruined ? 0 : normal * resourceSpeed * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, resource) * (1 + OasisBonuses[(int)resource]) * (Besieged && resource == ResourceType.Wheat ? .5 : 1);
         var upkeep = resource == ResourceType.Wheat && !Ruined ? HomeUpkeep : 0;
         var net = gross - upkeep;

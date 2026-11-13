@@ -29,7 +29,8 @@ export function loadUnitArt() {
 
 export function unitSprite(id: string, width = 52) {
     const sprite = new Sprite(textures.get(id) ?? Texture.EMPTY);
+    const size = id === 'persians-cavalry' ? Math.round(width * 1.35) : width;
     sprite.anchor.set(.5, .9);
-    sprite.width = width; sprite.height = width;
+    sprite.width = size; sprite.height = size;
     return sprite;
 }

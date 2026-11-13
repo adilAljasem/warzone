@@ -20,29 +20,29 @@ public static class Biomes
         var turn = random.Next(4);
         Position Rotate(double x, double y)
         {
-            for (var i = 0; i < turn; i++) (x, y) = (3000 - y, x);
+            for (var i = 0; i < turn; i++) (x, y) = (4500 - y, x);
             return new(x, y);
         }
         // An open central plain, with three surrounding regions instead of four rectangular quadrants.
-        Position[] centers = [Rotate(360 + random.Next(-120, 121), 1275 + random.Next(-240, 241)),
-            Rotate(1920 + random.Next(-180, 181), 435 + random.Next(-150, 151)),
-            Rotate(2250 + random.Next(-210, 211), 2445 + random.Next(-150, 151)),
-            Rotate(1170 + random.Next(-105, 106), 1620 + random.Next(-105, 106))];
+        Position[] centers = [Rotate(540 + random.Next(-180, 181), 1912 + random.Next(-360, 361)),
+            Rotate(2880 + random.Next(-270, 271), 652 + random.Next(-225, 226)),
+            Rotate(3375 + random.Next(-315, 316), 3668 + random.Next(-225, 226)),
+            Rotate(1755 + random.Next(-158, 159), 2430 + random.Next(-158, 159))];
         BiomeType[] kinds = [BiomeType.Desert, BiomeType.Highlands, BiomeType.Woodland, BiomeType.Grassland];
         var edges = new Dictionary<string, Position[]>();
         Position Rounded(Position p) => new(Math.Round(p.X, 5), Math.Round(p.Y, 5));
         Position[] NaturalEdge(Position from, Position to)
         {
             from = Rounded(from); to = Rounded(to);
-            if (from.X == to.X && from.X is 30 or 2970 || from.Y == to.Y && from.Y is 30 or 2970) return [from, to];
+            if (from.X == to.X && from.X is 45 or 4455 || from.Y == to.Y && from.Y is 45 or 4455) return [from, to];
             var reverse = from.X > to.X || from.X == to.X && from.Y > to.Y;
             var a = reverse ? to : from; var b = reverse ? from : to;
             var key = $"{a.X:R},{a.Y:R}:{b.X:R},{b.Y:R}";
             if (!edges.TryGetValue(key, out var points))
             {
                 var dx = b.X - a.X; var dy = b.Y - a.Y; var length = Math.Sqrt(dx * dx + dy * dy);
-                var phase = random.NextDouble() * Math.PI * 2; var amplitude = Math.Min(105, length * .10);
-                var steps = Math.Max(32, (int)Math.Ceiling(length / 24));
+                var phase = random.NextDouble() * Math.PI * 2; var amplitude = Math.Min(155, length * .10);
+                var steps = Math.Max(32, (int)Math.Ceiling(length / 36));
                 points = Enumerable.Range(0, steps + 1).Select(i => {
                     var t = i / (double)steps;
                     // Shared endpoints and a smooth envelope keep neighboring regions watertight.
@@ -60,7 +60,7 @@ public static class Biomes
         var regions = new List<BiomeRegion>();
         for (var i = 0; i < centers.Length; i++)
         {
-            var polygon = new List<Position> { new(30,30), new(2970,30), new(2970,2970), new(30,2970) };
+            var polygon = new List<Position> { new(45,45), new(4455,45), new(4455,4455), new(45,4455) };
             for (var j = 0; j < centers.Length; j++)
             {
                 if (i == j) continue;

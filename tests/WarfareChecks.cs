@@ -43,12 +43,12 @@ internal static class WarfareChecks
     private static (Realm Realm, Guid Army) Siege(Realm? existing = null, AttackObjective objective = AttackObjective.Conquest)
     {
         var r = existing ?? new Realm(); Gift(r.A, "romans-infantry", 300); Gift(r.A, "romans-wagon", 6);
-        Gift(r.A, "romans-catapult", 3); Gift(r.A, "romans-ram", 3); Gift(r.A, "romans-siegetower", 2); Gift(r.A, "romans-governor", 1);
-        var id = r.Dispatch(r.A, new() { ["romans-infantry"] = 250, ["romans-catapult"] = 3, ["romans-ram"] = 3, ["romans-siegetower"] = 2, ["romans-governor"] = 1 });
+        Gift(r.A, "romans-catapult", 3); Gift(r.A, "romans-ram", 3); Gift(r.A, "romans-governor", 1);
+        var id = r.Dispatch(r.A, new() { ["romans-infantry"] = 250, ["romans-catapult"] = 3, ["romans-ram"] = 3, ["romans-governor"] = 1 });
         r.Order(r.A, CommandKind.BeginSiege, id, r.B.Village.Id, objective);
         for (var i = 0; i < 800 && !r.View.Warfare.Sieges.Any(x => x.Phase is "Persuading" or "Demolishing" || x.Status=="Raided"); i++) r.Tick(.25);
-        Check(r.View.Warfare.Sieges.Any(x => x.Phase is "Persuading" or "Demolishing" || x.Status=="Raided"), "Automatic siege defeats the garrison within 180 seconds");
-        Check(r.View.Warfare.Sieges.Single().Elapsed >= 60, "City defense lasts at least sixty seconds");
+        Check(r.View.Warfare.Sieges.Any(x => x.Phase is "Persuading" or "Demolishing" || x.Status=="Raided"), "Automatic siege defeats the garrison and starts city objective");
+        Check(r.B.Garrison().Length == 0, "Garrison falls completely before persuasion or demolition begins");
         return (r, id);
     }
     public static int Run()
@@ -56,15 +56,15 @@ internal static class WarfareChecks
         var production = new Realm();
         var baseOutput = production.A.Snapshot().Production;
         Check(baseOutput.Single(p => p.Resource == "Wood").Percent == 100, "Normal production is 100 percent at every field level");
-        Check(baseOutput.Single(p => p.Resource == "Wheat").NetPerMinute == 218, "Net wheat deducts twenty soldiers and two wagons exactly once");
+        Check(baseOutput.Single(p => p.Resource == "Wheat").NetPerMinute == 338, "Net wheat deducts twenty soldiers and two wagons exactly once");
         Check(production.A.Snapshot(2).Production.Single(p => p.Resource == "Wood").Percent == 200, "Realm speed is reflected in production efficiency");
-        Gift(production.A, "romans-infantry", 300);
+        Gift(production.A, "romans-infantry", 400);
         Check(production.A.Snapshot().Production.Single(p => p.Resource == "Wheat").Percent < 0, "Overgrown garrison reports negative net food production");
         var musterBefore = production.View.Muster;
         var deployed = production.Dispatch(production.A, new() { ["romans-infantry"] = 10 }, 1);
         Check(production.View.Muster.Total == musterBefore.Total && production.View.Muster.Wagons == musterBefore.Wagons, "Muster conserves troops and vehicles across dispatch");
-        Check(production.View.Muster.Units.Single(u => u.UnitId == "romans-infantry") is { Home: 310, Deployed: 10 }, "Muster separates home and deployed units by type");
-        Check(production.View.Muster.UpkeepPerMinute == 322 && production.View.Muster.FieldUpkeepPerMinute == 11, "Muster includes carried food upkeep without charging it to village production");
+        Check(production.View.Muster.Units.Single(u => u.UnitId == "romans-infantry") is { Home: 410, Deployed: 10 }, "Muster separates home and deployed units by type");
+        Check(production.View.Muster.UpkeepPerMinute == 422 && production.View.Muster.FieldUpkeepPerMinute == 11, "Muster includes carried food upkeep without charging it to village production");
         Check(production.World.Snapshot(Guid.NewGuid()).Muster.Total == 0, "Muster never exposes another player's private formation");
         var persianOutput = new VillageEconomy(Guid.NewGuid(), TribeType.Persians, new(1500,1500));
         Check(persianOutput.Snapshot().Production.Single(p => p.Resource == "Wood").Percent == 120, "Persian production bonus is visible in efficiency");
@@ -86,7 +86,7 @@ internal static class WarfareChecks
         Check(!returning.View.Armies.Any() && returning.A.Available("romans-infantry") == 20, "Successful raid returns the army home automatically without another command");
         Check(returning.View.Reports.Any(r => r.Kind == "Occupation" && r.AttackerLoot.Total == 0), "Occupation retains its ownership report after the army returns");
         Check(returning.World.Snapshot(returning.B.Village.OwnerId).Reports.Length == 0, "Raid report is private to its owner");
-        Check(GameCatalog.Units.Values.Select(GameCatalog.UnitSprite).Distinct().Count() == 70, "Every unit has distinct generated artwork");
+        Check(GameCatalog.Units.Values.Select(GameCatalog.UnitSprite).Distinct().Count() == 50, "Every unit has distinct generated artwork");
         foreach (var definition in GameCatalog.Units.Values) System.Xml.Linq.XDocument.Parse(GameCatalog.UnitSprite(definition));
         Check(!JsonSerializer.Serialize(new Resources(1, 2, 3, 4)).Contains("Total"), "Derived resource total is excluded from the wire contract");
         var r = new Realm(); Gift(r.A, "romans-infantry", 100); Gift(r.B, "greeks-infantry", 100);
@@ -99,11 +99,9 @@ internal static class WarfareChecks
         r.Order(r.A, CommandKind.AttackArmy, a, b); r.Tick(1);
         Check(r.View.Warfare.Battles.Single().Status == "Active", "Contact starts a visible battle");
         Reject(() => r.Order(r.A, CommandKind.MoveArmy, a), "engaged");
-        r.Tick(24);
-        Check(r.View.Warfare.Battles.Single().Status == "Active", "Battle does not auto-resolve before thirty seconds");
-        for (var i = 0; i < 400 && r.View.Warfare.Battles.Any(x => x.Status == "Active"); i++) r.Tick(.25);
+        for (var i = 0; i < 800 && r.View.Warfare.Battles.Any(x => x.Status == "Active"); i++) r.Tick(.25);
         var battle = r.View.Warfare.Battles.Single();
-        Check(battle.Status == "Resolved" && battle.Elapsed is >= 30 and <= 120, "Battle resolves within the timed window");
+        Check(battle.Status == "Resolved" && battle.Elapsed >= 5, "Battle resolves naturally by eliminating one side");
         var report = r.View.Reports.Single(x => x.Id == battle.Id);
         Check(report.Status == "Resolved" && report.Events.Length >= 7, "Resolved battle retains its combat timeline");
         Check(report.AttackerUnits.Concat(report.DefenderUnits).All(u => u.Sent >= u.Dead + u.Wounded + u.Fled + u.Destroyed),
@@ -125,15 +123,28 @@ internal static class WarfareChecks
             Check(living + rank.Dead + rank.Fled == 120, "Combat conserves all human troops across field, home and hospital");
         }
         var hospital = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(50, 50));
-        var morale = new Realm(); Gift(morale.A, "romans-infantry", 1000); Gift(morale.B, "greeks-infantry", 5000);
-        var smallForce = morale.Dispatch(morale.A, new() { ["romans-infantry"] = 1000 }, 1, false);
-        var hungryForce = morale.Dispatch(morale.B, new() { ["greeks-infantry"] = 5000 }, 1, false);
-        for (var i=0;i<2600 && morale.World.Snapshot(morale.B.Village.OwnerId).Armies.Any(x=>x.Id==hungryForce && x.Morale>=25);i++) morale.Tick(.25);
-        Check(morale.World.Snapshot(morale.B.Village.OwnerId).Armies.Single(x => x.Id == hungryForce).Morale < 25, "Remaining in the field beyond funded provisions eventually causes starvation");
-        morale.World.Apply(morale.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.AttackArmy, smallForce, DestinationId: hungryForce, AfterAttack: AfterAttack.Return), morale.Now, 0);
-        for (var i = 0; i < 480 && !morale.View.Warfare.Battles.Any(x => x.Status == "Resolved"); i++) morale.Tick(.25);
-        Check(morale.View.Warfare.Battles.Single().Winner == morale.A.Village.OwnerId, "One thousand supplied soldiers defeat five thousand soldiers with collapsed morale");
-        Check(morale.View.Armies.Single(x => x.Id == smallForce).Order == "Returning", "A victorious field army obeys its automatic return order");
+        Check(GameCatalog.Units.Values.Where(u => u.Role != UnitRole.Wagon).All(u => u.Stats.HitPoints == 100)
+            && GameCatalog.Units.Values.Where(u => u.Role == UnitRole.Wagon).All(u => u.Stats.HitPoints == 25),
+            "All combat units default to 100 HP while supply wagons keep 25 HP");
+        var mix = new Realm(); Gift(mix.A, "germans-infantry", 200); Gift(mix.B, "romans-spearman", 50); Gift(mix.B, "germans-infantry", 50);
+        var attackersMix = mix.Dispatch(mix.A, new() { ["germans-infantry"] = 100 }, 1, false);
+        var mixedDefenders = mix.Dispatch(mix.B, new() { ["romans-spearman"] = 50, ["germans-infantry"] = 50 }, 1, false);
+        mix.Order(mix.A, CommandKind.AttackArmy, attackersMix, mixedDefenders);
+        for (var i = 0; i < 120 && (mix.View.Warfare.Battles.SingleOrDefault()?.Round ?? 0) < 3; i++) mix.Tick(.25);
+        var mixDefSnap = mix.World.Snapshot(mix.B.Village.OwnerId).Armies.Single(x => x.Id == mixedDefenders).Formation!;
+        Check(mixDefSnap.GetValueOrDefault("germans-infantry") < mixDefSnap.GetValueOrDefault("romans-spearman"),
+            "Defense mitigation causes low-defense clubswingers to suffer heavier casualties than spearmen");
+        var starve = new Realm(); Gift(starve.B, "greeks-infantry", 40);
+        var hungryForce = starve.Dispatch(starve.B, new() { ["greeks-infantry"] = 40 }, 1, false);
+        for (var i = 0; i < 3200 && (starve.World.Snapshot(starve.B.Village.OwnerId).Armies.FirstOrDefault(x => x.Id == hungryForce)?.Wheat ?? 0) > 0; i++) starve.Tick(.25);
+        var preStarveSnap = starve.World.Snapshot(starve.B.Village.OwnerId).Armies.Single(x => x.Id == hungryForce);
+        Check((preStarveSnap.Wheat ?? -1) == 0, "Force eventually exhausts its carried wheat");
+        var beforeStarveCount = preStarveSnap.Soldiers;
+        starve.Tick(22);
+        var afterStarve = starve.World.Snapshot(starve.B.Village.OwnerId).Armies.Single(x => x.Id == hungryForce);
+        var starveRank = starve.View.Warfare.Rankings.Single(x => x.PlayerId == starve.B.Village.OwnerId);
+        Check(beforeStarveCount - afterStarve.Soldiers >= 4 && afterStarve.Wounded >= 4 && starveRank.Dead == 0,
+            "Running out of food converts 2 soldiers every 10 seconds to wounded without killing them");
         hospital.AdmitWounded("romans-infantry", 10, 100); hospital.Advance(60, 60, 1);
         Check(hospital.Snapshot().Wounded == 10, "Wounded cannot heal before reaching hospital");
         hospital.Advance(1, 101, 1);
@@ -186,10 +197,11 @@ internal static class WarfareChecks
         Check(raze.B.Snapshot().Targets.Single(x => x.Name == "MainHall").UpgradeCost is null, "A ruined main hall has no invalid upgrade step");
 
         var bombard = new Realm(); Upgrade(bombard.B, BuildingType.Wall, 6); Upgrade(bombard.B, BuildingType.Warehouse, 4);
+        Gift(bombard.B, "romans-infantry", 200);
         Gift(bombard.A, "romans-infantry", 300); Gift(bombard.A, "romans-catapult", 3); Gift(bombard.A, "romans-ram", 3); Gift(bombard.A, "romans-wagon", 6);
         var battery = bombard.Dispatch(bombard.A, new() { ["romans-infantry"] = 250, ["romans-catapult"] = 3, ["romans-ram"] = 3 });
         bombard.World.Apply(bombard.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.BeginSiege, battery, DestinationId: bombard.B.Village.Id), 0, 0);
-        bombard.Tick(49);
+        bombard.Tick(15);
         Check(bombard.B.BuildingLevel(BuildingType.Warehouse) == 4, "Automatic siege attacks fortifications without a building-target command");
         Check(bombard.View.Warfare.Sieges.Single().Gate < 100 && bombard.View.Warfare.Sieges.Single().Wall < 100, "Rams damage the gate and catapults weaken the wall");
         var beforeRetreat = bombard.View.Armies.Single(x => x.Id == battery);
@@ -212,7 +224,7 @@ internal static class WarfareChecks
         blockade.Order(blockade.A, CommandKind.BeginSiege, starvationArmy, blockade.B.Village.Id, AttackObjective.Blockade);
         blockade.Tick(18, false);
         var starvationOutput = blockade.World.EconomySnapshot(blockade.B.Village.OwnerId, null, 1)!.Production.Single(p => p.Resource == "Wheat");
-        Check(starvationOutput.GrossPerMinute == 120, "Blockade halves gross wheat output without an extra hidden drain");
+        Check(starvationOutput.GrossPerMinute == 180, "Blockade halves gross wheat output without an extra hidden drain");
         Check(starvationOutput.NetPerMinute == starvationOutput.GrossPerMinute - starvationOutput.UpkeepPerMinute, "Production breakdown reconciles exactly with siege and garrison costs");
 
         var (reportRealm, reportArmy) = Siege(objective: AttackObjective.Raid);
@@ -230,7 +242,7 @@ internal static class WarfareChecks
         Reject(() => nomad.World.Apply(nomad.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RelocateVillage, nomad.A.Village.Id, X: 150, Y: 250), 1, 0), "cooldown");
         Reject(() => nomad.Order(nomad.B, CommandKind.RelocateVillage, nomad.B.Village.Id), "tribe");
 
-        var castle = new Realm(); castle.A.Village.Relocate(new(1200, 1500)); castle.B.Village.Relocate(new(1300, 1500)); castle.Now = 1799; castle.Tick(.75, false);
+        var castle = new Realm(); castle.A.Village.Relocate(new(1950, 2250)); castle.B.Village.Relocate(new(2050, 2250)); castle.Now = 1799; castle.Tick(.75, false);
         Check(!castle.View.Warfare.Castle.Active, "Keep stays closed until 30 minutes");
         castle.Tick(.25, false); Check(castle.View.Warfare.Castle.Active, "Keep opens at 30 minutes");
         Gift(castle.A, "romans-wagon", 3); var claim = castle.Dispatch(castle.A, new() { ["romans-infantry"] = 10 }, 1);
@@ -240,7 +252,7 @@ internal static class WarfareChecks
         var challenger = castle.Dispatch(castle.B, new() { ["greeks-infantry"] = 10 }, 1);
         castle.Order(castle.B, CommandKind.CaptureCastle, challenger); castle.Tick(32);
         Check(castle.View.Warfare.Castle.Contested && castle.View.Warfare.Battles.Any(x => x.Status == "Active"), "Rival armies automatically contest the keep and engage");
-        var holdWin = new Realm(); holdWin.A.Village.Relocate(new(1350, 1500)); holdWin.Now = 1800; holdWin.Tick(.25, false);
+        var holdWin = new Realm(); holdWin.A.Village.Relocate(new(2100, 2250)); holdWin.Now = 1800; holdWin.Tick(.25, false);
         Gift(holdWin.A, "romans-wagon", 4); var crownArmy = holdWin.Dispatch(holdWin.A, new() { ["romans-infantry"] = 15 }, 2);
         holdWin.Order(holdWin.A, CommandKind.CaptureCastle, crownArmy); holdWin.Tick(360);
         Check(holdWin.World.CrownWinner == holdWin.A.Village.OwnerId && holdWin.World.Result("CrownKeep").WinnerIds.SequenceEqual([holdWin.A.Village.OwnerId]), "Holding Crown Keep continuously for 5 minutes wins the match");
@@ -253,7 +265,7 @@ internal static class WarfareChecks
         Check(incoming.TargetId == wall.B.Village.Id && incoming.ArrivesAt > wall.Now && wall.View.Threats.Length == 0, "Only the threatened player receives a server-calculated arrival estimate");
         wall.Tick(14);
         var blockedOutput = wall.B.Snapshot().Production.Single(p => p.Resource == "Wheat");
-        Check(blockedOutput.Blockaded && blockedOutput.GrossPerMinute == 120, "Active blockade reports the actual fifty percent wheat production penalty");
+        Check(blockedOutput.Blockaded && blockedOutput.GrossPerMinute == 180, "Active blockade reports the actual fifty percent wheat production penalty");
         Check(wall.World.Snapshot(wall.B.Village.OwnerId).Reports.Any(r => r.Kind == "Siege" && r.Status == "Active"), "Defender receives a live siege report as the blockade starts");
         Check(wall.World.Snapshot(wall.B.Village.OwnerId).Threats.Length == 0, "Arrival alerts disappear when the siege starts");
         Check(wall.B.Besieged, "Besieging force establishes a blockade");

@@ -32,8 +32,8 @@ internal static class CampChecks
             for (var i = 0; i < limit && !condition(); i++) Tick();
             Check(condition(), "The expected camp transition completed");
         }
-        var camp = Send(world, campCity, "infantry", 120, 500, 500, true);
-        var enemy = Send(world, enemyCity, "infantry", 5, 700, 500);
+        var camp = Send(world, campCity, "infantry", 160, 500, 500, true);
+        var enemy = Send(world, enemyCity, "infantry", 70, 700, 500);
         var secondEnemy = Send(world, secondEnemyCity, "infantry", 5, 700, 500);
         var ally = Send(world, allyCity, "infantry", 20, 700, 500);
         world.SetAlliances([new(campCity.Village.OwnerId, allyCity.Village.OwnerId, 0)]);
@@ -78,9 +78,9 @@ internal static class CampChecks
             && quiet.Snapshot(quietCity.Village.OwnerId).Warfare.Battles.Length == 0, "A loaded-only camp lets an empty caravan pass");
 
         var splitCity = City(500); var splitWorld = new LogisticsWorld([splitCity], 731);
-        Gift(splitCity, "infantry", 10); Gift(splitCity, "archer", 5); splitCity.AddResources(new(2000, 2000, 2000, 2000));
+        Gift(splitCity, "infantry", 10); Gift(splitCity, "spearman", 5); splitCity.AddResources(new(2000, 2000, 2000, 2000));
         splitWorld.Apply(splitCity.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, splitCity.Village.Id,
-            Formation: new Dictionary<string, int> { ["romans-infantry"] = 10, ["romans-archer"] = 5, ["romans-wagon"] = 1 },
+            Formation: new Dictionary<string, int> { ["romans-infantry"] = 10, ["romans-spearman"] = 5, ["romans-wagon"] = 1 },
             Wagons: 0, Enabled: false, X: 550, Y: 500), 0, 0);
         var original = splitWorld.Snapshot(splitCity.Village.OwnerId).Armies.Single();
         Reject(() => splitWorld.Apply(splitCity.Village.OwnerId, new(Guid.NewGuid(), CommandKind.MoveArmy, original.Id,
@@ -89,18 +89,36 @@ internal static class CampChecks
             Formation: new Dictionary<string, int> { ["romans-infantry"] = 6 }, DestinationId: Guid.NewGuid()), 0, 0), "target");
         Check(splitWorld.Snapshot(splitCity.Village.OwnerId).Armies.Length == 1, "Rejected orders do not split an army");
         splitWorld.Apply(splitCity.Village.OwnerId, new(Guid.NewGuid(), CommandKind.MoveArmy, original.Id,
-            Formation: new Dictionary<string, int> { ["romans-infantry"] = 6, ["romans-archer"] = 2 }, X: 600, Y: 500), 0, 0);
+            Formation: new Dictionary<string, int> { ["romans-infantry"] = 6, ["romans-spearman"] = 2 }, X: 600, Y: 500), 0, 0);
         var split = splitWorld.Snapshot(splitCity.Village.OwnerId).Armies;
         Check(split.Length == 2 && split.Single(a => a.Id == original.Id).Formation!["romans-infantry"] == 6
-            && split.Single(a => a.Id == original.Id).Formation!["romans-archer"] == 2, "The selected detachment receives the new order");
+            && split.Single(a => a.Id == original.Id).Formation!["romans-spearman"] == 2, "The selected detachment receives the new order");
         var remainder = split.Single(a => a.Id != original.Id);
-        Check(remainder.Order == "Marching" && remainder.Destination.X == 550 && remainder.Formation!["romans-infantry"] == 4 && remainder.Formation!["romans-archer"] == 3
+        Check(remainder.Order == "Marching" && remainder.Destination.X == 550 && remainder.Formation!["romans-infantry"] == 4 && remainder.Formation!["romans-spearman"] == 3
             && remainder.Formation["romans-wagon"] == 1, "The unselected troops and wagons keep their current orders");
         Check(split.Sum(a => a.Soldiers + a.Wagons) == 16 && Math.Abs(split.Sum(a => a.Wheat ?? 0) - original.Wheat!.Value) < .000001,
             "Splitting conserves every unit and all carried wheat");
         splitWorld.Apply(splitCity.Village.OwnerId, new(Guid.NewGuid(), CommandKind.MoveArmy, original.Id,
-            Formation: new Dictionary<string, int> { ["romans-infantry"] = 6, ["romans-archer"] = 2 }, X: 650, Y: 500), 0, 0);
+            Formation: new Dictionary<string, int> { ["romans-infantry"] = 6, ["romans-spearman"] = 2 }, X: 650, Y: 500), 0, 0);
         Check(splitWorld.Snapshot(splitCity.Village.OwnerId).Armies.Length == 2, "Sending the full detachment does not create an empty army");
+
+        var fastHome = City(500); var fastWorld = new LogisticsWorld([fastHome], 731);
+        Gift(fastHome, "lightcavalry", 20); Gift(fastHome, "catapult", 2); Gift(fastHome, "wagon", 2);
+        fastHome.AddResources(new(5000, 5000, 5000, 10000));
+        fastWorld.Apply(fastHome.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, fastHome.Village.Id,
+            Formation: new Dictionary<string, int> { ["romans-lightcavalry"] = 20, ["romans-catapult"] = 2, ["romans-wagon"] = 1 },
+            Wagons: 0, Enabled: true, X: 3000, Y: 500), 0, 0);
+        var fastId = fastWorld.Snapshot(fastHome.Village.OwnerId).Armies.Single().Id;
+        Reject(() => fastWorld.Apply(fastHome.Village.OwnerId, new(Guid.NewGuid(), CommandKind.MoveArmy, fastId,
+            Formation: new Dictionary<string, int> { ["romans-catapult"] = 2 }, X: 600, Y: 500), 1, 0), "food_capacity");
+        for (var i = 0; i < 200; i++) fastWorld.Advance(.25, 1 + i * .25, 0, 3600);
+        Check(fastWorld.Snapshot(fastHome.Village.OwnerId).Armies.Single().Soldiers == 22,
+            "Fast fed armies sustain full strength across long marches");
+        fastWorld.Apply(fastHome.Village.OwnerId, new(Guid.NewGuid(), CommandKind.MoveArmy, fastId,
+            Formation: new Dictionary<string, int> { ["romans-lightcavalry"] = 10 }, X: 1200, Y: 500), 60, 0);
+        var afterFastSplit = fastWorld.Snapshot(fastHome.Village.OwnerId).Armies;
+        Check(afterFastSplit.Length == 2 && afterFastSplit.All(a => (a.Wheat ?? 0) > 100),
+            "Splitting cavalry from a wagon army keeps safe food reserves");
 
         var campHome = City(500); var victimCity = City(650); var destCity = City(400);
         var campWorld = new LogisticsWorld([campHome, victimCity, destCity], 731);

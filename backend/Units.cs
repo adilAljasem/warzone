@@ -3,7 +3,7 @@
 namespace Warzone;
 
 public enum TribeType { Romans, Germans, Greeks, Mongols, Persians }
-public enum UnitRole { Infantry, Archer, Cavalry, Scout, Wagon, Catapult, Ram, SiegeTower, Governor, Spearman, Swordsman, Crossbowman, LightCavalry, HeavyCavalry }
+public enum UnitRole { Infantry, Cavalry, Scout, Wagon, Catapult, Ram, Governor, Spearman, Swordsman, LightCavalry, HeavyCavalry }
 
 public sealed record TribeBonuses(
     int ExtraAutoQueueSlots = 0,
@@ -78,7 +78,7 @@ public abstract class BaseUnit
     public static BaseUnit Create(UnitDefinition definition) => definition.Role switch
     {
         UnitRole.Wagon => new SupplyWagon(definition),
-        UnitRole.Catapult or UnitRole.Ram or UnitRole.SiegeTower => new SiegeEngine(definition),
+        UnitRole.Catapult or UnitRole.Ram => new SiegeEngine(definition),
         _ => new Soldier(definition)
     };
 }

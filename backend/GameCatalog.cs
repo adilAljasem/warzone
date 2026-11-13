@@ -11,10 +11,11 @@ public static class GameCatalog
     {
         new TribeDefinition(TribeType.Romans, "Romans", "/assets/tribes/romans.svg", new(ExtraAutoQueueSlots: 1)),
         new TribeDefinition(TribeType.Germans, "Germans", "/assets/tribes/germans.svg",
-            new(TrainingCostMultiplier: .8, TrainingTimeMultiplier: .8, LootMultiplier: 1.2)),
+            new(TrainingCostMultiplier: .8, TrainingTimeMultiplier: .7, LootMultiplier: 1.2)),
         new TribeDefinition(TribeType.Greeks, "Greeks", "/assets/tribes/greeks.svg", new(WallMultiplier: 2, HealingMultiplier: 2)),
         new TribeDefinition(TribeType.Mongols, "Mongols / Nomads", "/assets/tribes/mongols.svg", new(CanRelocate: true)),
-        new TribeDefinition(TribeType.Persians, "Persians / Babylonians", "/assets/tribes/persians.svg", new(ResourceMultiplier: 1.2))
+        new TribeDefinition(TribeType.Persians, "Persians / Babylonians", "/assets/tribes/persians.svg",
+            new(TrainingTimeMultiplier: .5, ResourceMultiplier: 1.2))
     }.ToFrozenDictionary(x => x.Type);
 
     private sealed record JsonCost(long Wood, long Iron, long Stone, long Wheat);
@@ -103,11 +104,8 @@ public static class GameCatalog
             UnitRole.Wagon => $"<circle cx='27' cy='71' r='11' fill='#755538'/><circle cx='68' cy='71' r='11' fill='#755538'/><rect x='16' y='39' width='65' height='31' rx='4' fill='#b8864a'/><path d='M20 43V32Q48 8 77 32v11Z' fill='#f7e6b4'/><path d='M48 20v24' stroke='{color}' stroke-width='10'/>",
             UnitRole.Catapult => $"<path d='M17 70h64M29 68l20-31 20 31' stroke='#947045' stroke-width='8' fill='none'/><path d='m25 29 46 29' stroke='#bd934e' stroke-width='7'/><circle cx='25' cy='23' r='10' fill='#aab2aa'/><circle cx='25' cy='76' r='8' fill='#715536'/><circle cx='73' cy='76' r='8' fill='#715536'/><path d='M48 41v17' stroke='{color}' stroke-width='8'/>",
             UnitRole.Ram => $"<path d='M19 73 32 32h31l16 41' fill='none' stroke='#947045' stroke-width='7'/><path d='m17 37 30-18 34 18Z' fill='{color}'/><path d='M12 56h68' stroke='#bb975e' stroke-width='14'/><rect x='74' y='47' width='13' height='19' rx='3' fill='#c3cbc6'/><circle cx='25' cy='77' r='7' fill='#715536'/><circle cx='72' cy='77' r='7' fill='#715536'/>",
-            UnitRole.SiegeTower => $"<path d='m27 75 6-55h31l8 55Z' fill='#bd9862'/><path d='M36 30h26M34 44h30M32 58h34' stroke='#7f623e' stroke-width='4'/><path d='m28 21 20-13 22 13Z' fill='{color}'/><circle cx='27' cy='77' r='8' fill='#715536'/><circle cx='72' cy='77' r='8' fill='#715536'/>",
             UnitRole.Cavalry when unit.TribeType == TribeType.Persians => $"<path d='M17 68V49q0-19 22-19h28q19 0 19 23v24h-8V54h-8v25H59V65H35v14H23V65Z' fill='#9baca8'/><ellipse cx='65' cy='43' rx='13' ry='17' fill='#b5c2b8'/><path d='M69 55q12 9 18-1' fill='none' stroke='#f8ebca' stroke-width='4'/><rect x='27' y='33' width='29' height='21' fill='{color}'/><circle cx='42' cy='22' r='8' fill='#efc493'/>",
             UnitRole.Cavalry or UnitRole.LightCavalry or UnitRole.HeavyCavalry => $"<path d='M19 64h45l12-25-16-9-8 21H24Z' fill='#aa774b'/><path d='M24 63v17m35-17v17' stroke='#795539' stroke-width='6'/><g transform='translate(12,-2) scale(.65)'>{person}</g><path d='M75 21v35' stroke='#b1c6c8' stroke-width='4'/>",
-            UnitRole.Crossbowman => $"{person}<path d='M52 65 76 29' stroke='#8b693f' stroke-width='7'/><path d='M51 30q20-2 31 19M51 30l31 19' stroke='#c2d1c6' stroke-width='3' fill='none'/><path d='m66 39 11-16' stroke='#e4ddbd' stroke-width='2'/>",
-            UnitRole.Archer => $"{person}<path d='M65 27q28 22 0 45l2-45' fill='none' stroke='#9e7744' stroke-width='3'/><path d='M49 49h36' stroke='#d4bb7f' stroke-width='2'/>",
             UnitRole.Swordsman => $"{person}<path d='M66 72V19l5-9 5 9-6 53Z' fill='#d8e5e0'/><path d='M59 64h20' stroke='#d7b356' stroke-width='4'/><path d='M12 44h21v25H12Z' fill='#95aaa6'/>",
             UnitRole.Scout when unit.TrainingBuilding == BuildingType.Stable => $"<path d='M19 64h45l12-25-16-9-8 21H24Z' fill='#b68456'/><path d='M24 63v17m35-17v17' stroke='#795539' stroke-width='6'/><g transform='translate(12,-2) scale(.65)'>{person}</g><path d='M55 29 77 19' stroke='#655e49' stroke-width='6'/><circle cx='78' cy='18' r='4.5' fill='#c9dfdc'/>",
             UnitRole.Scout => $"{person}<path d='M55 43 78 32' stroke='#655e49' stroke-width='8'/><circle cx='79' cy='31' r='5' fill='#c9dfdc'/>",
@@ -135,8 +133,13 @@ public static class GameCatalog
             unit.Validate();
             if (!Tribes.ContainsKey(unit.TribeType)) throw new InvalidOperationException("Unknown tribe.");
         }
+        UnitRole[] sharedRoles = [UnitRole.Infantry, UnitRole.Scout, UnitRole.Wagon, UnitRole.Catapult, UnitRole.Ram, UnitRole.Governor, UnitRole.Spearman, UnitRole.Swordsman, UnitRole.HeavyCavalry];
         foreach (var tribe in Tribes.Keys)
-            if (Units.Values.Where(x => x.TribeType == tribe).Select(x => x.Role).Distinct().Count() != Enum.GetValues<UnitRole>().Length)
+        {
+            var roles = Units.Values.Where(x => x.TribeType == tribe).Select(x => x.Role).ToHashSet();
+            var mount = tribe == TribeType.Persians ? UnitRole.Cavalry : UnitRole.LightCavalry;
+            if (roles.Count != 10 || !sharedRoles.All(roles.Contains) || !roles.Contains(mount))
                 throw new InvalidOperationException("Incomplete unit roles.");
+        }
     }
 }

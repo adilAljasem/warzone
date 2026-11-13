@@ -2,10 +2,10 @@ namespace Warzone;
 
 public sealed record BattleSnapshot(Guid Id, Position Position, Guid AttackerId, Guid DefenderId, Guid AttackerOwner,
     Guid DefenderOwner, string DefenderKind, double Elapsed, int Round, int AttackerTroops, int DefenderTroops,
-    double AttackerMorale, double DefenderMorale, string Status, Guid? Winner, Guid[] AttackerArmyIds, Guid[] DefenderArmyIds);
+    string Status, Guid? Winner, Guid[] AttackerArmyIds, Guid[] DefenderArmyIds);
 public sealed record SiegeSnapshot(Guid Id, Guid ArmyId, Guid VillageId, Guid AttackerOwner, Guid DefenderOwner,
     Position Position, double Elapsed, double Wall, double Gate,
-    double GarrisonMorale, double Loyalty, string Status, Guid[] ArmyIds, AttackObjective Objective, string Phase, int RemainingBuildingLevels, double Progress);
+    double Loyalty, string Status, Guid[] ArmyIds, AttackObjective Objective, string Phase, int RemainingBuildingLevels, double Progress);
 
 internal sealed class BattleState(Army attacker, Army defender, double now, Convoy? convoy = null)
 {
@@ -21,27 +21,29 @@ internal sealed class BattleState(Army attacker, Army defender, double now, Conv
     public Guid? Winner { get; set; }
     public List<BattleMember> Attackers { get; } = [new(attacker)];
     public List<BattleMember> Defenders { get; } = [new(defender, convoy)];
+    public Dictionary<(Guid ArmyId, string UnitId), double> DamagePool { get; } = [];
     public IEnumerable<BattleMember> Members => Attackers.Concat(Defenders);
     public bool Contains(Army army) => Members.Any(m=>m.Army==army);
+    public bool ActiveContains(Army army) => Members.Any(m => !m.Withdrawn && m.Army == army);
     public double Ended { get; set; }
 }
 internal sealed class SiegeState(Army attacker, VillageEconomy city, double now)
 {
     public Guid Id { get; } = Guid.NewGuid();
     public List<Army> Attackers { get; } = [attacker];
-    public Army Attacker => Attackers.FirstOrDefault(a=>a.Troops.Count>0&&a.Morale>0&&!a.Routing&&a.Order is "Sieging" or "Battle") ?? Attackers[0];
+    public Army Attacker => Attackers.FirstOrDefault(a=>a.Troops.Count>0&&!a.Routing&&a.Order is "Sieging" or "Battle") ?? Attackers[0];
     public VillageEconomy City { get; } = city;
     public Guid DefenderOwner { get; } = city.Village.OwnerId;
-    public double Started { get; } = now;
+    public double Started { get; set; } = now;
     public double NextRound { get; set; } = now + 5;
     public int Round { get; set; }
     public double Wall { get; set; } = 100;
     public double Gate { get; set; } = 100;
-    public double Morale { get; set; } = 100;
     public double Loyalty { get; set; } = 100;
     public string Status { get; set; } = "Active";
+    public Dictionary<(Guid ArmyId, string UnitId), double> DamagePool { get; } = [];
     public double Ended { get; set; }
-    public AttackObjective Objective { get; } = attacker.Objective;
+    public AttackObjective Objective { get; set; } = attacker.Objective;
     public string Phase { get; set; } = attacker.Objective == AttackObjective.Blockade ? "Blockading" : "Fighting";
     public int InitialBuildingLevels { get; set; }
     public double DemolitionCredit { get; set; }
@@ -52,11 +54,18 @@ public sealed partial class LogisticsWorld
 {
     private readonly List<BattleState> battles = [];
     private readonly List<SiegeState> sieges = [];
-    private readonly HashSet<(Guid Viewer, Guid ArmyId)> scoutedArmies = [];
+    private readonly Dictionary<(Guid Viewer, Guid ArmyId), double> scoutedArmies = [];
+    private bool IsScoutedBy(Guid viewer, Guid armyId) => scoutedArmies.TryGetValue((viewer, armyId), out var until) && until > warTime;
+    private bool TryScoutExpiry(Guid viewer, Guid armyId, out double until)
+    {
+        if (scoutedArmies.TryGetValue((viewer, armyId), out until) && until > warTime) return true;
+        until = 0;
+        return false;
+    }
     private static int Count(Army army) => army.Troops.Sum(x => x.Count);
     private static int RoleCount(Army army, UnitRole role) => army.Troops.Where(x => x.Unit.Definition.Role == role).Sum(x => x.Count);
     private static int Fighters(Army army) => army.Troops.Where(x => x.Unit is not SupplyWagon && x.Unit.Definition.Role != UnitRole.Governor).Sum(x => x.Count);
-    private bool Engaged(Army army) => battles.Any(x => x.Status == "Active" && x.Contains(army))
+    private bool Engaged(Army army) => battles.Any(x => x.Status == "Active" && x.ActiveContains(army))
         || sieges.Any(x => x.Attackers.Contains(army) && x.Status == "Active");
 
     private bool ApplyWarfare(Guid actor, GameCommand command, double now, double shieldUntil)
@@ -94,6 +103,10 @@ public sealed partial class LogisticsWorld
         {
             var target = armies.FirstOrDefault(x => x.Id == command.DestinationId && x.OwnerId != actor)
                 ?? throw new GameRuleException("target", "Select an enemy army.");
+            if (CampAllied(actor, target.OwnerId))
+                throw new GameRuleException("ally", "You cannot attack an allied army.");
+            if (!CanAttackIntoActiveBattle(actor, target))
+                throw new GameRuleException("battle", "You cannot enter an ongoing battle unless one of the sides is your ally.");
             army = Detach(army, command.Formation, now);
             army.TargetId = target.Id; army.Order = "Attacking"; army.Destination = target.Position;
             army.AttackOrderedAt = now;
@@ -106,7 +119,7 @@ public sealed partial class LogisticsWorld
         {
             var city = villages.Values.FirstOrDefault(x => x.Village.Id == command.DestinationId && x.Village.OwnerId != actor && !x.Ruined)
                 ?? throw new GameRuleException("target", "Select an enemy settlement.");
-            if (sieges.Any(s=>s.City==city && s.Status == "Active" && s.Attacker.OwnerId!=actor)) throw new GameRuleException("siege", "A rival commander is already besieging this city.");
+            if (sieges.Any(s => s.City == city && s.Status == "Active" && !CampAllied(s.Attacker.OwnerId, actor))) throw new GameRuleException("siege", "A rival commander is already besieging this city.");
             ValidateCityAttack(actor, city, command.Objective, OrderFormation(army, command.Formation), now, shieldUntil);
             army = Detach(army, command.Formation, now);
             army.Objective = command.Objective;
@@ -147,10 +160,10 @@ public sealed partial class LogisticsWorld
     }
     private void StartBattle(Army attacker, Army defender, double now, Convoy? convoy = null)
     {
-        if(attacker==defender || attacker.OwnerId==defender.OwnerId || Fighters(attacker)==0 || attacker.Routing)return;
-        var existing=battles.Find(b=>b.Status=="Active"&&b.Contains(defender));
-        if(existing is not null){JoinBattle(existing,attacker,!existing.Attackers.Any(m=>m.Army==defender),now);return;}
-        if(battles.Any(b=>b.Status=="Active"&&b.Contains(attacker)))return;
+        if(attacker==defender || attacker.OwnerId==defender.OwnerId || CampAllied(attacker.OwnerId, defender.OwnerId) || Fighters(attacker)==0 || attacker.Routing)return;
+        var existing=battles.Find(b=>b.Status=="Active"&&b.ActiveContains(defender));
+        if(existing is not null){JoinBattle(existing,attacker,!existing.Attackers.Any(m=>!m.Withdrawn&&m.Army==defender),now);return;}
+        if(battles.Any(b=>b.Status=="Active"&&b.ActiveContains(attacker)))return;
         var battle=new BattleState(attacker,defender,now,convoy);battles.Add(battle);
         attacker.Order="Battle";defender.Order="Battle";if(convoy is not null)convoy.InBattle=true;
         BeginReport(battle.Id,convoy is null?"Battle":"Interception",now,attacker,defender.OwnerId,null,defender.Position);
@@ -170,16 +183,10 @@ public sealed partial class LogisticsWorld
         { Wheat = convoy.WheatCargo };
         StartBattle(army, defender, now, convoy);
     }
-    private double Power(Army force, Army opponent, bool attack)
+    private double ForceModifier(Army force)
     {
-        var total=Math.Max(1,Count(opponent));
-        var power=force.Troops.Sum(stack=>opponent.Troops.Sum(enemy=>{
-            var mounted=UnitBalance.Mounted(enemy.Unit);
-            var stat=attack?stack.Unit.Attack:(mounted?stack.Unit.DefenseCavalry:stack.Unit.DefenseInfantry);
-            return stack.Count*enemy.Count/(double)total*stat*UnitBalance.Matchup(stack.Unit,enemy.Unit.Definition.Role,attack);
-        }));
-        var smithy=villages[force.HomeVillageId].BuildingLevel(BuildingType.Smithy);
-        return power*(.025+.975*Math.Pow(force.Morale/100,2))*(1+.05*(smithy-1));
+        var smithy = Math.Max(1, villages[force.HomeVillageId].BuildingLevel(BuildingType.Smithy));
+        return 1 + .05 * (smithy - 1);
     }
     private int KillScouts(Army force, int losses, Guid enemy, bool deployed)
     {
@@ -271,7 +278,7 @@ public sealed partial class LogisticsWorld
             var attLoss = attackerScouts > 1 ? Math.Clamp((int)Math.Floor(defenderScouts * (double)defenderScouts / attackerScouts * .5), 1, attackerScouts - 1) : 0;
             if (attLoss > 0) KillScouts(scoutArmy, attLoss, defenderOwner ?? scoutArmy.OwnerId, true);
         }
-        if (targetArmy is not null) scoutedArmies.Add((scoutArmy.OwnerId, targetArmy.Id));
+        if (targetArmy is not null) scoutedArmies[(scoutArmy.OwnerId, targetArmy.Id)] = now + 60;
         scoutArmy.DefendingSiteId = null; scoutArmy.SupportedOwnerId = null; scoutArmy.TargetId = null;
         scoutArmy.Order = "Returning"; scoutArmy.Destination = villages[scoutArmy.HomeVillageId].Village.Position;
         var summary = report.DefenderSent.Count == 0 ? "No defending troops were found at the target."
@@ -300,11 +307,14 @@ public sealed partial class LogisticsWorld
                 if(stack.Count>lost)result.Add(new(stack.Unit,stack.Count-lost));
             }
         }
-        army.Troops = result.AsReadOnly();
+        return FinalizeArmyDamage(army, result, losses, wagons);
+    }
+    private static int FinalizeArmyDamage(Army army, List<TroopStack> surviving, int losses, int wagonsBefore)
+    {
+        army.Troops = surviving.AsReadOnly();
         army.Wheat = Math.Min(army.Wheat, army.Capacity);
         var remainingCargo = Math.Max(0, army.Troops.Sum(x => (double)x.Count * x.Unit.CarryCapacity) - army.Wheat);
         if (army.Loot.Total > remainingCargo) army.Loot = army.Loot.Fraction(remainingCargo / Math.Max(1, army.Loot.Total));
-        army.AdjustMorale(-(losses == 0 ? 0 : 3 + losses * 70d / Math.Max(1, before)) - (wagons > RoleCount(army, UnitRole.Wagon) ? 25 : 0));
         return losses;
     }
     private void DestroyWagons(Army army, double fraction, double now, Guid enemy)
@@ -359,6 +369,12 @@ public sealed partial class LogisticsWorld
                 var enemy = armies.FirstOrDefault(x => x.Id == army.TargetId);
                 if (enemy is not null && Distance(army.Position, enemy.Position) <= 16)
                 {
+                    if (!CanAttackIntoActiveBattle(army, enemy))
+                    {
+                        army.Order = "Idle"; army.TargetId = null; army.Destination = army.Position;
+                        Note(army.OwnerId, now, "Your army stopped short because the target is already in an ongoing battle without allies on your side.", "war");
+                        continue;
+                    }
                     var firstAttacker = enemy.Order == "Attacking" && enemy.TargetId == army.Id && enemy.AttackOrderedAt < army.AttackOrderedAt
                         ? enemy : army;
                     var secondDefender = firstAttacker == army ? enemy : army;
@@ -369,15 +385,23 @@ public sealed partial class LogisticsWorld
                 && Distance(army.Position, city.Village.Position) <= 40)
             {
                 var ongoing=sieges.Find(s=>s.City==city&&s.Status=="Active");
-                if(ongoing is not null)
+                if (ongoing is not null)
                 {
-                    if(ongoing.Attacker.OwnerId==army.OwnerId && ongoing.Objective==army.Objective)
+                    if (CampAllied(ongoing.Attacker.OwnerId, army.OwnerId) && (ongoing.Objective == army.Objective || ongoing.Objective == AttackObjective.Blockade))
                     {
-                        if(!ongoing.Attackers.Contains(army))ongoing.Attackers.Add(army);
-                        army.Order="Sieging";AddReportArmy(reports.Single(r=>r.Id==ongoing.Id),army,true);
-                        ReportEvent(ongoing.Id,now,"Another army joined the siege.");
+                        var escalated = ongoing.Objective == AttackObjective.Blockade && army.Objective != AttackObjective.Blockade;
+                        if (escalated)
+                        {
+                            ongoing.Objective = army.Objective;
+                            ongoing.Phase = "Fighting";
+                            ongoing.Started = now;
+                            ongoing.NextRound = now + 5;
+                        }
+                        if (!ongoing.Attackers.Contains(army)) ongoing.Attackers.Add(army);
+                        army.Order = "Sieging"; AddReportArmy(reports.Single(r => r.Id == ongoing.Id), army, true);
+                        ReportEvent(ongoing.Id, now, escalated ? "An allied assault force joined and escalated the blockade." : ongoing.Attacker.OwnerId == army.OwnerId ? "Another army joined the siege." : "An allied army joined the siege.");
                     }
-                    else { Route(army); Note(army.OwnerId,now,"The target has a different ongoing attack objective. Your army is returning."); }
+                    else { Route(army); Note(army.OwnerId, now, "The target has a different ongoing attack objective. Your army is returning."); }
                     continue;
                 }
                 var guard = Guards(city.Village.Id, army.OwnerId).FirstOrDefault();
@@ -396,6 +420,9 @@ public sealed partial class LogisticsWorld
         foreach (var siege in sieges.Where(x => x.Status == "Active").ToArray()) AdvanceSiege(siege, now);
         sieges.RemoveAll(x => x.Status != "Active" && now - x.Ended > 30);
         armies.RemoveAll(x => Count(x) == 0);
+        if (scoutedArmies.Count > 0)
+            foreach (var key in scoutedArmies.Where(kv => kv.Value <= now).Select(kv => kv.Key).ToArray())
+                scoutedArmies.Remove(key);
         AdvancePolitics(seconds, now, duration);
     }
     private void AdvanceSiege(SiegeState siege, double now)
@@ -412,25 +439,32 @@ public sealed partial class LogisticsWorld
             return;
         }
         if (siege.Phase is "Persuading" or "Demolishing") { AdvanceCityObjective(siege, now); return; }
-        var defenders = new Army(city.Village.OwnerId, city.Village.Position, city.Village.Id,
-            city.Garrison().Length > 0 ? city.Garrison() : [new(BaseUnit.Create(GameCatalog.Units[UnitId(city, UnitRole.Infantry)]), 1)]);
-        var actualDefenders = city.Garrison().Sum(x => x.Count);
-        defenders.AdjustMorale(siege.Morale - 100);
+        var garrison = city.Garrison();
+        var actualDefenders = garrison.Sum(x => x.Count);
         var wallBonus = GameCatalog.Tribes[city.Village.Tribe].Bonuses.WallMultiplier;
         var protection = 1 + city.BuildingLevel(BuildingType.Wall) * .08 * wallBonus * siege.Wall / 100;
-        protection *= 1 - Math.Min(.6, siege.Attackers.Where(a=>a.Order=="Sieging").Sum(a=>RoleCount(a, UnitRole.SiegeTower)) * .15);
-        var preserve = now - siege.Started < 60;
-        var attackers=siege.Attackers.Where(a=>a.Order=="Sieging"&&!a.Routing&&Fighters(a)>0).ToArray();
-        siege.Gate=Math.Max(0,siege.Gate-attackers.Sum(a=>RoleCount(a,UnitRole.Ram)*12+Fighters(a)*.03));
-        siege.Wall=Math.Max(0,siege.Wall-attackers.Sum(a=>RoleCount(a,UnitRole.Catapult)*5+RoleCount(a,UnitRole.SiegeTower)*2));
-        var losses=Math.Max(1,(int)Math.Ceiling(DefenderLoss(attackers,[defenders])*(siege.Gate>0?.65:1.3)/protection));
-        var retaliation=actualDefenders==0?0:Math.Max(1,(int)Math.Ceiling(AttackerLoss(attackers,[defenders])*protection));
-        if(actualDefenders>0){Damage(defenders,losses,now,attacker.OwnerId,false,preserve);city.ReplaceGarrison(defenders.Troops);}
-        DamageGroup(attackers,retaliation,now,city.Village.OwnerId,preserve);
-        siege.Morale=Math.Max(0,siege.Morale-4-losses*100d/Math.Max(20,actualDefenders)-(city.Resources.Wheat==0?8:0));
-        ReportEvent(siege.Id,now,$"Round {siege.Round}: gate {siege.Gate:0}%, wall {siege.Wall:0}%, garrison {city.Garrison().Sum(x=>x.Count)}.");
-        if (attackers.All(a=>Count(a)==0||a.Morale==0)) { EndSiege(siege, "Defended", now); foreach(var force in attackers){if(Count(force)>0)Route(force);else armies.Remove(force);} return; }
-        if (!preserve && (siege.Morale == 0 || city.Garrison().Length == 0))
+        var attackers = siege.Attackers.Where(a => a.Order == "Sieging" && !a.Routing && Fighters(a) > 0).ToArray();
+        siege.Gate = Math.Max(0, siege.Gate - attackers.Sum(a => RoleCount(a, UnitRole.Ram) * 12 + Fighters(a) * .03));
+        siege.Wall = Math.Max(0, siege.Wall - attackers.Sum(a => RoleCount(a, UnitRole.Catapult) * 5));
+        if (actualDefenders > 0)
+        {
+            var defenders = new Army(city.Village.OwnerId, city.Village.Position, city.Village.Id, garrison);
+            var defenderMult = (siege.Gate > 0 ? .65 : 1.3) / protection;
+            var pace = RoundPaceFactor(attackers.Sum(Count) + actualDefenders, siege.Round);
+            var defPlan = PlanSideRoundDamage([defenders], attackers, false, defenderMult, pace, siege.DamagePool, _ => city.Village.Id);
+            var attPlan = PlanSideRoundDamage(attackers, [defenders], true, protection, pace, siege.DamagePool, a => a.Id);
+            CommitSideRoundPlan([defenders], defPlan, siege.DamagePool, now, attacker.OwnerId, false);
+            CommitSideRoundPlan(attackers, attPlan, siege.DamagePool, now, city.Village.OwnerId, true);
+            city.ReplaceGarrison(defenders.Troops);
+        }
+        ReportEvent(siege.Id, now, $"Round {siege.Round}: gate {siege.Gate:0}%, wall {siege.Wall:0}%, garrison {city.Garrison().Sum(x => x.Count)}.");
+        if (attackers.All(a => Count(a) == 0))
+        {
+            EndSiege(siege, "Defended", now);
+            foreach (var force in attackers) { if (Count(force) > 0) Route(force); else armies.Remove(force); }
+            return;
+        }
+        if (city.Garrison().Length == 0)
         {
             if (siege.Objective == AttackObjective.Raid)
             {
@@ -447,11 +481,10 @@ public sealed partial class LogisticsWorld
             else
             {
                 siege.Phase = siege.Objective == AttackObjective.Conquest ? "Persuading" : "Demolishing";
-                siege.InitialBuildingLevels = city.Village.Buildings.Sum(b=>b.Level);
+                siege.InitialBuildingLevels = city.Village.Buildings.Sum(b => b.Level);
                 ReportEvent(siege.Id, now, siege.Phase == "Persuading" ? "The defenders fell. Persuasion rounds have begun." : "The defenders fell. Catapults are demolishing buildings level by level.");
             }
         }
-        else if (now - siege.Started >= 180) { EndSiege(siege, "Defended", now); foreach(var force in attackers)Route(force); Note(attacker.OwnerId, now, "The siege timed out. Your force is withdrawing."); }
     }
     private void EndSiege(SiegeState siege, string status, double now)
     {
@@ -469,7 +502,8 @@ public sealed partial class LogisticsWorld
         };
         ReportEvent(siege.Id, now, outcome, status, status is "Raided" or "Conquest" or "Raze" ? siege.Attacker.OwnerId : siege.DefenderOwner);
         Note(siege.DefenderOwner, now, outcome + " Open Reports for casualties and plunder.", "war");
-        Note(siege.Attacker.OwnerId, now, outcome + " Open Reports for casualties and plunder.", "war");
+        foreach (var owner in siege.Attackers.Select(a => a.OwnerId).Distinct())
+            Note(owner, now, outcome + " Open Reports for casualties and plunder.", "war");
         foreach(var force in siege.Attackers){if(force.Order is "Sieging"){force.Order="Idle";force.TargetId=null;}if(status is "Conquest" or "Raze" or "Raided" or "SpecialistsLost")CompleteAttack(force);}
     }
 }

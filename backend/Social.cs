@@ -15,10 +15,43 @@ public sealed partial class GameRoom
     private static (Guid First, Guid Second) AlliancePair(Guid first, Guid second) =>
         first.CompareTo(second) < 0 ? (first, second) : (second, first);
 
+    internal AllianceRequest[] PendingRequestsFor(Guid recipientId) =>
+        allianceRequests.Where(r => r.RecipientId == recipientId).ToArray();
+
+    public int AllianceCount(Guid playerId) =>
+        alliances.Keys.Count(pair => pair.First == playerId || pair.Second == playerId);
+
+    public bool IsAllied(Guid first, Guid second) =>
+        first == second || alliances.ContainsKey(AlliancePair(first, second));
+
+    public bool HasPendingRequest(Guid first, Guid second) =>
+        allianceRequests.Any(r => (r.SenderId == first && r.RecipientId == second) || (r.SenderId == second && r.RecipientId == first));
+
     private void AddChat(Guid? sender, string text, string kind = "Player")
     {
         chatMessages.Add(new(++chatMessageId, sender, text, ElapsedSeconds, kind));
         if (chatMessages.Count > 120) chatMessages.RemoveAt(0);
+    }
+
+    private void InitializeTeamAlliances()
+    {
+        var groupedByTeam = players.Values
+            .Where(p => p.Team is >= 1 and <= 4)
+            .GroupBy(p => p.Team)
+            .Where(g => g.Count() > 1);
+
+        foreach (var group in groupedByTeam)
+        {
+            var members = group.ToList();
+            for (var i = 0; i < members.Count; i++)
+            {
+                for (var j = i + 1; j < members.Count; j++)
+                {
+                    var pair = AlliancePair(members[i].Id, members[j].Id);
+                    alliances.TryAdd(pair, ElapsedSeconds);
+                }
+            }
+        }
     }
 
     private bool ApplySocial(Guid actor, GameCommand command)
@@ -71,13 +104,7 @@ public sealed partial class GameRoom
     public AllianceRequestSnapshot[] AllianceRequestView(Guid viewer) => allianceRequests
         .Where(r => r.SenderId == viewer || r.RecipientId == viewer)
         .Select(r => new AllianceRequestSnapshot(r.Id, r.SenderId, r.RecipientId, r.CreatedAt)).ToArray();
-
-    internal int AllianceCount(Guid playerId) => alliances.Keys.Count(p => p.First == playerId || p.Second == playerId);
-    internal bool IsAllied(Guid first, Guid second) => alliances.ContainsKey(AlliancePair(first, second));
-    internal bool HasPendingRequest(Guid first, Guid second) => allianceRequests.Any(r => (r.SenderId == first && r.RecipientId == second) || (r.SenderId == second && r.RecipientId == first));
-    internal IReadOnlyList<AllianceRequest> PendingRequestsFor(Guid playerId) => allianceRequests.Where(r => r.RecipientId == playerId).ToArray();
 }
-
 
 public sealed partial class LogisticsWorld
 {

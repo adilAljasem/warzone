@@ -40,14 +40,14 @@ internal sealed class ResourceOasis(Position position, ResourceType resource)
         var count = Math.Clamp(32 - settlements.Length, 16, 24);
         for (var attempt = 0; result.Count < count && attempt < 60000; attempt++)
         {
-            var point = new Position(random.Next(120, 2881), random.Next(120, 2881));
+            var point = new Position(random.Next(180, 4321), random.Next(180, 4321));
             var py = point.Y * .65;
-            var river = 1470 + Math.Sin(py / 320) * 150 + Math.Sin(py / 675) * 60;
-            if (Math.Abs(point.X - river) < 85 || LogisticsWorld.Distance(point, new(LogisticsWorld.MapCenter, LogisticsWorld.MapCenter)) < 190
-                || settlements.Any(p => LogisticsWorld.Distance(p, point) < 380
-                    || double.Hypot(p.X - point.X, (p.Y - point.Y) * .65) < 275)
-                || result.Any(o => LogisticsWorld.Distance(o.Position, point) < 330
-                    || double.Hypot(o.Position.X - point.X, (o.Position.Y - point.Y) * .65) < 235)) continue;
+            var river = 2205 + Math.Sin(py / 480) * 225 + Math.Sin(py / 1012) * 90;
+            if (Math.Abs(point.X - river) < 125 || LogisticsWorld.Distance(point, new(LogisticsWorld.MapCenter, LogisticsWorld.MapCenter)) < 285
+                || settlements.Any(p => LogisticsWorld.Distance(p, point) < 580
+                    || double.Hypot(p.X - point.X, (p.Y - point.Y) * .65) < 420)
+                || result.Any(o => LogisticsWorld.Distance(o.Position, point) < 500
+                    || double.Hypot(o.Position.X - point.X, (o.Position.Y - point.Y) * .65) < 360)) continue;
             result.Add(new(point, types[result.Count % types.Length]));
         }
         return result.ToArray();
@@ -68,7 +68,7 @@ public sealed partial class LogisticsWorld
             : blockaded ? "Oasis blockaded: collection suspended" : convoy is not null ? convoy.InBattle ? "Caravan under attack" : convoy.Returning ? "Resources returning" : "Wagons collecting"
             : !oasis.AutoTransport ? "Automatic transport paused" : oasis.Stock.Total < 2000 ? "Waiting for 2000 resources" : "Waiting for available wagons and provisions";
         var guarding = armies.Where(a => a.DefendingSiteId == oasis.Id || (Distance(a.Position, oasis.Position) <= 35 && a.Order is "Guarding" or "Camped" or "Idle" or "Battle" or "Camping" or "Burning")).ToArray();
-        var visibleArmies = guarding.Where(a => mine || a.OwnerId == viewer || a.SupportedOwnerId == viewer || scoutedArmies.Contains((viewer, a.Id))).ToArray();
+        var visibleArmies = guarding.Where(a => mine || a.OwnerId == viewer || a.SupportedOwnerId == viewer || IsScoutedBy(viewer, a.Id)).ToArray();
         var garrison = visibleArmies.SelectMany(a => a.Troops).GroupBy(t => t.Unit.UnitId)
             .ToDictionary(g => g.Key, g => g.Sum(t => t.Count));
         var burnedRemaining = Math.Max(0, oasis.BurnedUntil - warTime);
@@ -202,7 +202,9 @@ public sealed partial class LogisticsWorld
         Note(site.Owner.Value, now, "Reinforcements are on their way.", "reinforcement", targetId: destination);
     }
     private IEnumerable<Army> Guards(Guid site, Guid attacker) => armies.Where(a =>
-        a.DefendingSiteId == site && a.SupportedOwnerId != attacker && a.OwnerId != attacker && a.Order == "Guarding" && Fighters(a) > 0);
+        a.DefendingSiteId == site && a.SupportedOwnerId != attacker && a.OwnerId != attacker
+        && !CampAllied(a.OwnerId, attacker) && (a.SupportedOwnerId is null || !CampAllied(a.SupportedOwnerId.Value, attacker))
+        && a.Order == "Guarding" && Fighters(a) > 0);
     private void RefreshOasisBonuses()
     {
         foreach (var city in villages.Values) { Array.Clear(city.OasisBonuses); city.OwnedOases = 0; }
@@ -255,7 +257,7 @@ public sealed partial class LogisticsWorld
         if(army.OasisMode==OasisMode.Blockade){if(oasis.OwnerId is null||oasis.OwnerId==army.OwnerId)CompleteAttack(army);else army.Order="Blockading";return;}
         if (oasis.OwnerId != army.OwnerId && oasis.WallHealth > 0)
         {
-            var damage = Fighters(army) * .1 + RoleCount(army, UnitRole.Ram) * 2.4 + RoleCount(army, UnitRole.Catapult) + RoleCount(army, UnitRole.SiegeTower) * .4;
+            var damage = Fighters(army) * .1 + RoleCount(army, UnitRole.Ram) * 2.4 + RoleCount(army, UnitRole.Catapult);
             oasis.WallHealth = Math.Max(0, oasis.WallHealth - damage * seconds); army.ActionSeconds = 0;
             if (oasis.WallHealth == 0 && oasis.OwnerId is { } defender)
                 Note(defender, now, "Your oasis wall has been breached.", "oasis-attack", targetId: oasis.Id);

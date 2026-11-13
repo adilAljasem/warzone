@@ -15,12 +15,12 @@ for(let count=1;count<=2000;count++){
     assert(layout.points.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));
     assert(layout.rows<=layout.columns,'Large armies stay in a balanced formation instead of a long column');
 }
-const mixed=armyFigures(100,'Romans',{'romans-infantry':80,'romans-archer':20,'romans-wagon':4,'romans-cavalry':0});
-assert.equal(mixed.length,10);assert.equal(mixed.filter(id=>id==='romans-infantry').length,8);assert.equal(mixed.filter(id=>id==='romans-archer').length,2);
-const combined=armyFigures(151,'Romans',{'romans-infantry':100,'romans-cavalry':20,'romans-catapult':10,'romans-ram':11,'romans-siegetower':10,'romans-wagon':30});
-assert.deepEqual(Object.fromEntries([...new Set(combined)].map(id=>[id,combined.filter(x=>x===id).length])),{'romans-catapult':1,'romans-cavalry':2,'romans-infantry':10,'romans-ram':2,'romans-siegetower':1});
+const mixed=armyFigures(100,'Romans',{'romans-infantry':80,'romans-spearman':20,'romans-wagon':4,'romans-lightcavalry':0});
+assert.equal(mixed.length,10);assert.equal(mixed.filter(id=>id==='romans-infantry').length,8);assert.equal(mixed.filter(id=>id==='romans-spearman').length,2);
+const combined=armyFigures(151,'Romans',{'romans-infantry':100,'romans-lightcavalry':20,'romans-catapult':10,'romans-ram':11,'romans-spearman':10,'romans-wagon':30});
+assert.deepEqual(Object.fromEntries([...new Set(combined)].map(id=>[id,combined.filter(x=>x===id).length])),{'romans-catapult':1,'romans-infantry':10,'romans-lightcavalry':2,'romans-ram':2,'romans-spearman':1});
 assert.deepEqual(armyFigures(1,'Germans',{'germans-heavycavalry':1}),['germans-heavycavalry'],'Small specialist groups remain visible');
-assert.deepEqual(armyFigures(31,'Romans',null,{'romans-cavalry':3,'romans-catapult':1,'romans-wagon':2}),['romans-catapult','romans-cavalry','romans-cavalry','romans-cavalry'],'Public map figures preserve enemy roles without exposing exact formation');
+assert.deepEqual(armyFigures(31,'Romans',null,{'romans-lightcavalry':3,'romans-catapult':1,'romans-wagon':2}),['romans-catapult','romans-lightcavalry','romans-lightcavalry','romans-lightcavalry'],'Public map figures preserve enemy roles without exposing exact formation');
 assert(armyFigures(100,'Germans',null).every(id=>id==='germans-infantry'),'Private formations reveal only generic tribe infantry');
 assert.deepEqual(armyFigures(0,'Romans',{'romans-wagon':20}),[]);
 assert(armyFigures(25,'Romans',{'romans-infantry':25}).length<armyFigures(100,'Romans',{'romans-infantry':100}).length,'Casualties shrink the representative formation');

@@ -21,13 +21,53 @@ public sealed class GameHub(GameServer server) : Hub
     }
     public RoomSummary[] ListRooms() => server.ListRooms();
     public RoomSnapshot? Resume() => server.Resume(Actor);
-    public RoomSnapshot CreateRoom(string playerName, TribeType tribe, string roomName, RoomSettings settings)
-        => server.Create(Actor, playerName, tribe, roomName, settings);
-    public RoomSnapshot JoinRoom(string roomId, string playerName, TribeType tribe) => server.Join(Actor, roomId, playerName, tribe);
-    public RoomSnapshot ConfigureRoom(RoomSettings settings) => server.Configure(Actor, settings);
+
+    private static TribeType? ParseTribe(string tribe)
+    {
+        if (string.Equals(tribe, "Random", StringComparison.OrdinalIgnoreCase)) return null;
+        if (!int.TryParse(tribe, out _) && Enum.TryParse<TribeType>(tribe, true, out var parsed) && Enum.IsDefined(parsed))
+            return parsed;
+        throw new GameRuleException("player", "Invalid player or tribe.");
+    }
+
+    public async Task<RoomSnapshot> CreateRoom(string playerName, string tribe, string roomName, RoomSettings settings)
+    {
+        var snapshot = server.Create(Actor, playerName, ParseTribe(tribe), roomName, settings);
+        await Clients.All.SendAsync("RoomsUpdated", server.ListRooms());
+        return snapshot;
+    }
+
+    public async Task<RoomSnapshot> JoinRoom(string roomId, string playerName, string tribe)
+    {
+        var snapshot = server.Join(Actor, roomId, playerName, ParseTribe(tribe));
+        await Clients.All.SendAsync("RoomsUpdated", server.ListRooms());
+        return snapshot;
+    }
+
+    public async Task<RoomSnapshot> ConfigureRoom(RoomSettings settings)
+    {
+        var snapshot = server.Configure(Actor, settings);
+        await Clients.All.SendAsync("RoomsUpdated", server.ListRooms());
+        return snapshot;
+    }
+
     public RoomSnapshot SetReady(bool ready) => server.Ready(Actor, ready);
-    public RoomSnapshot StartMatch() => server.Start(Actor);
-    public void LeaveRoom() => server.Leave(Actor);
+    public RoomSnapshot ChangeTribe(Guid targetId, string tribeOrRandom) => server.ChangeTribe(Actor, targetId, tribeOrRandom);
+    public RoomSnapshot ChangeTeam(Guid targetId, int team) => server.ChangeTeam(Actor, targetId, team);
+
+    public async Task<RoomSnapshot> StartMatch()
+    {
+        var snapshot = server.Start(Actor);
+        await Clients.All.SendAsync("RoomsUpdated", server.ListRooms());
+        return snapshot;
+    }
+
+    public async Task LeaveRoom()
+    {
+        server.Leave(Actor);
+        await Clients.All.SendAsync("RoomsUpdated", server.ListRooms());
+    }
+
     public CommandResult SendCommand(GameCommand command) => server.Execute(Actor, command);
 }
 

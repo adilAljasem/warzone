@@ -22,9 +22,9 @@ public sealed partial class LogisticsWorld
             throw new GameRuleException("governor", "Include a governor in this army for conquest.");
         if (objective == AttackObjective.Raze && !Has(UnitRole.Catapult))
             throw new GameRuleException("catapult", "Include a catapult in this army for destruction.");
-        var current=sieges.Find(s=>s.City==city && s.Status=="Active");
-        if (current is not null && (current.Attacker.OwnerId!=actor || current.Objective!=objective))
-            throw new GameRuleException("siege", "Joining armies must share the siege commander and attack objective.");
+        var current = sieges.Find(s => s.City == city && s.Status == "Active");
+        if (current is not null && (!CampAllied(current.Attacker.OwnerId, actor) || (current.Objective != objective && current.Objective != AttackObjective.Blockade)))
+            throw new GameRuleException("siege", "Joining armies must share an allied siege commander and compatible attack objective.");
     }
 
     private void AdvanceCityObjective(SiegeState siege, double now)

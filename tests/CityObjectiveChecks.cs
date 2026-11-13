@@ -85,7 +85,7 @@ internal static class CityObjectiveChecks
 
         var blocked=new Realm();var besieger=blocked.Send(AttackObjective.Blockade,troops:30);blocked.Until(()=>blocked.B.Besieged);
         var pre=blocked.B.Garrison().Sum(t=>t.Count);var gross=blocked.B.Production().Single(p=>p.Resource=="Wheat").GrossPerMinute;
-        Check(gross==120&&blocked.B.Production().Single(p=>p.Resource=="Wood").GrossPerMinute==240,"Only wheat production is halved by village blockade");
+        Check(gross==180&&blocked.B.Production().Single(p=>p.Resource=="Wood").GrossPerMinute==240,"Only wheat production is halved by village blockade");
         blocked.Tick(200);
         Check(blocked.B.Besieged&&blocked.B.Garrison().Sum(t=>t.Count)==pre&&blocked.View.Warfare.Sieges.Single().Wall==100,"Pure blockade keeps surrounding the city without automatic assault or the old attack timeout");
         Reject(()=>blocked.World.Apply(blocked.A.Village.OwnerId,new(Guid.NewGuid(),CommandKind.BeginSiege,besieger,DestinationId:blocked.B.Village.Id,Objective:AttackObjective.Raid),blocked.Now,0),"engaged");
@@ -96,7 +96,7 @@ internal static class CityObjectiveChecks
         Check(blocked.View.Reports.Single(r=>r.Kind=="Siege").Armies.Any(a=>a.ArmyId==aid&&!a.Attacking),"City battle report lists relief armies on the defending side");
         blocked.Fixture("blockade",blocked.B.Village.OwnerId);
         blocked.Recall(besieger);blocked.Tick(1);
-        Check(!blocked.B.Besieged&&blocked.B.Production().Single(p=>p.Resource=="Wheat").GrossPerMinute==240,"Lifting the last blockade restores normal wheat output");
+        Check(!blocked.B.Besieged&&blocked.B.Production().Single(p=>p.Resource=="Wheat").GrossPerMinute==360,"Lifting the last blockade restores normal wheat output");
 
         var trade=new Realm();
         trade.World.Apply(trade.B.Village.OwnerId,new(Guid.NewGuid(),CommandKind.PostMarketOffer,trade.B.Village.Id,OfferResource:ResourceType.Wood,OfferAmount:200,AskResource:ResourceType.Iron,AskAmount:120),0,0);

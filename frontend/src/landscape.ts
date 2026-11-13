@@ -13,9 +13,9 @@ export interface Landscape {
     setBoundaries(visible: boolean): void;
     destroy(): void;
 }
-export function riverX(y: number) { return 1470 + Math.sin(y / 215) * 140 + Math.sin(y / 450) * 55; }
-const riverWidth = (y: number) => 23 + Math.sin(y / 150) * 5 + Math.sin(y / 67) * 2;
-const bridgeYs = [400, 980, 1550];
+export function riverX(y: number) { return 2205 + Math.sin(y / 480) * 225 + Math.sin(y / 1012) * 90; }
+const riverWidth = (y: number) => 26 + Math.sin(y / 225) * 5 + Math.sin(y / 100) * 2;
+const bridgeYs = [600, 1470, 2325];
 const project = (p: Point): Point => ({ x: p.x, y: p.y * .65 });
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -48,12 +48,12 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
     const kindAt = (x: number, y: number) => biomeAt(regions, { x, y: y / .65 })?.kind;
     const palette: Record<string, number> = { Woodland: 0x536e49, Highlands: 0x939183, Grassland: 0xa8b77c, Desert: 0xdac18b };
     const ownedTextures: Texture[] = [];
-    const base = new TilingSprite({ texture: groundTexture(0), width: 10000, height: 6500 });
-    base.position.set(-3500, -2275); base.tileScale.set(.6); base.tint = 0xd6dfbc; root.addChild(base);
+    const base = new TilingSprite({ texture: groundTexture(0), width: 13500, height: 8775 });
+    base.position.set(-4500, -2925); base.tileScale.set(.6); base.tint = 0xd6dfbc; root.addChild(base);
     // Bake the feathered textures once. A single sprite avoids per-frame mask filters
     // over the entire world, especially on mobile and software WebGL renderers.
     const terrainCanvas = document.createElement('canvas');
-    terrainCanvas.width = 5000; terrainCanvas.height = 3250;
+    terrainCanvas.width = 4500; terrainCanvas.height = 2925;
     const terrainContext = terrainCanvas.getContext('2d')!;
     const layerCanvas = document.createElement('canvas');
     layerCanvas.width = terrainCanvas.width; layerCanvas.height = terrainCanvas.height;
@@ -75,8 +75,8 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
         maskContext.clearRect(0, 0, terrainCanvas.width, terrainCanvas.height);
         maskContext.filter = 'blur(12px)'; maskContext.fillStyle = '#ffffff'; maskContext.beginPath();
         region.boundary.forEach((p, i) => {
-            const x = ((p.x === 30 ? -3500 : p.x === 2970 ? 6500 : p.x) + 3500) / 2;
-            const y = ((p.y === 30 ? -3500 : p.y === 2970 ? 6500 : p.y) * .65 + 2275) / 2;
+            const x = ((p.x === 45 ? -4500 : p.x === 4455 ? 9000 : p.x) + 4500) / 3;
+            const y = ((p.y === 45 ? -4500 : p.y === 4455 ? 9000 : p.y) * .65 + 2925) / 3;
             if (i) maskContext.lineTo(x, y); else maskContext.moveTo(x, y);
         });
         maskContext.closePath(); maskContext.fill();
@@ -84,13 +84,13 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
         layerContext.globalCompositeOperation = 'source-over'; terrainContext.drawImage(layerCanvas, 0, 0);
     }
     const terrainTexture = Texture.from(terrainCanvas); ownedTextures.push(terrainTexture);
-    const terrain = new Sprite(terrainTexture); terrain.position.set(-3500, -2275); terrain.scale.set(2); root.addChild(terrain);
+    const terrain = new Sprite(terrainTexture); terrain.position.set(-4500, -2925); terrain.scale.set(3); root.addChild(terrain);
     layerCanvas.width = maskCanvas.width = 1;
 
     const ground = new Graphics(), details = new Graphics(); root.addChild(ground, details);
     // Low relief and ground cover establish biome identity without looking collectible.
-    for (let i = 0; i < 1650; i++) {
-        const x = -250 + random() * 3500, y = -180 + random() * 2310, kind = kindAt(x, y);
+    for (let i = 0; i < 2400; i++) {
+        const x = -350 + random() * 5200, y = -260 + random() * 3450, kind = kindAt(x, y);
         if (kind === 'Desert') {
             const w = 18 + random() * 62, h = 4 + random() * 11;
             ground.moveTo(x - w, y).quadraticCurveTo(x, y - h * 2, x + w, y + h)
@@ -136,7 +136,7 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
     const river = new Graphics();
     for (const [extra, color, alpha] of [[24, 0x789064, .22], [14, 0xa3ab7d, .6], [7, 0xc0b28a, 1], [2, 0x527e77, 1], [0, 0x6faaa0, 1], [-7, 0x8dbeb0, .7]] as const) {
         const left: number[] = [], right: number[] = [];
-        for (let y = -2275; y <= 4225; y += 10) {
+        for (let y = -2925; y <= 5850; y += 12) {
             const width = riverWidth(y) + extra;
             left.push(riverX(y) - width, y); right.unshift(riverX(y) + width, y);
         }
@@ -166,7 +166,7 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
         !springs.some(p => distance(p, { x, y }) < 145 + size * .5) &&
         Math.abs(x - riverX(y)) > riverWidth(y) + 26 + size * .35 &&
         !roadPoints.some(p => distance(p, { x, y }) < 18 + size * .4) &&
-        distance({ x, y }, { x: 1500, y: 975 }) > 85 + size * .4;
+        distance({ x, y }, { x: 2250, y: 1462.5 }) > 95 + size * .4;
     const place = (index: number, size: number, x: number, y: number, kind: string) => {
         if (!clear(x, y, size) || kindAt(x, y) !== kind || placed.some(p => distance(p, { x, y }) < (p.width + size) * .19)) return;
         const sprite = terrainSprite(index, size, x, y); sprite.zIndex = y;
@@ -174,8 +174,8 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
         scenery.addChild(sprite); placed.push({ x, y, width: size });
         if (index < 2) swaying.push({ sprite, phase: random() * Math.PI * 2 });
     };
-    for (let i = 0; i < 180; i++) {
-        const x = -240 + random() * 3480, y = -160 + random() * 2260, kind = kindAt(x, y);
+    for (let i = 0; i < 270; i++) {
+        const x = -350 + random() * 5200, y = -240 + random() * 3400, kind = kindAt(x, y);
         if (kind === 'Woodland') {
             // Overlapping, small tree crowns read as continuous woodland, not resource nodes.
             const span = 95 + random() * 60;
@@ -195,7 +195,7 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
     }
     const names = new Container(); root.addChild(names);
     for (const region of regions) {
-        const candidates = [region.center, ...Array.from({ length: 65 }, () => ({ x: 220 + random() * 2560, y: 180 + random() * 2640 }))]
+        const candidates = [region.center, ...Array.from({ length: 65 }, () => ({ x: 320 + random() * 3860, y: 260 + random() * 3980 }))]
             .filter(p => biomeAt(regions, p)?.id === region.id);
         const clearance = (p: Point) => {
             const point = project(p);
@@ -210,7 +210,7 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
     const seen = new Set<string>();
     for (const region of regions) for (let i = 0; i < region.boundary.length; i++) {
         const a = region.boundary[i]!, b = region.boundary[(i + 1) % region.boundary.length]!;
-        if (a.x === b.x && (a.x === 30 || a.x === 2970) || a.y === b.y && (a.y === 30 || a.y === 2970)) continue;
+        if (a.x === b.x && (a.x === 45 || a.x === 4455) || a.y === b.y && (a.y === 45 || a.y === 4455)) continue;
         const key = [a, b].map(p => `${p.x.toFixed(4)},${p.y.toFixed(4)}`).sort().join(':');
         if (seen.has(key)) continue; seen.add(key);
         boundaries.moveTo(a.x, a.y * .65).lineTo(b.x, b.y * .65).stroke({ color: 0x384936, width: 5, alpha: .7 })
@@ -223,8 +223,8 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
         animate(time) {
             swaying.forEach(({ sprite, phase }) => { sprite.skew.x = Math.sin(time / 3400 + phase) * .006; });
             water.clear();
-            for (let i = 0; i < 42; i++) {
-                const y = ((i * 75 + time * .014) % 2800) - 350;
+            for (let i = 0; i < 60; i++) {
+                const y = ((i * 80 + time * .014) % 4000) - 500;
                 if (usedBridgeYs.some(bridge => Math.abs(bridge - y) < 22)) continue;
                 const x = riverX(y) + Math.sin(i * 2.3) * (riverWidth(y) - 8);
                 water.moveTo(x - 4, y).quadraticCurveTo(x, y + 2, x + 6, y).stroke({ color: 0xd5e5c7, width: 1.2, alpha: .24 });
@@ -233,9 +233,9 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
     };
 }
 export const previewRegions:BiomeRegion[]=[
-    {id:0,kind:'Desert',center:{x:690,y:765},boundary:[{x:30,y:30},{x:1425,y:30},{x:1620,y:1185},{x:30,y:1695}],wood:1,iron:1,stone:1.15,wheat:1.15},
-    {id:1,kind:'Highlands',center:{x:2265,y:735},boundary:[{x:1425,y:30},{x:2970,y:30},{x:2970,y:1410},{x:1620,y:1185}],wood:1,iron:1.25,stone:1.2,wheat:1},
-    {id:2,kind:'Woodland',center:{x:2295,y:2280},boundary:[{x:1620,y:1185},{x:2970,y:1410},{x:2970,y:2970},{x:1575,y:2970}],wood:1.3,iron:1,stone:1,wheat:1},
-    {id:3,kind:'Grassland',center:{x:705,y:2265},boundary:[{x:30,y:1695},{x:1620,y:1185},{x:1575,y:2970},{x:30,y:2970}],wood:1,iron:1,stone:1,wheat:1.25}
+    {id:0,kind:'Desert',center:{x:1035,y:1148},boundary:[{x:45,y:45},{x:2138,y:45},{x:2430,y:1778},{x:45,y:2542}],wood:1,iron:1,stone:1.15,wheat:1.15},
+    {id:1,kind:'Highlands',center:{x:3398,y:1102},boundary:[{x:2138,y:45},{x:4455,y:45},{x:4455,y:2115},{x:2430,y:1778}],wood:1,iron:1.25,stone:1.2,wheat:1},
+    {id:2,kind:'Woodland',center:{x:3442,y:3420},boundary:[{x:2430,y:1778},{x:4455,y:2115},{x:4455,y:4455},{x:2362,y:4455}],wood:1.3,iron:1,stone:1,wheat:1},
+    {id:3,kind:'Grassland',center:{x:1058,y:3398},boundary:[{x:45,y:2542},{x:2430,y:1778},{x:2362,y:4455},{x:45,y:4455}],wood:1,iron:1,stone:1,wheat:1.25}
 ];
 

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Xml.Linq;
 using Warzone;
 
@@ -25,7 +25,7 @@ internal static class BiomeLogisticsChecks
         for (var seed = 0; seed < 24; seed++)
         {
             var generated = Biomes.Generate(seed);
-            var samples = from x in Enumerable.Range(0, 41) from y in Enumerable.Range(0, 41) select new Position(42 + x * 70, 43 + y * 70);
+            var samples = from x in Enumerable.Range(0, 41) from y in Enumerable.Range(0, 41) select new Position(55 + x * 109, 58 + y * 109);
             Check(samples.All(p => generated.Count(r => Contains(r.Boundary, p)) == 1), "Organic biome boundaries cover every sampled point exactly once");
             Check(generated.All(r => Contains(r.Boundary, r.Center)), "Organic borders preserve their region centers");
         }
@@ -40,7 +40,7 @@ internal static class BiomeLogisticsChecks
             Check(city.Resources.Wood - before.Wood == (long)(40 * region.Wood)
                 && city.Resources.Iron - before.Iron == (long)(40 * region.Iron)
                 && city.Resources.Stone - before.Stone == (long)(40 * region.Stone), "Biome bonuses change actual material accrual");
-            Check(output.Single(p => p.Resource == "Wheat").GrossPerMinute == 240 * region.Wheat,
+            Check(output.Single(p => p.Resource == "Wheat").GrossPerMinute == 360 * region.Wheat,
                 "Wheat biome bonus is reflected before troop upkeep");
             Check(world.Snapshot(city.Village.OwnerId).Warfare.Settlements.Single().Biome == region.Kind,
                 "Public settlement and private production agree on biome");
@@ -52,18 +52,18 @@ internal static class BiomeLogisticsChecks
         Check(nomad.Biome == regions[1].Kind && nomad.Snapshot().Production.Single(p => p.Resource == "Iron").GrossPerMinute == 240 * regions[1].Iron,
             "Relocating updates the production bonus immediately");
 
-        var home = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(2650, 1500));
-        var visualHome = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(800, 800));
+        var home = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(LogisticsWorld.MapCenter + LogisticsWorld.SettlementRadius, LogisticsWorld.MapCenter));
+        var visualHome = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(1200, 1200));
         var visualWorld = new LogisticsWorld([visualHome]);
-        var visualFormation = new Dictionary<string, int> { ["romans-infantry"] = 20, ["romans-cavalry"] = 31, ["romans-catapult"] = 10, ["romans-ram"] = 1, ["romans-wagon"] = 11 };
+        var visualFormation = new Dictionary<string, int> { ["romans-infantry"] = 20, ["romans-lightcavalry"] = 31, ["romans-catapult"] = 10, ["romans-ram"] = 1, ["romans-wagon"] = 11 };
         foreach (var (unit, count) in visualFormation) visualHome.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units[unit]), count)]);
         visualWorld.Apply(visualHome.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, visualHome.Village.Id,
             Formation: visualFormation, Wagons: 0, X: 900, Y: 900), 0, 0);
         var ownVisual = visualWorld.Snapshot(visualHome.Village.OwnerId).Armies.Single();
         var enemyVisual = visualWorld.Snapshot(Guid.NewGuid()).Armies.Single();
-        foreach (var (unit, figures) in new Dictionary<string, int> { ["romans-infantry"] = 2, ["romans-cavalry"] = 4, ["romans-catapult"] = 1, ["romans-ram"] = 1, ["romans-wagon"] = 2 })
+        foreach (var (unit, figures) in new Dictionary<string, int> { ["romans-infantry"] = 2, ["romans-lightcavalry"] = 4, ["romans-catapult"] = 1, ["romans-ram"] = 1, ["romans-wagon"] = 2 })
             Check(ownVisual.MapFigures![unit] == figures && enemyVisual.MapFigures![unit] == figures, "Map shows one figure per ten units of each type for both owners and opponents");
-        Check(enemyVisual.Formation is null && enemyVisual.Wheat is null && enemyVisual.Morale is null && ownVisual.Formation!["romans-cavalry"] == 31,
+        Check(enemyVisual.Formation is null && enemyVisual.Wheat is null && ownVisual.Formation!["romans-lightcavalry"] == 31,
             "Public visual groups preserve private exact formations and supply information");
         var logistics = new LogisticsWorld([home]);
         var oasis = logistics.Snapshot(home.Village.OwnerId).Oases.OrderBy(c => LogisticsWorld.Distance(home.Village.Position, c.Position)).First();
@@ -102,8 +102,8 @@ internal static class BiomeLogisticsChecks
         foreach (var tribe in Enum.GetValues<TribeType>())
         {
             var svg = XDocument.Parse(GameCatalog.TribeSheet(tribe));
-            Check(svg.Root!.Elements().Count() == 14 && svg.Descendants().Count(e => e.Name.LocalName == "title") == 14,
-                "Every tribe atlas contains fourteen valid unit illustrations");
+            Check(svg.Root!.Elements().Count() == 10 && svg.Descendants().Count(e => e.Name.LocalName == "title") == 10,
+                "Every tribe atlas contains ten valid unit illustrations");
         }
         return checks;
     }

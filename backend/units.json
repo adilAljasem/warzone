@@ -9,15 +9,13 @@
         "Cavalry": 0.65,
         "LightCavalry": 0.7,
         "HeavyCavalry": 0.6,
-        "Swordsman": 0.6,
-        "Archer": 0.65
+        "Swordsman": 0.6
       },
       "defense": {
         "Cavalry": 1.3,
         "LightCavalry": 1.35,
         "HeavyCavalry": 1.2,
-        "Swordsman": 0.65,
-        "Archer": 0.65
+        "Swordsman": 0.65
       }
     },
     "Swordsman": {
@@ -32,61 +30,23 @@
         "HeavyCavalry": 0.75
       }
     },
-    "Archer": {
-      "attack": {
-        "Spearman": 1.5,
-        "Infantry": 1.2,
-        "LightCavalry": 0.55,
-        "HeavyCavalry": 0.6
-      },
-      "defense": {
-        "Spearman": 1.35,
-        "Infantry": 1.15,
-        "LightCavalry": 0.5,
-        "HeavyCavalry": 0.6
-      }
-    },
-    "Crossbowman": {
-      "attack": {
-        "HeavyCavalry": 2.4,
-        "Cavalry": 1.35,
-        "Swordsman": 1.3,
-        "LightCavalry": 0.55,
-        "Archer": 0.75
-      },
-      "defense": {
-        "HeavyCavalry": 2.1,
-        "Cavalry": 1.3,
-        "Swordsman": 1.25,
-        "LightCavalry": 0.5,
-        "Archer": 0.75
-      }
-    },
     "LightCavalry": {
       "attack": {
-        "Archer": 1.75,
-        "Crossbowman": 1.75,
         "Wagon": 2,
         "Spearman": 0.55,
         "HeavyCavalry": 0.65
       },
       "defense": {
-        "Archer": 1.5,
-        "Crossbowman": 1.5,
         "Spearman": 0.6,
         "HeavyCavalry": 0.65
       }
     },
     "Cavalry": {
       "attack": {
-        "Archer": 1.45,
-        "Crossbowman": 1.3,
         "Infantry": 1.2,
         "Spearman": 0.55
       },
       "defense": {
-        "Archer": 1.3,
-        "Crossbowman": 1.2,
         "Spearman": 0.65
       }
     },
@@ -94,16 +54,12 @@
       "attack": {
         "Infantry": 1.4,
         "Swordsman": 1.4,
-        "Archer": 1.45,
-        "Spearman": 0.65,
-        "Crossbowman": 0.45
+        "Spearman": 0.65
       },
       "defense": {
         "Infantry": 1.35,
         "Swordsman": 1.35,
-        "Archer": 1.35,
-        "Spearman": 0.7,
-        "Crossbowman": 0.45
+        "Spearman": 0.7
       }
     },
     "Scout": {
@@ -129,10 +85,6 @@
       "attack": {},
       "defense": {}
     },
-    "SiegeTower": {
-      "attack": {},
-      "defense": {}
-    },
     "Governor": {
       "attack": {},
       "defense": {}
@@ -149,66 +101,18 @@
       "trainingSeconds": 4,
       "cost": {
         "wood": 25,
-        "iron": 40,
+        "iron": 10,
         "stone": 0,
         "wheat": 20
       },
       "stats": {
         "attack": 46,
-        "defenseInfantry": 62,
-        "defenseCavalry": 65,
-        "speed": 11,
+        "defenseInfantry": 40,
+        "defenseCavalry": 40,
+        "speed": 16.5,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
-        "hitPoints": 115
-      }
-    },
-    {
-      "unitId": "romans-archer",
-      "tribe": "Romans",
-      "role": "Archer",
-      "displayName": "رامي الفيلق",
-      "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 2,
-      "trainingSeconds": 5,
-      "cost": {
-        "wood": 15,
-        "iron": 0,
-        "stone": 35,
-        "wheat": 30
-      },
-      "stats": {
-        "attack": 42,
-        "defenseInfantry": 54,
-        "defenseCavalry": 26,
-        "speed": 11,
-        "carryCapacity": 30,
-        "wheatUpkeep": 1,
-        "hitPoints": 72
-      }
-    },
-    {
-      "unitId": "romans-cavalry",
-      "tribe": "Romans",
-      "role": "Cavalry",
-      "displayName": "فرسان الإمبراطور",
-      "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 3,
-      "trainingSeconds": 7,
-      "cost": {
-        "wood": 60,
-        "iron": 80,
-        "stone": 0,
-        "wheat": 50
-      },
-      "stats": {
-        "attack": 88,
-        "defenseInfantry": 46,
-        "defenseCavalry": 36,
-        "speed": 28,
-        "carryCapacity": 80,
-        "wheatUpkeep": 2,
-        "hitPoints": 150
+        "hitPoints": 100
       }
     },
     {
@@ -229,10 +133,10 @@
         "attack": 8,
         "defenseInfantry": 12,
         "defenseCavalry": 10,
-        "speed": 36,
+        "speed": 54,
         "carryCapacity": 25,
         "wheatUpkeep": 1,
-        "hitPoints": 48
+        "hitPoints": 100
       }
     },
     {
@@ -253,7 +157,7 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 10,
+        "speed": 15,
         "carryCapacity": 5000,
         "wheatUpkeep": 1,
         "hitPoints": 25
@@ -277,7 +181,7 @@
         "attack": 100,
         "defenseInfantry": 10,
         "defenseCavalry": 5,
-        "speed": 4.5,
+        "speed": 6.75,
         "carryCapacity": 0,
         "wheatUpkeep": 4,
         "hitPoints": 100
@@ -301,34 +205,10 @@
         "attack": 40,
         "defenseInfantry": 25,
         "defenseCavalry": 10,
-        "speed": 6,
+        "speed": 9,
         "carryCapacity": 0,
         "wheatUpkeep": 3,
-        "hitPoints": 160
-      }
-    },
-    {
-      "unitId": "romans-siegetower",
-      "tribe": "Romans",
-      "role": "SiegeTower",
-      "displayName": "برج إمبراطوري",
-      "trainingBuilding": "SiegeWorkshop",
-      "requiredBuildingLevel": 5,
-      "trainingSeconds": 18,
-      "cost": {
-        "wood": 250,
-        "iron": 80,
-        "stone": 40,
-        "wheat": 60
-      },
-      "stats": {
-        "attack": 20,
-        "defenseInfantry": 50,
-        "defenseCavalry": 20,
-        "speed": 4.5,
-        "carryCapacity": 0,
-        "wheatUpkeep": 4,
-        "hitPoints": 220
+        "hitPoints": 100
       }
     },
     {
@@ -349,7 +229,7 @@
         "attack": 5,
         "defenseInfantry": 20,
         "defenseCavalry": 20,
-        "speed": 9,
+        "speed": 13.5,
         "carryCapacity": 10,
         "wheatUpkeep": 3,
         "hitPoints": 100
@@ -371,12 +251,12 @@
       },
       "stats": {
         "attack": 18,
-        "defenseInfantry": 38,
-        "defenseCavalry": 85,
-        "speed": 11,
+        "defenseInfantry": 60,
+        "defenseCavalry": 40,
+        "speed": 16.5,
         "carryCapacity": 35,
         "wheatUpkeep": 1,
-        "hitPoints": 95
+        "hitPoints": 100
       }
     },
     {
@@ -389,42 +269,18 @@
       "trainingSeconds": 6,
       "cost": {
         "wood": 35,
-        "iron": 65,
-        "stone": 0,
-        "wheat": 30
-      },
-      "stats": {
-        "attack": 80,
-        "defenseInfantry": 72,
-        "defenseCavalry": 46,
-        "speed": 10,
-        "carryCapacity": 45,
-        "wheatUpkeep": 1.5,
-        "hitPoints": 140
-      }
-    },
-    {
-      "unitId": "romans-crossbowman",
-      "tribe": "Romans",
-      "role": "Crossbowman",
-      "displayName": "نشّاب روماني",
-      "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 5,
-      "trainingSeconds": 7,
-      "cost": {
-        "wood": 65,
         "iron": 50,
         "stone": 0,
         "wheat": 30
       },
       "stats": {
-        "attack": 98,
-        "defenseInfantry": 34,
-        "defenseCavalry": 44,
-        "speed": 10,
-        "carryCapacity": 25,
+        "attack": 80,
+        "defenseInfantry": 40,
+        "defenseCavalry": 46,
+        "speed": 15,
+        "carryCapacity": 45,
         "wheatUpkeep": 1.5,
-        "hitPoints": 80
+        "hitPoints": 100
       }
     },
     {
@@ -445,10 +301,10 @@
         "attack": 70,
         "defenseInfantry": 26,
         "defenseCavalry": 20,
-        "speed": 35,
+        "speed": 52.5,
         "carryCapacity": 100,
         "wheatUpkeep": 2,
-        "hitPoints": 105
+        "hitPoints": 100
       }
     },
     {
@@ -469,10 +325,10 @@
         "attack": 128,
         "defenseInfantry": 88,
         "defenseCavalry": 64,
-        "speed": 24,
+        "speed": 36,
         "carryCapacity": 60,
         "wheatUpkeep": 3.5,
-        "hitPoints": 220
+        "hitPoints": 100
       }
     },
     {
@@ -493,58 +349,10 @@
         "attack": 35,
         "defenseInfantry": 15,
         "defenseCavalry": 10,
-        "speed": 12,
+        "speed": 18,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
-        "hitPoints": 85
-      }
-    },
-    {
-      "unitId": "germans-archer",
-      "tribe": "Germans",
-      "role": "Archer",
-      "displayName": "صياد الغابة",
-      "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 2,
-      "trainingSeconds": 5,
-      "cost": {
-        "wood": 10,
-        "iron": 0,
-        "stone": 35,
-        "wheat": 35
-      },
-      "stats": {
-        "attack": 44,
-        "defenseInfantry": 50,
-        "defenseCavalry": 25,
-        "speed": 11,
-        "carryCapacity": 30,
-        "wheatUpkeep": 1,
-        "hitPoints": 70
-      }
-    },
-    {
-      "unitId": "germans-cavalry",
-      "tribe": "Germans",
-      "role": "Cavalry",
-      "displayName": "فارس مغير",
-      "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 3,
-      "trainingSeconds": 7,
-      "cost": {
-        "wood": 20,
-        "iron": 10,
-        "stone": 75,
-        "wheat": 85
-      },
-      "stats": {
-        "attack": 90,
-        "defenseInfantry": 42,
-        "defenseCavalry": 32,
-        "speed": 28,
-        "carryCapacity": 80,
-        "wheatUpkeep": 2,
-        "hitPoints": 150
+        "hitPoints": 100
       }
     },
     {
@@ -565,10 +373,10 @@
         "attack": 9,
         "defenseInfantry": 12,
         "defenseCavalry": 10,
-        "speed": 38,
+        "speed": 57,
         "carryCapacity": 25,
         "wheatUpkeep": 1,
-        "hitPoints": 48
+        "hitPoints": 100
       }
     },
     {
@@ -589,7 +397,7 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 10,
+        "speed": 15,
         "carryCapacity": 5000,
         "wheatUpkeep": 1,
         "hitPoints": 25
@@ -613,7 +421,7 @@
         "attack": 100,
         "defenseInfantry": 10,
         "defenseCavalry": 5,
-        "speed": 4.5,
+        "speed": 6.75,
         "carryCapacity": 0,
         "wheatUpkeep": 4,
         "hitPoints": 100
@@ -637,34 +445,10 @@
         "attack": 40,
         "defenseInfantry": 25,
         "defenseCavalry": 10,
-        "speed": 6,
+        "speed": 9,
         "carryCapacity": 0,
         "wheatUpkeep": 3,
-        "hitPoints": 160
-      }
-    },
-    {
-      "unitId": "germans-siegetower",
-      "tribe": "Germans",
-      "role": "SiegeTower",
-      "displayName": "برج القبيلة",
-      "trainingBuilding": "SiegeWorkshop",
-      "requiredBuildingLevel": 5,
-      "trainingSeconds": 18,
-      "cost": {
-        "wood": 120,
-        "iron": 0,
-        "stone": 140,
-        "wheat": 170
-      },
-      "stats": {
-        "attack": 20,
-        "defenseInfantry": 50,
-        "defenseCavalry": 20,
-        "speed": 4.5,
-        "carryCapacity": 0,
-        "wheatUpkeep": 4,
-        "hitPoints": 220
+        "hitPoints": 100
       }
     },
     {
@@ -685,7 +469,7 @@
         "attack": 5,
         "defenseInfantry": 20,
         "defenseCavalry": 20,
-        "speed": 9,
+        "speed": 13.5,
         "carryCapacity": 10,
         "wheatUpkeep": 3,
         "hitPoints": 100
@@ -709,10 +493,10 @@
         "attack": 22,
         "defenseInfantry": 34,
         "defenseCavalry": 80,
-        "speed": 11,
+        "speed": 16.5,
         "carryCapacity": 35,
         "wheatUpkeep": 1,
-        "hitPoints": 92
+        "hitPoints": 100
       }
     },
     {
@@ -726,41 +510,17 @@
       "cost": {
         "wood": 10,
         "iron": 55,
-        "stone": 0,
-        "wheat": 55
+        "stone": 10,
+        "wheat": 15
       },
       "stats": {
         "attack": 85,
         "defenseInfantry": 42,
         "defenseCavalry": 22,
-        "speed": 10,
+        "speed": 15,
         "carryCapacity": 45,
         "wheatUpkeep": 1.5,
-        "hitPoints": 130
-      }
-    },
-    {
-      "unitId": "germans-crossbowman",
-      "tribe": "Germans",
-      "role": "Crossbowman",
-      "displayName": "نشّاب الغابة",
-      "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 5,
-      "trainingSeconds": 7,
-      "cost": {
-        "wood": 25,
-        "iron": 0,
-        "stone": 55,
-        "wheat": 65
-      },
-      "stats": {
-        "attack": 96,
-        "defenseInfantry": 32,
-        "defenseCavalry": 42,
-        "speed": 10,
-        "carryCapacity": 25,
-        "wheatUpkeep": 1.5,
-        "hitPoints": 78
+        "hitPoints": 100
       }
     },
     {
@@ -772,16 +532,16 @@
       "requiredBuildingLevel": 2,
       "trainingSeconds": 6,
       "cost": {
-        "wood": 20,
+        "wood": 10,
         "iron": 0,
         "stone": 60,
-        "wheat": 80
+        "wheat": 60
       },
       "stats": {
         "attack": 72,
-        "defenseInfantry": 24,
+        "defenseInfantry": 65,
         "defenseCavalry": 18,
-        "speed": 35,
+        "speed": 52.5,
         "carryCapacity": 100,
         "wheatUpkeep": 2,
         "hitPoints": 100
@@ -797,18 +557,18 @@
       "trainingSeconds": 10,
       "cost": {
         "wood": 30,
-        "iron": 0,
+        "iron": 60,
         "stone": 130,
-        "wheat": 160
+        "wheat": 100
       },
       "stats": {
         "attack": 130,
         "defenseInfantry": 84,
         "defenseCavalry": 60,
-        "speed": 24,
+        "speed": 36,
         "carryCapacity": 60,
         "wheatUpkeep": 3.5,
-        "hitPoints": 215
+        "hitPoints": 100
       }
     },
     {
@@ -829,58 +589,10 @@
         "attack": 15,
         "defenseInfantry": 72,
         "defenseCavalry": 40,
-        "speed": 11,
+        "speed": 16.5,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
-        "hitPoints": 118
-      }
-    },
-    {
-      "unitId": "greeks-archer",
-      "tribe": "Greeks",
-      "role": "Archer",
-      "displayName": "رامي كريتي",
-      "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 2,
-      "trainingSeconds": 5,
-      "cost": {
-        "wood": 15,
-        "iron": 0,
-        "stone": 45,
-        "wheat": 0
-      },
-      "stats": {
-        "attack": 44,
-        "defenseInfantry": 56,
-        "defenseCavalry": 28,
-        "speed": 11,
-        "carryCapacity": 30,
-        "wheatUpkeep": 1,
-        "hitPoints": 72
-      }
-    },
-    {
-      "unitId": "greeks-cavalry",
-      "tribe": "Greeks",
-      "role": "Cavalry",
-      "displayName": "فرسان السلت",
-      "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 3,
-      "trainingSeconds": 7,
-      "cost": {
-        "wood": 25,
-        "iron": 30,
-        "stone": 85,
-        "wheat": 0
-      },
-      "stats": {
-        "attack": 88,
-        "defenseInfantry": 44,
-        "defenseCavalry": 34,
-        "speed": 33,
-        "carryCapacity": 80,
-        "wheatUpkeep": 2,
-        "hitPoints": 150
+        "hitPoints": 100
       }
     },
     {
@@ -901,10 +613,10 @@
         "attack": 8,
         "defenseInfantry": 12,
         "defenseCavalry": 10,
-        "speed": 40,
+        "speed": 60,
         "carryCapacity": 25,
         "wheatUpkeep": 1,
-        "hitPoints": 48
+        "hitPoints": 100
       }
     },
     {
@@ -925,7 +637,7 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 10,
+        "speed": 15,
         "carryCapacity": 5000,
         "wheatUpkeep": 1,
         "hitPoints": 25
@@ -949,7 +661,7 @@
         "attack": 100,
         "defenseInfantry": 10,
         "defenseCavalry": 5,
-        "speed": 4.5,
+        "speed": 6.75,
         "carryCapacity": 0,
         "wheatUpkeep": 4,
         "hitPoints": 100
@@ -973,34 +685,10 @@
         "attack": 40,
         "defenseInfantry": 25,
         "defenseCavalry": 10,
-        "speed": 6,
+        "speed": 9,
         "carryCapacity": 0,
         "wheatUpkeep": 3,
-        "hitPoints": 160
-      }
-    },
-    {
-      "unitId": "greeks-siegetower",
-      "tribe": "Greeks",
-      "role": "SiegeTower",
-      "displayName": "برج حصار إغريقي",
-      "trainingBuilding": "SiegeWorkshop",
-      "requiredBuildingLevel": 5,
-      "trainingSeconds": 18,
-      "cost": {
-        "wood": 150,
-        "iron": 40,
-        "stone": 130,
-        "wheat": 0
-      },
-      "stats": {
-        "attack": 20,
-        "defenseInfantry": 50,
-        "defenseCavalry": 20,
-        "speed": 4.5,
-        "carryCapacity": 0,
-        "wheatUpkeep": 4,
-        "hitPoints": 220
+        "hitPoints": 100
       }
     },
     {
@@ -1021,7 +709,7 @@
         "attack": 5,
         "defenseInfantry": 20,
         "defenseCavalry": 20,
-        "speed": 9,
+        "speed": 13.5,
         "carryCapacity": 10,
         "wheatUpkeep": 3,
         "hitPoints": 100
@@ -1045,7 +733,7 @@
         "attack": 18,
         "defenseInfantry": 44,
         "defenseCavalry": 92,
-        "speed": 11,
+        "speed": 16.5,
         "carryCapacity": 35,
         "wheatUpkeep": 1,
         "hitPoints": 100
@@ -1069,34 +757,10 @@
         "attack": 84,
         "defenseInfantry": 64,
         "defenseCavalry": 36,
-        "speed": 10,
+        "speed": 15,
         "carryCapacity": 45,
         "wheatUpkeep": 1.5,
-        "hitPoints": 135
-      }
-    },
-    {
-      "unitId": "greeks-crossbowman",
-      "tribe": "Greeks",
-      "role": "Crossbowman",
-      "displayName": "نشّاب إغريقي",
-      "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 5,
-      "trainingSeconds": 7,
-      "cost": {
-        "wood": 40,
-        "iron": 20,
-        "stone": 55,
-        "wheat": 0
-      },
-      "stats": {
-        "attack": 96,
-        "defenseInfantry": 34,
-        "defenseCavalry": 44,
-        "speed": 10,
-        "carryCapacity": 25,
-        "wheatUpkeep": 1.5,
-        "hitPoints": 80
+        "hitPoints": 100
       }
     },
     {
@@ -1117,10 +781,10 @@
         "attack": 70,
         "defenseInfantry": 26,
         "defenseCavalry": 20,
-        "speed": 53,
+        "speed": 79.5,
         "carryCapacity": 100,
         "wheatUpkeep": 2,
-        "hitPoints": 102
+        "hitPoints": 100
       }
     },
     {
@@ -1141,10 +805,10 @@
         "attack": 126,
         "defenseInfantry": 86,
         "defenseCavalry": 62,
-        "speed": 24,
+        "speed": 36,
         "carryCapacity": 60,
         "wheatUpkeep": 3.5,
-        "hitPoints": 218
+        "hitPoints": 100
       }
     },
     {
@@ -1165,58 +829,10 @@
         "attack": 42,
         "defenseInfantry": 48,
         "defenseCavalry": 40,
-        "speed": 11,
+        "speed": 16.5,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
         "hitPoints": 100
-      }
-    },
-    {
-      "unitId": "mongols-archer",
-      "tribe": "Mongols",
-      "role": "Archer",
-      "displayName": "رامي السهوب",
-      "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 2,
-      "trainingSeconds": 5,
-      "cost": {
-        "wood": 35,
-        "iron": 0,
-        "stone": 0,
-        "wheat": 45
-      },
-      "stats": {
-        "attack": 46,
-        "defenseInfantry": 52,
-        "defenseCavalry": 28,
-        "speed": 11,
-        "carryCapacity": 30,
-        "wheatUpkeep": 1,
-        "hitPoints": 72
-      }
-    },
-    {
-      "unitId": "mongols-cavalry",
-      "tribe": "Mongols",
-      "role": "Cavalry",
-      "displayName": "رامٍ خيّال",
-      "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 3,
-      "trainingSeconds": 7,
-      "cost": {
-        "wood": 60,
-        "iron": 20,
-        "stone": 0,
-        "wheat": 110
-      },
-      "stats": {
-        "attack": 98,
-        "defenseInfantry": 42,
-        "defenseCavalry": 34,
-        "speed": 38,
-        "carryCapacity": 80,
-        "wheatUpkeep": 2,
-        "hitPoints": 150
       }
     },
     {
@@ -1237,10 +853,10 @@
         "attack": 10,
         "defenseInfantry": 14,
         "defenseCavalry": 14,
-        "speed": 65,
+        "speed": 97.5,
         "carryCapacity": 35,
         "wheatUpkeep": 1,
-        "hitPoints": 55
+        "hitPoints": 100
       }
     },
     {
@@ -1261,7 +877,7 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 16,
+        "speed": 24,
         "carryCapacity": 5000,
         "wheatUpkeep": 1,
         "hitPoints": 25
@@ -1285,7 +901,7 @@
         "attack": 100,
         "defenseInfantry": 10,
         "defenseCavalry": 5,
-        "speed": 4.5,
+        "speed": 6.75,
         "carryCapacity": 0,
         "wheatUpkeep": 4,
         "hitPoints": 100
@@ -1309,34 +925,10 @@
         "attack": 40,
         "defenseInfantry": 25,
         "defenseCavalry": 10,
-        "speed": 6,
+        "speed": 9,
         "carryCapacity": 0,
         "wheatUpkeep": 3,
-        "hitPoints": 160
-      }
-    },
-    {
-      "unitId": "mongols-siegetower",
-      "tribe": "Mongols",
-      "role": "SiegeTower",
-      "displayName": "برج الخان",
-      "trainingBuilding": "SiegeWorkshop",
-      "requiredBuildingLevel": 5,
-      "trainingSeconds": 18,
-      "cost": {
-        "wood": 220,
-        "iron": 30,
-        "stone": 0,
-        "wheat": 180
-      },
-      "stats": {
-        "attack": 20,
-        "defenseInfantry": 50,
-        "defenseCavalry": 20,
-        "speed": 4.5,
-        "carryCapacity": 0,
-        "wheatUpkeep": 4,
-        "hitPoints": 220
+        "hitPoints": 100
       }
     },
     {
@@ -1357,7 +949,7 @@
         "attack": 5,
         "defenseInfantry": 20,
         "defenseCavalry": 20,
-        "speed": 9,
+        "speed": 13.5,
         "carryCapacity": 10,
         "wheatUpkeep": 3,
         "hitPoints": 100
@@ -1381,10 +973,10 @@
         "attack": 18,
         "defenseInfantry": 36,
         "defenseCavalry": 82,
-        "speed": 11,
+        "speed": 16.5,
         "carryCapacity": 35,
         "wheatUpkeep": 1,
-        "hitPoints": 92
+        "hitPoints": 100
       }
     },
     {
@@ -1405,34 +997,10 @@
         "attack": 84,
         "defenseInfantry": 54,
         "defenseCavalry": 28,
-        "speed": 10,
+        "speed": 15,
         "carryCapacity": 45,
         "wheatUpkeep": 1.5,
-        "hitPoints": 130
-      }
-    },
-    {
-      "unitId": "mongols-crossbowman",
-      "tribe": "Mongols",
-      "role": "Crossbowman",
-      "displayName": "نشّاب السهوب",
-      "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 5,
-      "trainingSeconds": 7,
-      "cost": {
-        "wood": 65,
-        "iron": 10,
-        "stone": 0,
-        "wheat": 70
-      },
-      "stats": {
-        "attack": 95,
-        "defenseInfantry": 32,
-        "defenseCavalry": 42,
-        "speed": 10,
-        "carryCapacity": 25,
-        "wheatUpkeep": 1.5,
-        "hitPoints": 78
+        "hitPoints": 100
       }
     },
     {
@@ -1453,10 +1021,10 @@
         "attack": 74,
         "defenseInfantry": 26,
         "defenseCavalry": 20,
-        "speed": 55,
+        "speed": 82.5,
         "carryCapacity": 100,
         "wheatUpkeep": 2,
-        "hitPoints": 105
+        "hitPoints": 100
       }
     },
     {
@@ -1477,10 +1045,10 @@
         "attack": 130,
         "defenseInfantry": 84,
         "defenseCavalry": 62,
-        "speed": 30,
+        "speed": 45,
         "carryCapacity": 60,
         "wheatUpkeep": 3.5,
-        "hitPoints": 215
+        "hitPoints": 100
       }
     },
     {
@@ -1501,34 +1069,10 @@
         "attack": 48,
         "defenseInfantry": 55,
         "defenseCavalry": 50,
-        "speed": 11,
+        "speed": 16.5,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
-        "hitPoints": 115
-      }
-    },
-    {
-      "unitId": "persians-archer",
-      "tribe": "Persians",
-      "role": "Archer",
-      "displayName": "رامٍ فارسي",
-      "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 2,
-      "trainingSeconds": 5,
-      "cost": {
-        "wood": 15,
-        "iron": 25,
-        "stone": 20,
-        "wheat": 20
-      },
-      "stats": {
-        "attack": 44,
-        "defenseInfantry": 54,
-        "defenseCavalry": 28,
-        "speed": 11,
-        "carryCapacity": 30,
-        "wheatUpkeep": 1,
-        "hitPoints": 72
+        "hitPoints": 100
       }
     },
     {
@@ -1549,10 +1093,10 @@
         "attack": 145,
         "defenseInfantry": 70,
         "defenseCavalry": 60,
-        "speed": 20,
+        "speed": 30,
         "carryCapacity": 80,
         "wheatUpkeep": 5,
-        "hitPoints": 300
+        "hitPoints": 100
       }
     },
     {
@@ -1573,10 +1117,10 @@
         "attack": 9,
         "defenseInfantry": 14,
         "defenseCavalry": 14,
-        "speed": 60,
+        "speed": 90,
         "carryCapacity": 35,
         "wheatUpkeep": 1,
-        "hitPoints": 55
+        "hitPoints": 100
       }
     },
     {
@@ -1597,7 +1141,7 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 10,
+        "speed": 15,
         "carryCapacity": 5000,
         "wheatUpkeep": 1,
         "hitPoints": 25
@@ -1621,10 +1165,10 @@
         "attack": 125,
         "defenseInfantry": 10,
         "defenseCavalry": 5,
-        "speed": 4.5,
+        "speed": 6.75,
         "carryCapacity": 0,
         "wheatUpkeep": 4,
-        "hitPoints": 125
+        "hitPoints": 100
       }
     },
     {
@@ -1645,34 +1189,10 @@
         "attack": 50,
         "defenseInfantry": 25,
         "defenseCavalry": 10,
-        "speed": 6,
+        "speed": 9,
         "carryCapacity": 0,
         "wheatUpkeep": 3,
-        "hitPoints": 200
-      }
-    },
-    {
-      "unitId": "persians-siegetower",
-      "tribe": "Persians",
-      "role": "SiegeTower",
-      "displayName": "برج الحصار الكبير",
-      "trainingBuilding": "SiegeWorkshop",
-      "requiredBuildingLevel": 5,
-      "trainingSeconds": 18,
-      "cost": {
-        "wood": 140,
-        "iron": 110,
-        "stone": 120,
-        "wheat": 60
-      },
-      "stats": {
-        "attack": 25,
-        "defenseInfantry": 50,
-        "defenseCavalry": 20,
-        "speed": 4.5,
-        "carryCapacity": 0,
-        "wheatUpkeep": 4,
-        "hitPoints": 275
+        "hitPoints": 100
       }
     },
     {
@@ -1693,7 +1213,7 @@
         "attack": 5,
         "defenseInfantry": 20,
         "defenseCavalry": 20,
-        "speed": 9,
+        "speed": 13.5,
         "carryCapacity": 10,
         "wheatUpkeep": 3,
         "hitPoints": 100
@@ -1717,10 +1237,10 @@
         "attack": 18,
         "defenseInfantry": 38,
         "defenseCavalry": 84,
-        "speed": 11,
+        "speed": 16.5,
         "carryCapacity": 35,
         "wheatUpkeep": 1,
-        "hitPoints": 95
+        "hitPoints": 100
       }
     },
     {
@@ -1741,58 +1261,10 @@
         "attack": 85,
         "defenseInfantry": 56,
         "defenseCavalry": 30,
-        "speed": 10,
+        "speed": 15,
         "carryCapacity": 45,
         "wheatUpkeep": 1.5,
-        "hitPoints": 132
-      }
-    },
-    {
-      "unitId": "persians-crossbowman",
-      "tribe": "Persians",
-      "role": "Crossbowman",
-      "displayName": "نشّاب فارسي",
-      "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 5,
-      "trainingSeconds": 7,
-      "cost": {
-        "wood": 25,
-        "iron": 50,
-        "stone": 40,
-        "wheat": 30
-      },
-      "stats": {
-        "attack": 96,
-        "defenseInfantry": 34,
-        "defenseCavalry": 44,
-        "speed": 10,
-        "carryCapacity": 25,
-        "wheatUpkeep": 1.5,
-        "hitPoints": 80
-      }
-    },
-    {
-      "unitId": "persians-lightcavalry",
-      "tribe": "Persians",
-      "role": "LightCavalry",
-      "displayName": "خيّال فارسي خفيف",
-      "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 2,
-      "trainingSeconds": 6,
-      "cost": {
-        "wood": 10,
-        "iron": 85,
-        "stone": 0,
-        "wheat": 45
-      },
-      "stats": {
-        "attack": 72,
-        "defenseInfantry": 26,
-        "defenseCavalry": 20,
-        "speed": 38,
-        "carryCapacity": 100,
-        "wheatUpkeep": 2,
-        "hitPoints": 102
+        "hitPoints": 100
       }
     },
     {
@@ -1813,10 +1285,10 @@
         "attack": 128,
         "defenseInfantry": 88,
         "defenseCavalry": 64,
-        "speed": 24,
+        "speed": 36,
         "carryCapacity": 60,
         "wheatUpkeep": 3.5,
-        "hitPoints": 220
+        "hitPoints": 100
       }
     }
   ]

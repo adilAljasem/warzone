@@ -5,7 +5,7 @@ public sealed partial class LogisticsWorld
     private void JoinCampArmy(BattleState battle, Army camp, Army enemy, double now)
     {
         if (battle.Contains(enemy) || enemy.Routing || Fighters(enemy) == 0) return;
-        var attacking = battle.Defenders.Any(m => m.Army == camp);
+        var attacking = battle.Defenders.Any(m => !m.Withdrawn && m.Army == camp);
         (attacking ? battle.Attackers : battle.Defenders).Add(new(enemy));
         enemy.Order = "Battle";
         AddReportArmy(reports.Single(r => r.Id == battle.Id), enemy, attacking);
@@ -29,13 +29,13 @@ public sealed partial class LogisticsWorld
         foreach (var camp in armies.Where(a => a.CampRadius is not null && !a.Routing && Fighters(a) > 0).ToArray())
         {
             if (!armies.Contains(camp)) continue;
+            var battle = battles.FirstOrDefault(b => b.Status == "Active" && b.ActiveContains(camp));
             var radius = camp.CampRadius!.Value;
             var enemy = armies.Where(a => a != camp && !a.Routing && !Engaged(a) && Fighters(a) > 0
                     && !CampAllied(camp.OwnerId, a.OwnerId) && Distance(camp.Position, a.Position) <= radius)
                 .OrderBy(a => Distance(camp.Position, a.Position)).FirstOrDefault();
             if (enemy is not null)
             {
-                var battle = battles.FirstOrDefault(b => b.Status == "Active" && b.Contains(camp));
                 if (battle is null) StartBattle(camp, enemy, now);
                 else JoinCampArmy(battle, camp, enemy, now);
                 continue;
@@ -44,7 +44,7 @@ public sealed partial class LogisticsWorld
                     && (c.Loaded || !camp.CampLoadedOnly) && Distance(camp.Position, c.Position) <= radius)
                 .OrderBy(c => Distance(camp.Position, c.Position)).FirstOrDefault();
             if (convoy is null) continue;
-            var engagement = battles.FirstOrDefault(b => b.Status == "Active" && b.Contains(camp));
+            var engagement = battle ?? battles.FirstOrDefault(b => b.Status == "Active" && b.ActiveContains(camp));
             if (engagement is null) StartConvoyBattle(camp, convoy, now);
             else JoinCampConvoy(engagement, camp, convoy, now);
         }

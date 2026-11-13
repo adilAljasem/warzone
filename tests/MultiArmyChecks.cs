@@ -14,14 +14,14 @@ internal static class MultiArmyChecks
             world.Apply(city.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,city.Village.Id,Formation:new Dictionary<string,int>{{"romans-"+role,count}},Wagons:0,X:550,Y:500,Enabled:false,DestinationId:target,Reinforcement:reinforce,OasisMode:mode),now,0);
             return world.Snapshot(city.Village.OwnerId).Armies.Last(a=>a.OwnerId==city.Village.OwnerId).Id;
         }
-        Check(GameCatalog.Units.Count==70,"Five peoples have fourteen distinct recruitable units each");
+        Check(GameCatalog.Units.Count==50,"Five peoples have ten distinct recruitable units each");
         foreach(var tribe in Enum.GetValues<TribeType>())
         {
             var city=new VillageEconomy(Guid.NewGuid(),tribe,new(500,500));
-            Check(city.Training.Count==14,"Every expanded roster is exposed through actual training queues");
+            Check(city.Training.Count==10,"Every expanded roster is exposed through actual training queues");
         }
         Check(GameCatalog.Units["mongols-lightcavalry"].Stats.Speed>GameCatalog.Units["greeks-lightcavalry"].Stats.Speed&&GameCatalog.Units["greeks-lightcavalry"].Stats.Speed>GameCatalog.Units["romans-lightcavalry"].Stats.Speed,"Nomad and Greek light cavalry have distinct speed advantages");
-        Check(GameCatalog.Units["romans-cavalry"].Stats.Speed==28&&GameCatalog.Units["persians-cavalry"].Stats.Speed==20,"Cavalry and elephants move faster, with heavy mounts remaining slower");
+        Check(GameCatalog.Units["romans-lightcavalry"].Stats.Speed==52.5&&GameCatalog.Units["persians-cavalry"].Stats.Speed==30,"Cavalry and elephants move faster, with heavy mounts remaining slower");
         var a=City(500);var b=City(600);var world=new LogisticsWorld([a,b]);double now=0;
         WorldSnapshot View()=>world.Snapshot(a.Village.OwnerId);
         void Tick(){now+=.25;world.AdvanceEconomies(.25,now,1);world.Advance(.25,now,0,3600);}
@@ -40,12 +40,17 @@ internal static class MultiArmyChecks
         Check(!View().Reports.Single(r=>r.Id==battle.Id).Armies.Single(x=>x.ArmyId==a1).Active,"A recalled army is retained in the report with an inactive state");
         var a3=Send(world,a,"spearman",40,now);Order(a,CommandKind.AttackArmy,a3,b1);
         Until(()=>View().Warfare.Battles.Single(x=>x.Id==battle.Id).AttackerArmyIds.Contains(a3));
-        Check(View().Reports.Single(r=>r.Id==battle.Id).Armies.Length==5,"Late reinforcement joins the original report without creating duplicate battle reports");
+        var joinedReport=View().Reports.Single(r=>r.Id==battle.Id);
+        Check(joinedReport.Armies.Length==5,"Late reinforcement joins the original report without creating duplicate battle reports");
+        Check(joinedReport.Armies.Select(x=>x.ArmyId).SequenceEqual([a1,a2,a3,b1,b2]),"Report keeps all attacking armies at the top in join order above defending armies");
+        var b3=Send(world,b,"infantry",20,now);Order(b,CommandKind.AttackArmy,b3,a2);
+        Until(()=>View().Warfare.Battles.Single(x=>x.Id==battle.Id).DefenderArmyIds.Contains(b3));
+        Check(View().Reports.Single(r=>r.Id==battle.Id).Armies.Select(x=>x.ArmyId).SequenceEqual([a1,a2,a3,b1,b2,b3]),"Late defending reinforcement appends at the end of the defender group");
         Until(()=>View().Warfare.Battles.Single(x=>x.Id==battle.Id).Status!="Active");report=View().Reports.Single(r=>r.Id==battle.Id);
         Check(report.Armies.SelectMany(a=>a.Units).All(u=>u.Sent>=u.Dead+u.Wounded+u.Fled+u.Destroyed),"Every participant retains a conserved final casualty breakdown");
         Check(report.AttackerLosses.Sum(l=>l.Dead+l.Wounded+l.Fled+l.Destroyed)==report.Armies.Where(a=>a.Attacking).SelectMany(a=>a.Units).Sum(l=>l.Dead+l.Wounded+l.Fled+l.Destroyed),"Per-army and aggregate attacker casualties reconcile");
 
-        foreach(var pair in new[]{("swordsman","spearman"),("archer","spearman"),("lightcavalry","archer"),("crossbowman","heavycavalry")})
+        foreach(var pair in new[]{("swordsman","spearman"),("heavycavalry","swordsman"),("heavycavalry","infantry")})
         {
             var x=City(500);var y=City(600);var w=new LogisticsWorld([x,y]);double t=0;
             var left=Send(w,x,pair.Item1,80);var right=Send(w,y,pair.Item2,80);
@@ -59,13 +64,13 @@ internal static class MultiArmyChecks
         {
             // Spearmen are strong in defense against cavalry, not when attacking cavalry.
             var cavCity=City(500);var spearCity=City(600);var w=new LogisticsWorld([cavCity,spearCity]);double t=0;
-            var cav=Send(w,cavCity,"cavalry",80);var spear=Send(w,spearCity,"spearman",80);
+            var cav=Send(w,cavCity,"lightcavalry",80);var spear=Send(w,spearCity,"spearman",80);
             void Step(){t+=.25;w.Advance(.25,t,0,3600);}
             for(var n=0;n<160;n++)Step();
             w.Apply(cavCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,cav,DestinationId:spear),t,0);
             for(var n=0;n<600&&!w.Snapshot(spearCity.Village.OwnerId).Reports.Any(r=>r.Kind=="Battle"&&r.Status!="Active");n++)Step();
             var defResult=w.Snapshot(spearCity.Village.OwnerId).Reports.Single(r=>r.Kind=="Battle");
-            Check(defResult.Winner==spearCity.Village.OwnerId&&defResult.DefenderUnits.Sum(u=>u.Sent-u.Dead-u.Wounded-u.Fled-u.Destroyed)>=55,"Defending spearmen decisively defeat attacking cavalry");
+            Check(defResult.Winner==spearCity.Village.OwnerId&&defResult.DefenderUnits.Sum(u=>u.Sent-u.Dead-u.Wounded-u.Fled-u.Destroyed)>=30,"Defending spearmen decisively defeat attacking cavalry");
         }
         {
             // Clubmen (germans-infantry) are strong when attacking but weak when defending against infantry/cavalry.
@@ -87,6 +92,48 @@ internal static class MultiArmyChecks
             var clubResult=w.Snapshot(romCity.Village.OwnerId).Reports.Single(r=>r.Kind=="Battle");
             Check(clubResult.Attacker==romCity.Village.OwnerId&&clubResult.Defender==gerCity.Village.OwnerId,"Army that issued attack order first is the Attacker");
             Check(clubResult.Winner==romCity.Village.OwnerId&&clubResult.DefenderLosses.Sum(l=>l.Dead+l.Wounded+l.Fled)>clubResult.AttackerLosses.Sum(l=>l.Dead+l.Wounded+l.Fled)*2,"Defending Clubmen suffer heavy losses due to weak defensive stats");
+        }
+        {
+            // Role-based mitigation: attacking army loses more weak-attack units (Spearmen > Clubmen),
+            // whereas defending army loses more weak-defense units (Clubmen > Spearmen).
+            var attCity=new VillageEconomy(Guid.NewGuid(),TribeType.Germans,new(500,500));
+            var defCity=new VillageEconomy(Guid.NewGuid(),TribeType.Germans,new(600,500));
+            var w=new LogisticsWorld([attCity,defCity]);double t=0;
+            attCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]),100),new(BaseUnit.Create(GameCatalog.Units["germans-spearman"]),100)]);
+            attCity.AddResources(new(5000,5000,5000,5000));
+            defCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]),100),new(BaseUnit.Create(GameCatalog.Units["germans-spearman"]),100)]);
+            defCity.AddResources(new(5000,5000,5000,5000));
+            w.Apply(attCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,attCity.Village.Id,Formation:new Dictionary<string,int>{{"germans-infantry",100},{"germans-spearman",100}},Wagons:0,X:550,Y:500,Enabled:false),t,0);
+            w.Apply(defCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,defCity.Village.Id,Formation:new Dictionary<string,int>{{"germans-infantry",100},{"germans-spearman",100}},Wagons:0,X:580,Y:500,Enabled:false),t,0);
+            var attArmy=w.Snapshot(attCity.Village.OwnerId).Armies.Single(x=>x.OwnerId==attCity.Village.OwnerId).Id;
+            var defArmy=w.Snapshot(defCity.Village.OwnerId).Armies.Single(x=>x.OwnerId==defCity.Village.OwnerId).Id;
+            for(var n=0;n<80;n++){t+=.25;w.Advance(.25,t,0,3600);}
+            w.Apply(attCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,attArmy,DestinationId:defArmy),t,0);
+            for(var n=0;n<600&&!w.Snapshot(attCity.Village.OwnerId).Reports.Any(r=>r.Kind=="Battle"&&r.Status!="Active");n++){t+=.25;w.Advance(.25,t,0,3600);}
+            var res=w.Snapshot(attCity.Village.OwnerId).Reports.Single(r=>r.Kind=="Battle");
+            var attClubLoss=res.AttackerLosses.Where(l=>l.UnitId=="germans-infantry").Sum(l=>l.Dead+l.Wounded+l.Fled);
+            var attSpearLoss=res.AttackerLosses.Where(l=>l.UnitId=="germans-spearman").Sum(l=>l.Dead+l.Wounded+l.Fled);
+            Check(res.Winner==attCity.Village.OwnerId&&attSpearLoss>attClubLoss,"When attacking, weaker-attack Spearmen suffer more losses than stronger-attack Clubmen");
+        }
+        {
+            var attCity=new VillageEconomy(Guid.NewGuid(),TribeType.Germans,new(500,500));
+            var defCity=new VillageEconomy(Guid.NewGuid(),TribeType.Germans,new(600,500));
+            var w=new LogisticsWorld([attCity,defCity]);double t=0;
+            attCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]),100),new(BaseUnit.Create(GameCatalog.Units["germans-spearman"]),100)]);
+            attCity.AddResources(new(5000,5000,5000,5000));
+            defCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]),200),new(BaseUnit.Create(GameCatalog.Units["germans-spearman"]),200)]);
+            defCity.AddResources(new(5000,5000,5000,5000));
+            w.Apply(attCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,attCity.Village.Id,Formation:new Dictionary<string,int>{{"germans-infantry",100},{"germans-spearman",100}},Wagons:0,X:550,Y:500,Enabled:false),t,0);
+            w.Apply(defCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,defCity.Village.Id,Formation:new Dictionary<string,int>{{"germans-infantry",200},{"germans-spearman",200}},Wagons:0,X:580,Y:500,Enabled:false),t,0);
+            var attArmy=w.Snapshot(attCity.Village.OwnerId).Armies.Single(x=>x.OwnerId==attCity.Village.OwnerId).Id;
+            var defArmy=w.Snapshot(defCity.Village.OwnerId).Armies.Single(x=>x.OwnerId==defCity.Village.OwnerId).Id;
+            for(var n=0;n<80;n++){t+=.25;w.Advance(.25,t,0,3600);}
+            w.Apply(attCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,attArmy,DestinationId:defArmy),t,0);
+            for(var n=0;n<600&&!w.Snapshot(defCity.Village.OwnerId).Reports.Any(r=>r.Kind=="Battle"&&r.Status!="Active");n++){t+=.25;w.Advance(.25,t,0,3600);}
+            var res=w.Snapshot(defCity.Village.OwnerId).Reports.Single(r=>r.Kind=="Battle");
+            var defClubLoss=res.DefenderLosses.Where(l=>l.UnitId=="germans-infantry").Sum(l=>l.Dead+l.Wounded+l.Fled);
+            var defSpearLoss=res.DefenderLosses.Where(l=>l.UnitId=="germans-spearman").Sum(l=>l.Dead+l.Wounded+l.Fled);
+            Check(res.Winner==defCity.Village.OwnerId&&defClubLoss>defSpearLoss,"When defending, weaker-defense Clubmen suffer more losses than stronger-defense Spearmen");
         }
 
         var holder=City(700);var invader=City(1100);var ally=City(900);var territory=new LogisticsWorld([holder,invader,ally],73);double time=0;
@@ -110,7 +157,7 @@ internal static class MultiArmyChecks
         SiteUntil(()=>!SiteView().Oases.Single(o=>o.Id==oasis.Id).Blockaded);
         Check(holder.OwnedOases==1&&SiteView().Reports.Single(r=>r.Id==siege.Id).Status!="Active","Relief wins against remaining besiegers and archives the shared report");
         var cityAttacker=City(500);var cityDefender=City(600);var cityWorld=new LogisticsWorld([cityAttacker,cityDefender]);double cityTime=0;
-        var leader=Send(cityWorld,cityAttacker,"infantry",60);var supporting=Send(cityWorld,cityAttacker,"archer",60);
+        var leader=Send(cityWorld,cityAttacker,"infantry",60);var supporting=Send(cityWorld,cityAttacker,"spearman",60);
         foreach(var id in new[]{leader,supporting})cityWorld.Apply(cityAttacker.Village.OwnerId,new(Guid.NewGuid(),CommandKind.BeginSiege,id,DestinationId:cityDefender.Village.Id),cityTime,0);
         for(var i=0;i<200&&cityWorld.Snapshot(cityAttacker.Village.OwnerId).Warfare.Sieges.SingleOrDefault()?.ArmyIds.Length!=2;i++){cityTime+=.25;cityWorld.Advance(.25,cityTime,0,3600);}
         var cityView=cityWorld.Snapshot(cityAttacker.Village.OwnerId);var citySiege=cityView.Warfare.Sieges.Single();
@@ -141,7 +188,157 @@ internal static class MultiArmyChecks
             var oasisGuard=Send(spyWorld,spyB,"infantry",15,spyTime,targetOasis.Id);
             for(var i=0;i<600&&spyWorld.Snapshot(spyB.Village.OwnerId).Armies.Single(a=>a.Id==oasisGuard).Order!="Guarding";i++)SpyTick();
             Check(!spyWorld.Snapshot(spyA.Village.OwnerId).Armies.Any(a=>a.Id==oasisGuard),"Soldiers guarding an oasis do not appear on the enemy world map");
+            var villageGuard=Send(spyWorld,spyB,"infantry",15,spyTime,spyB.Village.Id,reinforce:true);
+            for(var i=0;i<600&&spyWorld.Snapshot(spyB.Village.OwnerId).Armies.Single(a=>a.Id==villageGuard).Order!="Guarding";i++)SpyTick();
+            Check(!spyWorld.Snapshot(spyA.Village.OwnerId).Armies.Any(a=>a.Id==villageGuard)&&spyWorld.Snapshot(spyB.Village.OwnerId).Armies.Any(a=>a.Id==villageGuard&&a.DefendingSiteId==spyB.Village.Id),"Soldiers guarding a village enter inside and stay hidden from enemy map view while visible to owner");
+        }
+        {
+            // 1. Endgame Castle occupant must be Defender when attacked by a challenger
+            var holderCity=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(1380,1500));
+            var challengerCity=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(1620,1500));
+            var castleWorld=new LogisticsWorld([holderCity,challengerCity]);
+            double cTime=1805;
+            castleWorld.Advance(.25,cTime,0,3600);
+            var kPos=castleWorld.Snapshot(holderCity.Village.OwnerId).Warfare.Castle.Position;
+            Gift(holderCity,"romans-infantry",40);Gift(holderCity,"romans-wagon",2);holderCity.AddResources(new(5000,5000,5000,5000));
+            Gift(challengerCity,"romans-infantry",40);Gift(challengerCity,"romans-wagon",2);challengerCity.AddResources(new(5000,5000,5000,5000));
+            castleWorld.Apply(holderCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,holderCity.Village.Id,Formation:new Dictionary<string,int>{["romans-infantry"]=40,["romans-wagon"]=2},X:kPos.X,Y:kPos.Y),cTime,0);
+            var holderArmy=castleWorld.Snapshot(holderCity.Village.OwnerId).Armies.Single(a=>a.OwnerId==holderCity.Village.OwnerId).Id;
+            castleWorld.Apply(challengerCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,challengerCity.Village.Id,Formation:new Dictionary<string,int>{["romans-infantry"]=40,["romans-wagon"]=2},X:kPos.X+90,Y:kPos.Y),cTime,0);
+            var challengerArmy=castleWorld.Snapshot(challengerCity.Village.OwnerId).Armies.Single(a=>a.OwnerId==challengerCity.Village.OwnerId).Id;
+            castleWorld.Apply(holderCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.CaptureCastle,holderArmy),cTime,0);
+            for(var i=0;i<400&&castleWorld.Snapshot(holderCity.Village.OwnerId).Warfare.Castle.ControllerId!=holderCity.Village.OwnerId;i++){cTime+=.25;castleWorld.Advance(.25,cTime,0,3600);}
+            Check(castleWorld.Snapshot(holderCity.Village.OwnerId).Warfare.Castle.ControllerId==holderCity.Village.OwnerId,"Occupant takes control of Crown Keep first");
+            Check(castleWorld.Snapshot(challengerCity.Village.OwnerId).Armies.Any(a=>a.Id==holderArmy),"Troops occupying Crown Keep stay visible outside on the map");
+            castleWorld.Apply(challengerCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.CaptureCastle,challengerArmy),cTime,0);
+            for(var i=0;i<400&&!castleWorld.Snapshot(holderCity.Village.OwnerId).Warfare.Battles.Any(b=>b.Status=="Active");i++){cTime+=.25;castleWorld.Advance(.25,cTime,0,3600);}
+            var castleBattle=castleWorld.Snapshot(holderCity.Village.OwnerId).Warfare.Battles.First(b=>b.Status=="Active");
+            Check(castleBattle.DefenderOwner==holderCity.Village.OwnerId&&castleBattle.AttackerOwner==challengerCity.Village.OwnerId,"Current Crown Keep occupant is treated as Defender and challenger as Attacker");
+        }
+        {
+            // 2. Multi-army battle alliances: allies on either side can join; unallied third parties (and bots) are blocked
+            var p1=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(800,800));
+            var p1Ally=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(840,800));
+            var p2=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(1100,800));
+            var p2Ally=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(1140,800));
+            var outsider=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(950,650));
+            var botOutsider=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(950,950));
+            var mWorld=new LogisticsWorld([p1,p1Ally,p2,p2Ally,outsider,botOutsider]);
+            mWorld.SetAlliances([new AllianceSnapshot(p1.Village.OwnerId,p1Ally.Village.OwnerId,0),new AllianceSnapshot(p2.Village.OwnerId,p2Ally.Village.OwnerId,0)]);
+            double mTime=0;
+            void MTick(){mTime+=.25;mWorld.AdvanceEconomies(.25,mTime,1);mWorld.Advance(.25,mTime,0,3600);}
+            var aMain=Send(mWorld,p1,"infantry",60,mTime);
+            var aHelp=Send(mWorld,p1Ally,"infantry",40,mTime);
+            var bMain=Send(mWorld,p2,"infantry",60,mTime);
+            var bHelp=Send(mWorld,p2Ally,"infantry",40,mTime);
+            var cLate=Send(mWorld,outsider,"infantry",40,mTime);
+            var cPreMarch=Send(mWorld,outsider,"infantry",35,mTime);
+            var dBot=Send(mWorld,botOutsider,"infantry",80,mTime);
+            mWorld.Apply(p1.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,aMain,X:950,Y:800),mTime,0);
+            mWorld.Apply(p2.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,bMain,X:950,Y:800),mTime,0);
+            mWorld.Apply(p1Ally.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,aHelp,X:860,Y:800),mTime,0);
+            mWorld.Apply(p2Ally.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,bHelp,X:1040,Y:800),mTime,0);
+            mWorld.Apply(outsider.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,cLate,X:950,Y:700),mTime,0);
+            mWorld.Apply(outsider.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,cPreMarch,X:750,Y:750),mTime,0);
+            mWorld.Apply(botOutsider.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,dBot,X:950,Y:900),mTime,0);
+            for(var i=0;i<160&&mWorld.Snapshot(p1.Village.OwnerId).Armies.Any(x=>x.Order!="Idle");i++)MTick();
+            mWorld.Apply(outsider.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,cPreMarch,DestinationId:bMain),mTime,0);
+            mWorld.Apply(p1.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,aMain,DestinationId:bMain),mTime,0);
+            for(var i=0;i<100&&!mWorld.Snapshot(p1.Village.OwnerId).Warfare.Battles.Any(b=>b.Status=="Active");i++)MTick();
+            var activeB=mWorld.Snapshot(p1.Village.OwnerId).Warfare.Battles.Single(b=>b.Status=="Active");
+            // Allies from both sides join via AttackArmy on the active battle opponents
+            mWorld.Apply(p1Ally.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,aHelp,DestinationId:bMain),mTime,0);
+            mWorld.Apply(p2Ally.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,bHelp,DestinationId:aMain),mTime,0);
+            // Unallied third party must be rejected when trying to attack either combatant
+            var rejectedAttackA=false;try{mWorld.Apply(outsider.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,cLate,DestinationId:aMain),mTime,0);}catch(GameRuleException e)when(e.Code=="battle"){rejectedAttackA=true;}
+            var rejectedAttackB=false;try{mWorld.Apply(outsider.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,cLate,DestinationId:bMain),mTime,0);}catch(GameRuleException e)when(e.Code=="battle"){rejectedAttackB=true;}
+            Check(rejectedAttackA&&rejectedAttackB,"Unallied third party cannot enter an active battle against either side");
+            for(var i=0;i<160&&mWorld.Snapshot(p1.Village.OwnerId).Warfare.Battles.Any(b=>b.Id==activeB.Id&&b.Status=="Active"&&(b.AttackerArmyIds.Length<2||b.DefenderArmyIds.Length<2));i++)MTick();
+            var midB=mWorld.Snapshot(p1.Village.OwnerId).Warfare.Battles.Single(b=>b.Id==activeB.Id);
+            Check(midB.AttackerArmyIds.Contains(aHelp)&&midB.DefenderArmyIds.Contains(bHelp),"Allies from both sides can send armies to assist in the ongoing battle");
+            // Wait long enough for cPreMarch to arrive near bMain while battle is active — must stop instead of joining
+            for(var i=0;i<120;i++)MTick();
+            var stillB=mWorld.Snapshot(p1.Village.OwnerId).Warfare.Battles.SingleOrDefault(b=>b.Id==activeB.Id);
+            if(stillB?.Status=="Active")
+            {
+                Check(!stillB.AttackerArmyIds.Contains(cPreMarch)&&!stillB.DefenderArmyIds.Contains(cPreMarch),"En-route unallied army cannot join an ongoing battle upon arrival");
+                var botCmds=new BotSpyCommands(mWorld,mTime);
+                mWorld.BotAct(botOutsider.Village.OwnerId,botCmds,BotPersonality.Aggressive,BotDifficulty.Hard);
+                var activeParticipants=stillB.AttackerArmyIds.Concat(stillB.DefenderArmyIds).ToHashSet();
+                Check(!botCmds.AttackTargets.Any(activeParticipants.Contains),"Unallied bot AI does not target active battles between non-allied armies");
+                var rejectedBot=false;try{mWorld.Apply(botOutsider.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,dBot,DestinationId:aMain),mTime,0);}catch(GameRuleException e)when(e.Code=="battle"){rejectedBot=true;}
+                Check(rejectedBot,"Bot attack command is likewise rejected for non-allied active battle");
+            }
+        }
+        {
+            // 3. Army merging: immediate inside same oasis/village, march-to-meet in open field, into home garrison, and combat guard
+            var u1=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(600,600));
+            var enemyV=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(1400,600));
+            var mergeWorld=new LogisticsWorld([u1,enemyV]);
+            double gTime=0;
+            void GTick(){gTime+=.25;mergeWorld.AdvanceEconomies(.25,gTime,1);mergeWorld.Advance(.25,gTime,0,3600);}
+            Gift(u1,"romans-infantry",100);Gift(u1,"romans-wagon",6);u1.AddResources(new(5000,5000,5000,5000));
+            var ownId=u1.Village.OwnerId;
+            var nearOasis=mergeWorld.Snapshot(ownId).Oases.MinBy(o=>LogisticsWorld.Distance(o.Position,u1.Village.Position))!;
+            var g1=Send(mergeWorld,u1,"infantry",15,gTime,nearOasis.Id);
+            for(var i=0;i<600&&mergeWorld.Snapshot(ownId).Armies.Single(a=>a.Id==g1).Order!="Guarding";i++)GTick();
+            var g2=Send(mergeWorld,u1,"infantry",10,gTime,nearOasis.Id,reinforce:true);
+            for(var i=0;i<600&&mergeWorld.Snapshot(ownId).Armies.Single(a=>a.Id==g2).Order!="Guarding";i++)GTick();
+            mergeWorld.Apply(ownId,new(Guid.NewGuid(),CommandKind.MergeArmies,g1,TargetIds:[g2]),gTime,0);
+            var afterOasisMerge=mergeWorld.Snapshot(ownId).Armies.Where(a=>a.DefendingSiteId==nearOasis.Id).ToArray();
+            Check(afterOasisMerge.Length==1&&afterOasisMerge[0].Soldiers==25&&afterOasisMerge[0].Order=="Guarding","Armies inside the same oasis merge directly while preserving Guarding status");
+
+            // Field merge: two field armies at distinct positions walk toward each other and merge
+            var f1=Send(mergeWorld,u1,"infantry",12,gTime);
+            var f2=Send(mergeWorld,u1,"infantry",8,gTime);
+            mergeWorld.Apply(ownId,new(Guid.NewGuid(),CommandKind.MoveArmy,f1,X:700,Y:600),gTime,0);
+            mergeWorld.Apply(ownId,new(Guid.NewGuid(),CommandKind.MoveArmy,f2,X:860,Y:600),gTime,0);
+            for(var i=0;i<300&&mergeWorld.Snapshot(ownId).Armies.Any(a=>(a.Id==f1||a.Id==f2)&&a.Order!="Idle");i++)GTick();
+            mergeWorld.Apply(ownId,new(Guid.NewGuid(),CommandKind.MergeArmies,f1,TargetIds:[f2]),gTime,0);
+            var marchingArmies=mergeWorld.Snapshot(ownId).Armies.Where(a=>a.Id==f1||a.Id==f2).ToArray();
+            Check(marchingArmies.Length==2&&marchingArmies.All(a=>a.Order=="Merging"&&LogisticsWorld.Distance(a.Destination,new(780,600))<.1),"Separated field armies march toward their shared midpoint when merging");
+            for(var i=0;i<240&&mergeWorld.Snapshot(ownId).Armies.Count(a=>a.Id==f1||a.Id==f2)>1;i++)GTick();
+            var mergedField=mergeWorld.Snapshot(ownId).Armies.Single(a=>a.Id==f1||a.Id==f2);
+            Check(mergedField.Order=="Idle"&&mergedField.Soldiers==20,"Separated field armies automatically merge into one force upon meeting");
+
+            // Direct merge into home village garrison when at village
+            var homePreTotal=u1.Snapshot().Garrison.Values.Sum();
+            var hArmy=Send(mergeWorld,u1,"infantry",10,gTime);
+            mergeWorld.Apply(ownId,new(Guid.NewGuid(),CommandKind.MergeArmies,u1.Village.Id,TargetIds:[hArmy]),gTime,0);
+            Check(!mergeWorld.Snapshot(ownId).Armies.Any(a=>a.Id==hArmy)&&u1.Snapshot().Garrison.Values.Sum()==homePreTotal+10,"Field army at home merges directly into the village garrison");
+        }
+        {
+            // 4. Allies can inspect full army formation/stats and convoy cargo, while enemies cannot
+            var allyA=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(500,500));
+            var allyB=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(900,500));
+            var foeC=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(1400,500));
+            var visWorld=new LogisticsWorld([allyA,allyB,foeC]);
+            visWorld.SetAlliances([new AllianceSnapshot(allyA.Village.OwnerId,allyB.Village.OwnerId,0)]);
+            var aArmy=Send(visWorld,allyA,"infantry",15,0);
+            allyB.AddResources(new(2000,2000,2000,2000));
+            visWorld.Apply(allyB.Village.OwnerId,new(Guid.NewGuid(),CommandKind.SendResources,allyB.Village.Id,DestinationId:allyA.Village.Id,Shipment:new(120,80,40,60)),0,0);
+            var viewFromAlly=visWorld.Snapshot(allyB.Village.OwnerId);
+            var seenAllyArmy=viewFromAlly.Armies.Single(x=>x.Id==aArmy);
+            var seenOwnConvoy=viewFromAlly.Convoys.Single();
+            var viewFromOwnRecipient=visWorld.Snapshot(allyA.Village.OwnerId).Convoys.Single();
+            var viewFromEnemy=visWorld.Snapshot(foeC.Village.OwnerId);
+            var enemyArmyView=viewFromEnemy.Armies.Single(x=>x.Id==aArmy);
+            var enemyConvoyView=viewFromEnemy.Convoys.Single();
+            Check(seenAllyArmy.Formation is not null&&seenAllyArmy.Formation.GetValueOrDefault("romans-infantry")==15&&seenAllyArmy.Wheat is not null,"Allies see full unit formation and provisions of allied armies");
+            Check(enemyArmyView.Formation is null&&enemyArmyView.Wheat is null,"Unallied enemies still cannot see allied army formation or provisions without scouting");
+            Check(seenOwnConvoy.Cargo is{Wood:120,Iron:80,Stone:40,Wheat:60}&&viewFromOwnRecipient.Cargo is{Wood:120,Iron:80,Stone:40,Wheat:60},"Own and allied convoys show carried resources on inspection");
+            Check(enemyConvoyView.Cargo is null&&enemyConvoyView.Wheat is null,"Unallied enemies cannot inspect convoy cargo or wheat");
         }
         return checks;
+    }
+    private sealed class BotSpyCommands(LogisticsWorld world,double now):IGameCommands
+    {
+        public List<Guid> AttackTargets{get;}=[];
+        public CommandResult Execute(Guid actorId,GameCommand command)
+        {
+            if(command.Kind==CommandKind.AttackArmy&&command.DestinationId is{ }dest)AttackTargets.Add(dest);
+            try{world.Apply(actorId,command,now,0);return new(command.RequestId,true,"ok","ok");}
+            catch(GameRuleException e){return new(command.RequestId,false,e.Code,e.Message);}
+        }
     }
 }

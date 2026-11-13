@@ -26,16 +26,16 @@
 .unit-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.unit-stat-grid>span{font-size:9px;color:#bdcbb5;display:flex;flex-direction:column;gap:3px}.unit-stat-grid b{font-size:16px;color:#e1eec7}.unit-tooltip p{padding:8px;background:#cfb66d12;color:#e4cc8d;border-radius:5px;font-size:10px;margin:10px 0 0}.unit-tooltip footer{font-size:9px;line-height:1.5;margin-top:9px;color:#9db49a}
 .drawer[data-panel=report] button.report-unit,.scouted-forces .report-unit{display:flex;flex-direction:column;align-items:center;gap:5px}
 .scouted-forces .report-force{flex-direction:column;align-items:stretch;gap:8px}
-.scouted-forces .report-force>strong{max-width:none;font-size:11px;color:var(--muted)}
-.report-unit .unit-counts{display:inline-flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap;font:600 10px/1.2 system-ui;direction:ltr;letter-spacing:-.2px}
-.unit-counts i{font-style:normal;color:#91a38a;font-weight:400}.unit-counts b{font-weight:600}
+.scouted-forces .report-force>strong{flex:none;width:auto;max-width:none;font-size:11px;color:var(--muted)}
+.report-unit .unit-counts{display:inline-flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap;font:700 12.5px/1.25 "Cairo","DM Sans",system-ui;direction:ltr;letter-spacing:0}
+.unit-counts i{font-style:normal;color:#9eb295;font-weight:700}.unit-counts b{font-weight:800}
 @media(max-height:850px){.panel-hero>.building-art,.panel-hero>.scenery-art{width:120px;height:120px}.drawer button.choice-tile{min-height:30px;font-size:10px;padding:5px}.choice-field legend{font-size:9px;margin-bottom:4px}.dispatch-directives .choice-tile{min-height:30px}.drawer[data-panel=dispatch] #drawer-body{gap:5px}}
-@media(max-width:700px){.welcome-card{padding:22px}.choice-tile,.drawer button.choice-tile{font-size:9px;min-height:32px;padding:5px;gap:3px}.choice-field legend{font-size:9px}.language-control .choice-tile{min-height:16px;min-width:22px;padding:1px 3px;font-size:7px}.language-control{top:4px;left:9px}.report-unit .unit-counts{font-size:7px;gap:2px}.choice-field{margin:3px 0}.unit-tooltip{width:270px;padding:12px}.unit-stat-grid b{font-size:14px}}
+@media(max-width:700px){.welcome-card{padding:22px}.choice-tile,.drawer button.choice-tile{font-size:10.5px;min-height:32px;padding:5px;gap:3px}.choice-field legend{font-size:10px}.language-control .choice-tile{min-height:16px;min-width:22px;padding:1px 3px;font-size:8px}.language-control{top:4px;left:9px}.report-unit .unit-counts{font-size:10.5px;gap:3px}.choice-field{margin:3px 0}.unit-tooltip{width:270px;padding:12px}.unit-stat-grid b{font-size:14px}}
 @media(prefers-reduced-motion:reduce){.building-art,.scenery-art{transition:none}}
 
 body:has(#welcome:not([hidden])) .hud{z-index:70}
 
-.drawer[data-building-name=MainHall]{width:min(520px,calc(100vw - 32px))}@media(max-width:700px){.drawer[data-building-name=MainHall]{width:calc(100vw - 16px)}}
+.drawer[data-building-name=MainHall]{width:min(520px,calc(100vw / var(--ui-scale,1) - 32px))}@media(max-width:700px){.drawer[data-building-name=MainHall]{width:calc(100vw / var(--ui-scale,1) - 16px)}}
 .oasis-specialty{display:flex;align-items:center;gap:5px;color:#dcd595}.oasis-specialty svg{width:18px;height:18px;flex-shrink:0}
 .vignette{box-shadow:inset 0 0 110px #304a2820}
 .facility-training-queue{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid #d9c4943a;border-radius:10px;background:#0e251e78;margin-bottom:4px}

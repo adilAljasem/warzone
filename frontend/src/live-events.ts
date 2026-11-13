@@ -1,7 +1,7 @@
 import { safe } from './intelligence';
 import type { WorldView } from './map';
 
-export interface LiveEvent { key:string; action:string; id:string; title:string; detail:string; friendly:boolean; tone:'danger'|'attacking'|'friendly'; at:number }
+export interface LiveEvent { key:string; action:string; id:string; title:string; detail:string; friendly:boolean; tone:'danger'|'attacking'|'friendly'; at:number; liveBattle?:boolean }
 export function activeEvents(world:WorldView,you:string):LiveEvent[]{
     const events:LiveEvent[]=[],reports=world.reports??[];
     const active=reports.filter(r=>r.status==='Active');
@@ -11,7 +11,7 @@ export function activeEvents(world:WorldView,you:string):LiveEvent[]{
         const isAttacker=r.attacker===you||(r.armies?.some(a=>a.ownerId===you&&a.attacking)??false);
         const title=siege?({Fighting:'Village battle',Blockading:'Village blockade',Persuading:'Persuasion in progress',Demolishing:'Demolition in progress'}[siege.phase]??'Village battle'):r.kind==='OasisSiege'?'Oasis under attack':r.kind==='Interception'?'Caravan under attack':'Battle in progress';
         const detail=siege?(siege.phase==='Persuading'?`${Math.round(siege.progress)}% persuasion`:siege.phase==='Demolishing'?`${siege.remainingBuildingLevels} building levels remaining`:siege.phase==='Blockading'?'External supplies blocked · Wheat −50%':'View live battle report'):'View live battle report';
-        events.push({key:r.id,action:'report',id:r.id,title,detail,friendly:false,tone:isAttacker?'attacking':'danger',at:r.startedAt});
+        events.push({key:r.id,action:'report',id:r.id,title,detail,friendly:false,tone:isAttacker?'attacking':'danger',at:r.startedAt,liveBattle:true});
     }
     const engaged=new Set(active.flatMap(r=>r.armies.map(a=>a.armyId)));
     for(const a of world.armies){
@@ -33,7 +33,7 @@ export class LiveEventBar{
         for(const e of events)if(!this.sequence.has(e.key))this.sequence.set(e.key,this.next++);
         return [...events].sort((a,b)=>this.sequence.get(a.key)!-this.sequence.get(b.key)!).map(e=>{
             const tone=e.tone??(e.friendly?'friendly':'danger');
-            return `<article class="important-alert ${tone}" data-event="${safe(e.key)}"><button data-action="${e.action}" data-id="${safe(e.id)}"><span aria-hidden="true">${e.friendly?'🛡':'⚔'}</span><strong>${safe(e.title)}<small>${safe(e.detail)}</small></strong><span class="live-event-dot" aria-label="Live"></span></button></article>`;
+            return `<article class="important-alert ${tone}${e.liveBattle?' live-battle':''}" data-event="${safe(e.key)}"><button data-action="${e.action}" data-id="${safe(e.id)}"><span aria-hidden="true">${e.friendly?'🛡':'⚔'}</span><strong>${safe(e.title)}<small>${safe(e.detail)}</small></strong><span class="live-event-dot" aria-label="Live"></span></button></article>`;
         }).join('');
     }
 }
