@@ -556,6 +556,8 @@ function buildTargetContext() {
         armies: state?.world?.armies ?? [],
         convoys: state?.world?.convoys ?? [],
         battles: state?.world?.warfare?.battles ?? [],
+        sieges: state?.world?.warfare?.sieges ?? [],
+        oasisSieges: state?.world?.oasisSieges ?? [],
         castle: state?.world?.warfare?.castle,
         ownedVillagesCount: ownedVillages().length,
         hasGovernor: selectedHasRole("governor"),
@@ -643,7 +645,7 @@ map.setInteractionHandlers({
                 notice(currentLanguage() === "ar" ? "لا يمكن تنفيذ هذا الأمر أثناء فترة الحماية." : "Wait until the protection shield expires.", true);
                 return;
             }
-            void perform(() => executeRtsOrder(behavior.directAction!.id, target));
+            void perform(() => executeRtsOrder(behavior.directAction!.id, behavior.directAction!.targetOverride ?? target));
             return;
         }
         if (behavior.options.length) {
@@ -2038,7 +2040,7 @@ function armyPanel() {
                 wood: acc.wood + (a.loot?.wood ?? 0),
                 iron: acc.iron + (a.loot?.iron ?? 0),
                 stone: acc.stone + (a.loot?.stone ?? 0),
-                wheat: acc.wheat + (a.loot?.wheat ?? 0)
+                wheat: acc.wheat + Math.floor(a.wheat ?? 0)
             }), { wood: 0, iron: 0, stone: 0, wheat: 0 });
             const woundedSum = fieldArmies.reduce((s, a) => s + (a.wounded ?? 0), 0);
             const deadSum = fieldArmies.reduce((s, a) => s + (a.dead ?? 0), 0);
@@ -2088,11 +2090,17 @@ function armyPanel() {
     const mine = a.ownerId === state!.you;
     if (!mine) {
         const totalUnits = a.soldiers + a.wagons;
+        const carried: Resources = {
+            wood: a.loot?.wood ?? 0,
+            iron: a.loot?.iron ?? 0,
+            stone: a.loot?.stone ?? 0,
+            wheat: Math.floor(a.wheat ?? 0)
+        };
         if (isAllyPlayer(a.ownerId)) {
             return `${armyCountBanner(totalUnits, isAr, `${esc(t(a.order))} · ${a.soldiers.toLocaleString()} ${isAr ? "جندي" : "troops"} · ${a.wagons.toLocaleString()} ${isAr ? "عربة" : "wagons"}`)}
                 <div class="stat-line"><span>${isAr ? "القائد الحليف" : "Allied commander"}</span><b>${esc(owner(a.ownerId))}</b></div>
                 <div><div class="stat-line"><span>${isAr ? "المؤونة" : "Food"}</span><b>${Math.floor(a.wheat ?? 0).toLocaleString()} / ${Math.floor(a.capacity).toLocaleString()}</b></div><div class="meter food"><i style="width:${Math.min(100, (a.wheat ?? 0) / Math.max(1, a.capacity) * 100)}%"></i></div></div>
-                ${renderLootRow(a.loot ?? { wood: 0, iron: 0, stone: 0, wheat: 0 }, isAr ? "الموارد المحمولة" : "Carried resources")}
+                ${renderLootRow(carried, isAr ? "الموارد المحمولة" : "Carried resources")}
                 ${renderCasualtiesGrid(a.wounded ?? 0, a.dead ?? 0, a.fled ?? 0, isAr)}
                 ${formationPortraits(a.formation, isAr ? "تشكيلة جيش الحليف" : "Allied army", "friendly")}`;
         }
@@ -2106,12 +2114,18 @@ function armyPanel() {
     setTabs([{ id: "overview", name: "Orders" }, { id: "supply", name: "Supply" }, { id: "cargo", name: "Cargo" }]);
     const battle = state!.world!.warfare?.battles.find(b => b.status === "Active" && ((b.attackerArmyIds ?? []).includes(a.id) || (b.defenderArmyIds ?? []).includes(a.id))), siege = state!.world!.warfare?.sieges.find(s => (s.armyIds ?? []).includes(a.id) && ["Active"].includes(s.status));
     const inCombat = !!battle || !!siege || !!state!.world!.oasisSieges?.some(s => (s.armyIds ?? []).includes(a.id));
+    const carried: Resources = {
+        wood: a.loot?.wood ?? 0,
+        iron: a.loot?.iron ?? 0,
+        stone: a.loot?.stone ?? 0,
+        wheat: Math.floor(a.wheat ?? 0)
+    };
     const stats = `<div><div class="stat-line"><span>Food</span><b>${Math.floor(a.wheat ?? 0)} / ${a.capacity}</b></div><div class="meter food"><i style="width:${Math.min(100, (a.wheat ?? 0) / Math.max(1, a.capacity) * 100)}%"></i></div></div>`;
     if (panelTab === "supply") {
         const cities = state!.world!.warfare!.settlements.filter(c => c.ownerId === state!.you && !c.ruined);
         return `${stats}<p class="muted">${esc(a.supplyStatus)}</p>${select("supply-source", "Supply province", cities.map((c, i) => ({ value: c.id, label: `Province ${i + 1} · ${c.tribe}` })), supplySource)}<div class="form-grid"><label>Wagons (0 = auto)<input id="supply-wagons" type="number" min="0" max="20" value="${supplyWagons}"/></label><label>Infantry escorts<input id="supply-escorts" type="number" min="0" max="100" value="${escorts}"/></label></div><label class="check"><input id="supply-auto" type="checkbox" ${autoSupply ? "checked" : ""}/> Automatic supply deliveries</label><div class="panel-footer">${button("Update supply line", "supply", a.id, "primary wide", !running())}</div>`;
     }
-    if (panelTab === "cargo") return `${cargoView(a.loot ?? { wood: 0, iron: 0, stone: 0, wheat: 0 }, "MATERIALS & LOOT ON BOARD")}<div class="stat-line"><span>Carried wheat / food capacity</span><b>${Math.floor(a.wheat ?? 0)} / ${Math.floor(a.capacity)}</b></div><p class="muted">Wheat is consumed during travel and combat. Remaining food and loot are credited when this army returns home.</p><div class="panel-footer">${button("Open battle reports", "show-reports", "", "primary wide")}</div>`;
+    if (panelTab === "cargo") return `${cargoView(carried, "MATERIALS & LOOT ON BOARD")}<div class="stat-line"><span>Carried wheat / food capacity</span><b>${Math.floor(a.wheat ?? 0)} / ${Math.floor(a.capacity)}</b></div><p class="muted">Wheat is consumed during travel and combat. Remaining food and loot are credited when this army returns home.</p><div class="panel-footer">${button("Open battle reports", "show-reports", "", "primary wide")}</div>`;
 
     const info = armyTroopMap(a.id);
     const chosen = info ? chosenDraft(info.id) : {};
@@ -2123,7 +2137,7 @@ function armyPanel() {
     const totalUnits = a.soldiers + a.wagons;
     return `${armyCountBanner(totalUnits, isAr, `${esc(t(a.order))} · ${a.soldiers.toLocaleString()} ${isAr ? "جندي" : "troops"} · ${a.wagons.toLocaleString()} ${isAr ? "عربة" : "wagons"}`)}
         ${stats}
-        ${renderLootRow(a.loot ?? { wood: 0, iron: 0, stone: 0, wheat: 0 }, isAr ? "الموارد المحمولة" : "Carried resources")}
+        ${renderLootRow(carried, isAr ? "الموارد المحمولة" : "Carried resources")}
         ${renderCasualtiesGrid(a.wounded ?? 0, a.dead ?? 0, a.fled ?? 0, isAr)}
         ${battle ? `<div class="battle-line"><strong>Battle · Round ${battle.round}</strong><p>${battle.attackerTroops} vs ${battle.defenderTroops} · ${time(battle.elapsed)}</p></div>` : ""}
         ${siege ? `<div class="battle-line"><strong>${siege.phase === "Persuading" ? "Establishing control" : "Siege in progress"}</strong><p>Gate ${Math.round(siege.gate)}% · Wall ${Math.round(siege.wall)}%<br/>Loyalty ${Math.round(siege.loyalty)}%</p></div>` : ""}
@@ -2712,8 +2726,8 @@ document.addEventListener("pointerup", event => {
     if (!hit) return;
     suppressNextRadialClick = true;
     window.setTimeout(() => { suppressNextRadialClick = false; }, 0);
-    const target = radialState.target;
-    void perform(() => executeRtsOrder(pending.id, target));
+    const optionTarget = radialState.options.find(o => o.id === pending.id)?.targetOverride ?? radialState.target;
+    void perform(() => executeRtsOrder(pending.id, optionTarget));
 }, true);
 document.addEventListener("pointercancel", () => { pressedRadialBtn = null; }, true);
 document.addEventListener("click", event => {
@@ -2734,8 +2748,8 @@ document.addEventListener("click", event => {
         return;
     if (action === "radial-cmd") {
         if (radialState) {
-            const target = radialState.target;
-            void perform(() => executeRtsOrder(id as RadialActionId, target));
+            const optionTarget = radialState.options.find(o => o.id === id)?.targetOverride ?? radialState.target;
+            void perform(() => executeRtsOrder(id as RadialActionId, optionTarget));
         }
         return;
     }

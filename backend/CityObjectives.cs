@@ -18,20 +18,35 @@ public sealed partial class LogisticsWorld
         bool Has(UnitRole role) => formation.Any(t=>t.Value>0 && GameCatalog.Units[t.Key].Role==role);
         if (!formation.Any(t=>t.Value>0 && GameCatalog.Units[t.Key].Role is not (UnitRole.Wagon or UnitRole.Governor)))
             throw new GameRuleException("troops", "Fighting troops are required.");
-        if (objective == AttackObjective.Conquest && !Has(UnitRole.Governor))
-            throw new GameRuleException("governor", "Include a governor in this army for conquest.");
-        if (objective == AttackObjective.Raze && !Has(UnitRole.Catapult))
-            throw new GameRuleException("catapult", "Include a catapult in this army for destruction.");
         var current = sieges.Find(s => s.City == city && s.Status == "Active");
-        if (current is not null && (!CampAllied(current.Attacker.OwnerId, actor) || (current.Objective != objective && current.Objective != AttackObjective.Blockade)))
+        var neededRole = objective == AttackObjective.Conquest ? UnitRole.Governor : UnitRole.Catapult;
+        var allyHasSpecialist = objective is AttackObjective.Conquest or AttackObjective.Raze && (
+            (current is not null && CampAllied(current.Attacker.OwnerId, actor) && current.Objective == objective
+                && current.Attackers.Any(a => armies.Contains(a) && !a.Routing && RoleCount(a, neededRole) > 0))
+            || armies.Any(a => a.Order == "Approaching" && a.TargetId == city.Village.Id && !a.Routing
+                && CampAllied(a.OwnerId, actor) && a.Objective == objective && RoleCount(a, neededRole) > 0));
+        if (objective == AttackObjective.Conquest && !Has(UnitRole.Governor) && !allyHasSpecialist)
+            throw new GameRuleException("governor", "Include a governor in this army for conquest.");
+        if (objective == AttackObjective.Raze && !Has(UnitRole.Catapult) && !allyHasSpecialist)
+            throw new GameRuleException("catapult", "Include a catapult in this army for destruction.");
+        if (current is not null && (!CampAllied(current.Attacker.OwnerId, actor) || (current.Objective != objective && current.Objective != AttackObjective.Blockade && objective != AttackObjective.Blockade)))
             throw new GameRuleException("siege", "Joining armies must share an allied siege commander and compatible attack objective.");
     }
 
     private void AdvanceCityObjective(SiegeState siege, double now)
     {
+        var neededRole = siege.Objective == AttackObjective.Conquest ? UnitRole.Governor : UnitRole.Catapult;
         var forces=siege.Attackers.Where(a=>armies.Contains(a)&&!a.Routing&&a.Order=="Sieging"&&Fighters(a)>0).ToArray();
-        var leader=forces.FirstOrDefault(a=>RoleCount(a,siege.Objective==AttackObjective.Conquest ? UnitRole.Governor : UnitRole.Catapult)>0);
-        if (leader is null) { EndSiege(siege,"SpecialistsLost",now); return; }
+        var leader=forces.FirstOrDefault(a=>RoleCount(a,neededRole)>0);
+        if (leader is null)
+        {
+            var specialistApproaching = armies.Any(a => a.Order == "Approaching" && a.TargetId == siege.City.Village.Id
+                && !a.Routing && CampAllied(a.OwnerId, siege.Attacker.OwnerId) && a.Objective == siege.Objective
+                && RoleCount(a, neededRole) > 0);
+            if (specialistApproaching) return;
+            EndSiege(siege,"SpecialistsLost",now);
+            return;
+        }
         // The same surviving formation must carry the specialists; reassignment never grants missing units.
         siege.Attackers.Remove(leader); siege.Attackers.Insert(0,leader);
         if (siege.Objective==AttackObjective.Conquest)

@@ -70,6 +70,12 @@ public sealed partial class LogisticsWorld
         {
             var local=Math.Min(oasis.Stockpile[3],(decimal)demand);oasis.Stockpile[3]-=local;demand-=(double)local;
         }
+        if (army.Wheat < demand && army.Loot.Wheat > 0)
+        {
+            var takeLootWheat = Math.Min(army.Loot.Wheat, (long)Math.Ceiling(demand - army.Wheat));
+            army.Loot -= new Resources(0, 0, 0, takeLootWheat);
+            army.Wheat += takeLootWheat;
+        }
         var carried=Math.Min(army.Wheat,demand);army.Wheat-=carried;
         return demand-carried;
     }

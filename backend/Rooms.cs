@@ -797,11 +797,13 @@ internal static class BotController
     {
         var isHard = difficulty == BotDifficulty.Hard;
         var garrisonTotal = economy.Garrison.Values.Sum();
-        var marchWheatReserve = isHard && garrisonTotal >= 180 ? Math.Clamp(garrisonTotal * 3L, 600L, 4200L) : 0L;
+        var marchWheatReserve = garrisonTotal >= (isHard ? 180 : 120)
+            ? Math.Clamp(garrisonTotal * 3L, isHard ? 600L : 400L, isHard ? 4500L : 2500L)
+            : 0L;
         var wheatNet = economy.Production.FirstOrDefault(p => p.Resource == "Wheat")?.NetPerMinute ?? 0;
         var starving = isHard
-            ? (economy.FoodShortage && wheatNet < 0) || (garrisonTotal >= 240 && economy.Resources.Wheat < marchWheatReserve && wheatNet < 200)
-            : economy.FoodShortage || (economy.Resources.Wheat < 220 && wheatNet < 0);
+            ? (economy.FoodShortage && wheatNet < 0) || (garrisonTotal >= 240 && ((economy.Resources.Wheat < marchWheatReserve && wheatNet < 200) || wheatNet < -20))
+            : economy.FoodShortage || (wheatNet < 0 && (economy.Resources.Wheat < Math.Max(350L, marchWheatReserve) || garrisonTotal >= 140));
 
         var autoPasses = isHard ? 8 : 1;
         for (var pass = 0; pass < autoPasses; pass++)
@@ -814,7 +816,7 @@ internal static class BotController
                 if (active is not null)
                     acted = commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.SetAutoQueue, active.Id, Enabled: false)).Accepted;
             }
-            else if (isHard || economy.Resources.Wheat >= 300 || wheatNet >= 15)
+            else if (isHard || (wheatNet >= (garrisonTotal >= 140 ? 10 : -5) && (economy.Resources.Wheat >= Math.Max(300L, marchWheatReserve) || wheatNet >= 15)))
             {
                 var nonCombatAuto = trainings.FirstOrDefault(x => x.Auto && UnitPriority(x, personality, difficulty) == 0);
                 if (nonCombatAuto is not null)
@@ -860,7 +862,7 @@ internal static class BotController
             var mainHallLevel = economy.Targets.FirstOrDefault(t => t.Name == "MainHall")?.Level ?? 1;
             var remaining = economy.Resources;
             var trainings = economy.Targets.Where(x => x.Kind == "Training").ToArray();
-            var upgradeWheatFloor = isHard ? 140L : 0L;
+            var upgradeWheatFloor = economy.FoodShortage || wheatNet < 0 ? 0L : isHard ? 140L : 0L;
             var building = economy.Targets
                 .Where(x => x.Kind == "Building" && (x.Name == "MainHall" || x.Level < mainHallLevel)
                     && x.UpgradeCost is { } cost && remaining.Covers(cost)

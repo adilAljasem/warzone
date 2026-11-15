@@ -79,7 +79,7 @@ app.MapPost("/api/session", async (HttpContext context) =>
     return Results.Ok(new { playerId = id });
 }).RequireRateLimiting("session");
 app.MapGet("/api/catalog", () => Results.Ok(GameCatalog.Units.Values));
-var appVersion = Environment.GetEnvironmentVariable("APP_VERSION") ?? "v1.0.0-local";
+var appVersion = ResolveAppVersion();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", phase = 5, version = appVersion }));
 app.MapGet("/assets/units/{unitId}/{variant}.svg", (string unitId, string variant) =>
     variant is "icon" or "map" && GameCatalog.Units.TryGetValue(unitId, out var unit)
@@ -119,3 +119,41 @@ if (Directory.Exists(clientPath))
     });
 }
 app.Run();
+
+static string ResolveAppVersion()
+{
+    var env = Environment.GetEnvironmentVariable("APP_VERSION");
+    if (!string.IsNullOrWhiteSpace(env)) return env.Trim();
+    foreach (var dir in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) continue;
+            var count = RunGit(dir, "rev-list --count HEAD");
+            var sha = RunGit(dir, "rev-parse --short=7 HEAD");
+            if (string.IsNullOrWhiteSpace(count) || string.IsNullOrWhiteSpace(sha)) continue;
+            var dirty = string.IsNullOrWhiteSpace(RunGit(dir, "status --porcelain")) ? "" : "-dirty";
+            return $"v1.0.{count}-{sha}{dirty}";
+        }
+        catch { }
+    }
+    return "v1.0.0-local";
+}
+
+static string RunGit(string workingDirectory, string arguments)
+{
+    using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+    {
+        FileName = "git",
+        Arguments = arguments,
+        WorkingDirectory = workingDirectory,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+    });
+    if (process is null) return "";
+    var output = process.StandardOutput.ReadToEnd().Trim();
+    process.WaitForExit(1500);
+    return process.ExitCode == 0 ? output : "";
+}

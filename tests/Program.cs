@@ -33,6 +33,31 @@ CommandResult Command(GameRoom room, CommandKind kind, Guid target, int quantity
 void Advance(GameRoom room, int seconds) { for (var i = 0; i < seconds * 4; i++) room.Advance(.25); }
 
 GameCatalog.Validate();
+if (args.Contains("--bugfix"))
+{
+    checks += WarfareChecks.Run();
+    checks += OasisSiegeChecks.Run();
+    checks += CityObjectiveChecks.Run();
+    checks += SocialChecks.Run();
+    checks += CampChecks.Run();
+    checks += BugFixChecks.Run();
+    Console.WriteLine($"Passed {checks} bugfix/core checks.");
+    return;
+}
+if (args.Contains("--targeted"))
+{
+    checks += WarfareChecks.Run();
+    checks += OasisSiegeChecks.Run();
+    checks += MultiArmyChecks.Run();
+    checks += CityObjectiveChecks.Run();
+    checks += SocialChecks.Run();
+    checks += CampChecks.Run();
+    checks += BugFixChecks.Run();
+    Console.WriteLine($"Passed {checks} targeted game checks.");
+    return;
+}
+if (!args.Contains("--suites"))
+{
 Reject(() => new RoomSettings(Capacity: 7).Validate(), "settings");
 Reject(() => new RoomSettings(DurationMinutes: 1000).Validate(), "settings");
 Reject(() => new RoomSettings(CastleUnlockMinutes: 0).Validate(), "settings");
@@ -308,6 +333,7 @@ CheckInterception(0, true);
     for (var s = 0; s < 200 && pvpRoom.Snapshot(pvpRoom.HostId, _ => true).World!.Armies.Any(x => x.Id == wagonArmy.Id); s++) Advance(pvpRoom, 1);
     Check(!pvpRoom.Snapshot(pvpRoom.HostId, _ => true).World!.Armies.Any(x => x.Id == wagonArmy.Id) && Economy(pvpRoom).Garrison.GetValueOrDefault("romans-wagon") == preWagons, "Recalled wagon-only army returns its wagons safely to the village");
 }
+}
 checks += WarfareChecks.Run();
 checks += BiomeLogisticsChecks.Run();
 checks += GameplayChecks.Run();
@@ -323,6 +349,7 @@ checks += CampChecks.Run();
 checks += OasisUpgradeAndBurnChecks.Run();
 checks += TribalCostChecks.Run();
 checks += AdminSpectatorChecks.Run();
+checks += BugFixChecks.Run();
 Console.WriteLine($"Passed {checks} deterministic game checks.");
 
 sealed class ManualTime : TimeProvider

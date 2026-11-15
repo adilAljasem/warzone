@@ -312,9 +312,12 @@ public sealed partial class LogisticsWorld
     private static int FinalizeArmyDamage(Army army, List<TroopStack> surviving, int losses, int wagonsBefore)
     {
         army.Troops = surviving.AsReadOnly();
-        army.Wheat = Math.Min(army.Wheat, army.Capacity);
-        var remainingCargo = Math.Max(0, army.Troops.Sum(x => (double)x.Count * x.Unit.CarryCapacity) - army.Wheat);
-        if (army.Loot.Total > remainingCargo) army.Loot = army.Loot.Fraction(remainingCargo / Math.Max(1, army.Loot.Total));
+        if (surviving.Count > 0)
+        {
+            army.Wheat = Math.Min(army.Wheat, army.Capacity);
+            var remainingCargo = Math.Max(0, army.Troops.Sum(x => (double)x.Count * x.Unit.CarryCapacity) - army.Wheat);
+            if (army.Loot.Total > remainingCargo) army.Loot = army.Loot.Fraction(remainingCargo / Math.Max(1, army.Loot.Total));
+        }
         return losses;
     }
     private void DestroyWagons(Army army, double fraction, double now, Guid enemy)
@@ -387,7 +390,7 @@ public sealed partial class LogisticsWorld
                 var ongoing=sieges.Find(s=>s.City==city&&s.Status=="Active");
                 if (ongoing is not null)
                 {
-                    if (CampAllied(ongoing.Attacker.OwnerId, army.OwnerId) && (ongoing.Objective == army.Objective || ongoing.Objective == AttackObjective.Blockade))
+                    if (CampAllied(ongoing.Attacker.OwnerId, army.OwnerId) && (ongoing.Objective == army.Objective || ongoing.Objective == AttackObjective.Blockade || army.Objective == AttackObjective.Blockade))
                     {
                         var escalated = ongoing.Objective == AttackObjective.Blockade && army.Objective != AttackObjective.Blockade;
                         if (escalated)

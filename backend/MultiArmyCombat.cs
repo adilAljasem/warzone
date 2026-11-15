@@ -299,19 +299,60 @@ public sealed partial class LogisticsWorld
         var convoyArmies=battle.ConvoyMembers.Select(m=>m.Army).ToHashSet();
         var recipients=survivors.Where(a=>!convoyArmies.Contains(a)).ToArray();
         var loot=new Resources();var captured=new Resources();
-        void Distribute(Resources cargo){var remaining=cargo;foreach(var force in recipients){var before=force.Loot;TakeLoot(force,remaining);var took=force.Loot-before;remaining-=took;captured+=took;}}
+        var totalSpoils=new Resources();
         foreach(var member in battle.ConvoyMembers)
         {
             var convoy=member.Convoy!;convoy.InBattle=false;
             if(lost.Contains(member.Army))
             {
-                var cargo=convoy.Cargo+new Resources(0,0,0,(long)convoy.WheatCargo);loot+=cargo;Distribute(cargo);
+                var cargo=convoy.Cargo+new Resources(0,0,0,(long)convoy.WheatCargo);
+                totalSpoils+=cargo;
                 DestroyWagons(member.Army,1,now,winner.OwnerId);convoy.Cargo=new();convoy.WheatCargo=0;convoy.Returning=true;
                 Note(convoy.OwnerId,now,"Your caravan was intercepted and its cargo was lost.","convoy-loss",targetId:convoy.Id);
             }
             convoy.Troops=member.Army.Troops;if(convoy.Troops.Count==0)convoys.Remove(convoy);
         }
-        if(!convoyArmies.Any())foreach(var force in lost){var cargo=force.Loot+new Resources(0,0,0,(long)force.Wheat);loot+=cargo;Distribute(cargo);force.Loot=new();force.Wheat=0;}
+        foreach(var force in lost)
+        {
+            if(convoyArmies.Contains(force))continue;
+            var cargo=force.Loot+new Resources(0,0,0,(long)force.Wheat);
+            totalSpoils+=cargo;
+            force.Loot=new();force.Wheat=0;
+        }
+        loot=totalSpoils;
+        if(recipients.Length>0&&totalSpoils.Total>0)
+        {
+            var remaining=totalSpoils;
+            var spaces=recipients.Select(r=>Math.Max(0d,r.LootSpace)).ToArray();
+            var totalSpace=spaces.Sum();
+            if(totalSpace>0)
+            {
+                var cap=Math.Min((double)totalSpoils.Total,totalSpace);
+                for(var i=0;i<recipients.Length&&remaining.Total>0;i++)
+                {
+                    if(spaces[i]<=0)continue;
+                    var shareRatio=cap*(spaces[i]/totalSpace)/totalSpoils.Total;
+                    var slice=totalSpoils.Fraction(shareRatio);
+                    var bounded=new Resources(
+                        Math.Min(remaining.Wood,slice.Wood),
+                        Math.Min(remaining.Iron,slice.Iron),
+                        Math.Min(remaining.Stone,slice.Stone),
+                        Math.Min(remaining.Wheat,slice.Wheat));
+                    var before=recipients[i].Loot;
+                    TakeLoot(recipients[i],bounded);
+                    var took=recipients[i].Loot-before;
+                    remaining-=took;captured+=took;
+                }
+                foreach(var force in recipients)
+                {
+                    if(remaining.Total<=0)break;
+                    var before=force.Loot;
+                    TakeLoot(force,remaining);
+                    var took=force.Loot-before;
+                    remaining-=took;captured+=took;
+                }
+            }
+        }
         battle.Status="Resolved";battle.Ended=now;battle.Winner=survivors.Length==0?null:survivors[0].OwnerId;
         var report=reports.Find(r=>r.Id==battle.Id);
         if(report is not null){if(attacking){report.AttackerLoot+=captured;report.DefenderLoss+=loot;}else{report.DefenderLoot+=captured;report.AttackerResourceLoss+=loot;}}

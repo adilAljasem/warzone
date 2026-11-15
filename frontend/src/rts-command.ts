@@ -1,4 +1,4 @@
-import type { OasisView, Point, SettlementView, ArmyView, ConvoyView, WarfareView, BattleView, MapSelection } from "./map";
+import type { OasisView, Point, SettlementView, ArmyView, ConvoyView, WarfareView, BattleView, SiegeView, OasisSiegeView, MapSelection } from "./map";
 
 export type RadialIconKind =
   | "swords"
@@ -37,6 +37,7 @@ export interface RadialOption {
   icon: RadialIconKind;
   tone: "danger" | "friendly" | "warn" | "default";
   disabled?: boolean;
+  targetOverride?: MapSelection;
 }
 
 export interface HoverBehavior {
@@ -85,6 +86,8 @@ export interface TargetRuleContext {
   armies: ArmyView[];
   convoys: ConvoyView[];
   battles?: BattleView[];
+  sieges?: SiegeView[];
+  oasisSieges?: OasisSiegeView[];
   castle?: WarfareView["castle"];
   ownedVillagesCount: number;
   hasGovernor: boolean;
@@ -117,6 +120,260 @@ export function canAttackArmyInBattle(
     return false;
   }
   return sideHasAllyOrSelf(opposingSideIds, targetOnAttacker ? activeBattle.defenderOwner : activeBattle.attackerOwner);
+}
+
+function allyHasObjective(villageId: string, objective: string, ctx: TargetRuleContext): boolean {
+  const active = (ctx.sieges ?? []).some(
+    s => s.villageId === villageId && s.status === "Active" && ctx.isAlly(s.attackerOwner) && s.objective === objective
+  );
+  if (active) return true;
+  return ctx.armies.some(
+    a => a.order === "Approaching" && a.targetId === villageId && ctx.isAlly(a.ownerId) && a.objective === objective
+  );
+}
+
+function siegeJoinOption(
+  objective: string | null | undefined,
+  city: SettlementView,
+  ctx: TargetRuleContext,
+  L: (ar: string, en: string) => string
+): RadialOption {
+  const targetOverride: MapSelection = {
+    id: city.id,
+    kind: "village",
+    name: city.id,
+    position: city.position,
+    ownerId: city.ownerId
+  };
+  if (objective === "Raze") {
+    return { id: "raze", label: L("انضمام للتدمير", "Join demolition"), icon: "tower", tone: "danger", disabled: ctx.protectedEnemy, targetOverride };
+  }
+  if (objective === "Conquest") {
+    return { id: "conquest", label: L("انضمام للاحتلال", "Join conquest"), icon: "flag", tone: "danger", disabled: ctx.protectedEnemy, targetOverride };
+  }
+  if (objective === "Raid") {
+    return { id: "raid", label: L("انضمام للغارة", "Join raid"), icon: "swords", tone: "danger", disabled: ctx.protectedEnemy, targetOverride };
+  }
+  return { id: "blockade-city", label: L("انضمام للحصار", "Join siege"), icon: "blockade", tone: "warn", disabled: ctx.protectedEnemy, targetOverride };
+}
+
+function oasisJoinOption(
+  mode: string | null | undefined,
+  oasis: OasisView,
+  ctx: TargetRuleContext,
+  L: (ar: string, en: string) => string
+): RadialOption {
+  const targetOverride: MapSelection = {
+    id: oasis.id,
+    kind: "oasis",
+    name: oasis.name,
+    position: oasis.position,
+    ownerId: oasis.ownerId
+  };
+  const blocked = !!oasis.ownerId && ctx.protectedEnemy;
+  if (mode === "Burn") return { id: "burn-oasis", label: L("انضمام للحرق", "Join oasis burn"), icon: "flame", tone: "danger", disabled: blocked, targetOverride };
+  if (mode === "Blockade") return { id: "besiege-oasis", label: L("انضمام للحصار", "Join oasis siege"), icon: "tower", tone: "warn", disabled: blocked, targetOverride };
+  return { id: "capture-oasis", label: L("انضمام لاحتلال الواحة", "Join oasis capture"), icon: "swords", tone: "danger", disabled: blocked, targetOverride };
+}
+
+function siteTargetSelection(siteId: string | null | undefined, ctx: TargetRuleContext): MapSelection | null {
+  if (!siteId) return null;
+  const city = ctx.settlements.find(v => v.id === siteId && !v.ruined);
+  if (city) return { id: city.id, kind: "village", name: city.id, position: city.position, ownerId: city.ownerId };
+  const oasis = ctx.oases.find(o => o.id === siteId && (o.burnedRemainingSeconds ?? 0) <= 0);
+  if (oasis) return { id: oasis.id, kind: "oasis", name: oasis.name, position: oasis.position, ownerId: oasis.ownerId };
+  return null;
+}
+
+function resolveAllyArmyJoinBehavior(
+  a: ArmyView,
+  ctx: TargetRuleContext,
+  L: (ar: string, en: string) => string
+): HoverBehavior {
+  const activeSiege = (ctx.sieges ?? []).find(s => s.status === "Active" && s.armyIds.includes(a.id));
+  if (activeSiege) {
+    const city = ctx.settlements.find(v => v.id === activeSiege.villageId && !v.ruined && v.ownerId !== ctx.you && !ctx.isAlly(v.ownerId));
+    if (city) return { intent: "ally", directAction: siegeJoinOption(activeSiege.objective, city, ctx, L), options: [] };
+  }
+  if (a.order === "Approaching" && a.targetId) {
+    const city = ctx.settlements.find(v => v.id === a.targetId && !v.ruined && v.ownerId !== ctx.you && !ctx.isAlly(v.ownerId));
+    if (city) return { intent: "ally", directAction: siegeJoinOption(a.objective ?? "Blockade", city, ctx, L), options: [] };
+  }
+  const activeOasisSiege = (ctx.oasisSieges ?? []).find(s => s.armyIds.includes(a.id));
+  if (activeOasisSiege) {
+    const oasis = ctx.oases.find(o => o.id === activeOasisSiege.oasisId && (o.burnedRemainingSeconds ?? 0) <= 0);
+    if (oasis) return { intent: "ally", directAction: oasisJoinOption(activeOasisSiege.mode, oasis, ctx, L), options: [] };
+  }
+  if ((a.order === "Approaching" || a.order === "Occupying") && a.targetId) {
+    const oasis = ctx.oases.find(o => o.id === a.targetId && (o.burnedRemainingSeconds ?? 0) <= 0);
+    if (oasis && oasis.ownerId !== ctx.you && !ctx.isAlly(oasis.ownerId)) {
+      return { intent: "ally", directAction: oasisJoinOption("Capture", oasis, ctx, L), options: [] };
+    }
+  }
+  const activeBattle = (ctx.battles ?? []).find(
+    b => b.status === "Active" && (b.attackerArmyIds.includes(a.id) || b.defenderArmyIds.includes(a.id))
+  );
+  if (activeBattle) {
+    const onAttacker = activeBattle.attackerArmyIds.includes(a.id);
+    if (!onAttacker) {
+      const defSite = siteTargetSelection(a.defendingSiteId ?? activeBattle.defenderId, ctx);
+      if (defSite) {
+        return {
+          intent: "ally",
+          directAction: { id: "reinforce", label: L("انضمام للمدافع الحليف", "Join allied defender"), icon: "shield", tone: "friendly", targetOverride: defSite },
+          options: []
+        };
+      }
+    }
+    const opposingIds = onAttacker ? activeBattle.defenderArmyIds : activeBattle.attackerArmyIds;
+    const enemyArmy = opposingIds
+      .map(id => ctx.armies.find(x => x.id === id))
+      .find(x => x && x.ownerId !== ctx.you && !ctx.isAlly(x.ownerId));
+    if (enemyArmy) {
+      return {
+        intent: "ally",
+        directAction: {
+          id: "attack-army",
+          label: onAttacker ? L("انضمام للمهاجم الحليف", "Join allied attacker") : L("انضمام للمدافع الحليف", "Join allied defender"),
+          icon: onAttacker ? "swords" : "shield",
+          tone: onAttacker ? "danger" : "friendly",
+          disabled: ctx.protectedEnemy,
+          targetOverride: { id: enemyArmy.id, kind: "army", name: enemyArmy.id, position: enemyArmy.position, ownerId: enemyArmy.ownerId }
+        },
+        options: []
+      };
+    }
+  }
+  if (a.order === "Attacking" && a.targetId) {
+    const enemyArmy = ctx.armies.find(x => x.id === a.targetId && x.ownerId !== ctx.you && !ctx.isAlly(x.ownerId));
+    if (enemyArmy) {
+      return {
+        intent: "ally",
+        directAction: {
+          id: "attack-army",
+          label: L("انضمام للمهاجم الحليف", "Join allied attack"),
+          icon: "swords",
+          tone: "danger",
+          disabled: ctx.protectedEnemy,
+          targetOverride: { id: enemyArmy.id, kind: "army", name: enemyArmy.id, position: enemyArmy.position, ownerId: enemyArmy.ownerId }
+        },
+        options: []
+      };
+    }
+  }
+  if (a.defendingSiteId && (a.order === "Guarding" || a.order === "Reinforcing" || a.order === "Battle")) {
+    const site = siteTargetSelection(a.defendingSiteId, ctx);
+    if (site) {
+      return {
+        intent: "ally",
+        directAction: { id: "reinforce", label: L("انضمام للمدافع الحليف", "Join allied defense"), icon: "shield", tone: "friendly", targetOverride: site },
+        options: []
+      };
+    }
+  }
+  return { intent: "none", options: [] };
+}
+
+function resolveBattleTargetBehavior(
+  battleId: string,
+  ctx: TargetRuleContext,
+  L: (ar: string, en: string) => string
+): HoverBehavior {
+  const siege = (ctx.sieges ?? []).find(s => s.id === battleId && s.status === "Active");
+  if (siege) {
+    const city = ctx.settlements.find(v => v.id === siege.villageId && !v.ruined);
+    if (city) {
+      if (siege.defenderOwner === ctx.you || ctx.isAlly(siege.defenderOwner)) {
+        return {
+          intent: "ally",
+          directAction: {
+            id: "reinforce",
+            label: L("تعزيز الدفاع", "Join defender"),
+            icon: "shield",
+            tone: "friendly",
+            targetOverride: { id: city.id, kind: "village", name: city.id, position: city.position, ownerId: city.ownerId }
+          },
+          options: []
+        };
+      }
+      if (siege.attackerOwner === ctx.you || ctx.isAlly(siege.attackerOwner)) {
+        return { intent: "ally", directAction: siegeJoinOption(siege.objective, city, ctx, L), options: [] };
+      }
+    }
+  }
+  const oasisSiege = (ctx.oasisSieges ?? []).find(s => s.id === battleId);
+  if (oasisSiege) {
+    const oasis = ctx.oases.find(o => o.id === oasisSiege.oasisId && (o.burnedRemainingSeconds ?? 0) <= 0);
+    if (oasis) {
+      if (oasisSiege.defenderOwner === ctx.you || ctx.isAlly(oasisSiege.defenderOwner)) {
+        return {
+          intent: "ally",
+          directAction: {
+            id: "reinforce",
+            label: L("تعزيز الواحة", "Join oasis defense"),
+            icon: "shield",
+            tone: "friendly",
+            targetOverride: { id: oasis.id, kind: "oasis", name: oasis.name, position: oasis.position, ownerId: oasis.ownerId }
+          },
+          options: []
+        };
+      }
+      if (oasisSiege.attackerOwners.some(id => id === ctx.you || ctx.isAlly(id))) {
+        return { intent: "ally", directAction: oasisJoinOption(oasisSiege.mode, oasis, ctx, L), options: [] };
+      }
+    }
+  }
+  const battle = (ctx.battles ?? []).find(b => b.id === battleId && b.status === "Active");
+  if (battle) {
+    const atkAllied = battle.attackerOwner === ctx.you || ctx.isAlly(battle.attackerOwner)
+      || battle.attackerArmyIds.some(id => { const x = ctx.armies.find(a => a.id === id); return !!x && (x.ownerId === ctx.you || ctx.isAlly(x.ownerId)); });
+    const defAllied = battle.defenderOwner === ctx.you || ctx.isAlly(battle.defenderOwner)
+      || battle.defenderArmyIds.some(id => { const x = ctx.armies.find(a => a.id === id); return !!x && (x.ownerId === ctx.you || ctx.isAlly(x.ownerId)); });
+    if (defAllied && !atkAllied) {
+      const defArmy = battle.defenderArmyIds.map(id => ctx.armies.find(a => a.id === id)).find(Boolean);
+      const site = siteTargetSelection(defArmy?.defendingSiteId ?? battle.defenderId, ctx);
+      if (site) {
+        return {
+          intent: "ally",
+          directAction: { id: "reinforce", label: L("انضمام للمدافع الحليف", "Join allied defender"), icon: "shield", tone: "friendly", targetOverride: site },
+          options: []
+        };
+      }
+      const enemyAtk = battle.attackerArmyIds.map(id => ctx.armies.find(a => a.id === id)).find(a => a && a.ownerId !== ctx.you && !ctx.isAlly(a.ownerId));
+      if (enemyAtk) {
+        return {
+          intent: "ally",
+          directAction: {
+            id: "attack-army",
+            label: L("انضمام للمدافع الحليف", "Join allied defender"),
+            icon: "shield",
+            tone: "friendly",
+            disabled: ctx.protectedEnemy,
+            targetOverride: { id: enemyAtk.id, kind: "army", name: enemyAtk.id, position: enemyAtk.position, ownerId: enemyAtk.ownerId }
+          },
+          options: []
+        };
+      }
+    }
+    if (atkAllied && !defAllied) {
+      const enemyDef = battle.defenderArmyIds.map(id => ctx.armies.find(a => a.id === id)).find(a => a && a.ownerId !== ctx.you && !ctx.isAlly(a.ownerId));
+      if (enemyDef) {
+        return {
+          intent: "ally",
+          directAction: {
+            id: "attack-army",
+            label: L("انضمام للمهاجم الحليف", "Join allied attacker"),
+            icon: "swords",
+            tone: "danger",
+            disabled: ctx.protectedEnemy,
+            targetOverride: { id: enemyDef.id, kind: "army", name: enemyDef.id, position: enemyDef.position, ownerId: enemyDef.ownerId }
+          },
+          options: []
+        };
+      }
+    }
+  }
+  return { intent: "none", options: [] };
 }
 
 export function resolveTargetBehavior(target: MapSelection, ctx: TargetRuleContext): HoverBehavior {
@@ -188,10 +445,12 @@ export function resolveTargetBehavior(target: MapSelection, ctx: TargetRuleConte
         options: []
       };
     }
+    const canConquer = ctx.hasGovernor || allyHasObjective(v.id, "Conquest", ctx);
+    const canRaze = ctx.hasCatapult || allyHasObjective(v.id, "Raze", ctx);
     const options: RadialOption[] = [
       { id: "raid", label: L("غارة", "Raid"), icon: "swords", tone: "danger", disabled: ctx.protectedEnemy },
-      { id: "conquest", label: L("فتح", "Conquer"), icon: "flag", tone: "danger", disabled: ctx.protectedEnemy || !ctx.hasGovernor },
-      { id: "raze", label: L("تدمير", "Raze"), icon: "tower", tone: "danger", disabled: ctx.protectedEnemy || !ctx.hasCatapult },
+      { id: "conquest", label: L("فتح", "Conquer"), icon: "flag", tone: "danger", disabled: ctx.protectedEnemy || !canConquer },
+      { id: "raze", label: L("تدمير", "Raze"), icon: "tower", tone: "danger", disabled: ctx.protectedEnemy || !canRaze },
       { id: "blockade-city", label: L("حصار", "Blockade"), icon: "blockade", tone: "warn", disabled: ctx.protectedEnemy },
       { id: "scout", label: L("كشافة", "Scout"), icon: "eye", tone: "default" }
     ];
@@ -200,7 +459,9 @@ export function resolveTargetBehavior(target: MapSelection, ctx: TargetRuleConte
 
   if (target.kind === "army") {
     const a = ctx.armies.find(x => x.id === target.id);
-    if (!a || a.ownerId === ctx.you || ctx.isAlly(a.ownerId)) return { intent: "none", options: [] };
+    if (!a) return { intent: "none", options: [] };
+    if (ctx.isAlly(a.ownerId)) return resolveAllyArmyJoinBehavior(a, ctx, L);
+    if (a.ownerId === ctx.you) return { intent: "none", options: [] };
     const attackBlocked = ctx.protectedEnemy || !canAttackArmyInBattle(a.id, ctx);
     return {
       intent: "attack",
@@ -209,6 +470,10 @@ export function resolveTargetBehavior(target: MapSelection, ctx: TargetRuleConte
         { id: "scout", label: L("كشافة", "Scout"), icon: "eye", tone: "default" }
       ]
     };
+  }
+
+  if (target.kind === "battle") {
+    return resolveBattleTargetBehavior(target.id, ctx, L);
   }
 
   if (target.kind === "convoy") {

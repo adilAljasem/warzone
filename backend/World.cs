@@ -71,6 +71,7 @@ public sealed class Army : MapEntity
     public OasisMode OasisMode { get; internal set; }
     public AttackObjective Objective { get; internal set; }
     public Resources Loot { get; internal set; }
+    public double TotalWheat => Wheat + Loot.Wheat;
     public double LootSpace => Math.Max(0, Troops.Sum(x => (double)x.Count * x.Unit.CarryCapacity) - Wheat - Loot.Total);
     public string Order { get; internal set; } = "Marching";
     public Guid? TargetId { get; internal set; }
@@ -84,6 +85,7 @@ public sealed class Army : MapEntity
     public double ActionSeconds { get; internal set; }
     public double AttackOrderedAt { get; internal set; }
     public double NextSupplyAt { get; internal set; }
+    public double NextLootCollectAt { get; internal set; }
     public int SupplyWagons { get; internal set; }
     public int Escorts { get; internal set; }
     public int WoundedCount { get; internal set; }
