@@ -79,8 +79,7 @@ app.MapPost("/api/session", async (HttpContext context) =>
     return Results.Ok(new { playerId = id });
 }).RequireRateLimiting("session");
 app.MapGet("/api/catalog", () => Results.Ok(GameCatalog.Units.Values));
-var appVersion = ResolveAppVersion();
-app.MapGet("/health", () => Results.Ok(new { status = "ok", phase = 5, version = appVersion }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok", phase = 5, version = ResolveAppVersion() }));
 app.MapGet("/assets/units/{unitId}/{variant}.svg", (string unitId, string variant) =>
     variant is "icon" or "map" && GameCatalog.Units.TryGetValue(unitId, out var unit)
         ? Results.Content(GameCatalog.UnitSprite(unit), "image/svg+xml") : Results.NotFound());

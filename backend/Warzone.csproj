@@ -7,5 +7,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Content Update="units.json" CopyToOutputDirectory="PreserveNewest" />
+    <FrontendVersionInput Include="..\frontend\src\**\*;..\frontend\index.html;..\frontend\vite.config.ts;..\.git\logs\HEAD" Condition="'$(Configuration)' == 'Debug' And Exists('..\frontend\node_modules')" />
   </ItemGroup>
+  <Target Name="SyncFrontendVersion" BeforeTargets="Build"
+          Condition="'$(Configuration)' == 'Debug' And Exists('..\frontend\node_modules') And Exists('..\.git\logs\HEAD') And '$(DesignTimeBuild)' != 'true'"
+          Inputs="@(FrontendVersionInput)" Outputs="..\frontend\dist\index.html">
+    <Exec Command="npm --prefix ..\frontend run build" />
+  </Target>
 </Project>
