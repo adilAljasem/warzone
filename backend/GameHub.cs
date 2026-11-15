@@ -22,6 +22,7 @@ public sealed class GameHub(GameServer server) : Hub
     public RoomSummary[] ListRooms() => server.ListRooms();
     public RoomSnapshot? Resume() => server.Resume(Actor);
     public bool CheckAdmin() => server.IsAdmin(Actor);
+    public void SetSnapshotCompression(bool enabled) => server.SetSnapshotCompression(Context.ConnectionId, enabled);
     public bool EnableCheat(string password) => server.EnableCheat(Actor, password);
 
     private static TribeType? ParseTribe(string tribe)
@@ -43,13 +44,7 @@ public sealed class GameHub(GameServer server) : Hub
     {
         var deliveries = server.RoomDeliveries(roomId);
         if (deliveries.Length == 0) return;
-        await Task.WhenAll(deliveries.Select(d =>
-        {
-            var targets = excludeConnectionId is null
-                ? d.Connections
-                : d.Connections.Where(c => c != excludeConnectionId).ToArray();
-            return targets.Length == 0 ? Task.CompletedTask : Clients.Clients(targets).SendAsync("Snapshot", d.Snapshot);
-        }));
+        await Task.WhenAll(deliveries.Select(d => SnapshotCodec.SendDeliveryAsync(Clients, d, excludeConnectionId)));
     }
 
     public async Task<RoomSnapshot> JoinRoom(string roomId, string playerName, string tribe)

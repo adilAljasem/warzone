@@ -1,9 +1,47 @@
 using System.Collections.Concurrent;
+using System.IO.Compression;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Warzone;
 
-public sealed record SnapshotDelivery(string[] Connections, RoomSnapshot Snapshot);
+public sealed record SnapshotDelivery(string[] Connections, RoomSnapshot Snapshot, string[]? CompressedConnections = null);
+
+internal static class SnapshotCodec
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    public static byte[] Compress(RoomSnapshot snapshot)
+    {
+        using var buffer = new MemoryStream(16 * 1024);
+        using (var gzip = new GZipStream(buffer, CompressionLevel.Fastest, leaveOpen: true))
+            JsonSerializer.Serialize(gzip, snapshot, JsonOptions);
+        return buffer.ToArray();
+    }
+
+    public static Task SendDeliveryAsync(IHubClients<IClientProxy> clients, SnapshotDelivery delivery, string? excludeConnectionId = null, CancellationToken cancellationToken = default)
+    {
+        var compressedLookup = delivery.CompressedConnections is { Length: > 0 } c ? c : null;
+        var plain = delivery.Connections.Where(id => id != excludeConnectionId && (compressedLookup is null || !compressedLookup.Contains(id))).ToArray();
+        var compressed = compressedLookup is null
+            ? []
+            : compressedLookup.Where(id => id != excludeConnectionId).ToArray();
+
+        if (plain.Length == 0 && compressed.Length == 0) return Task.CompletedTask;
+        if (compressed.Length == 0)
+            return clients.Clients(plain).SendAsync("Snapshot", delivery.Snapshot, cancellationToken);
+        var payload = Compress(delivery.Snapshot);
+        if (plain.Length == 0)
+            return clients.Clients(compressed).SendAsync("SnapshotGz", payload, cancellationToken);
+        return Task.WhenAll(
+            clients.Clients(plain).SendAsync("Snapshot", delivery.Snapshot, cancellationToken),
+            clients.Clients(compressed).SendAsync("SnapshotGz", payload, cancellationToken));
+    }
+}
 
 public sealed record ServerDebugTelemetry(
     double ClientTimestamp,
@@ -23,6 +61,8 @@ public sealed record ServerDebugTelemetry(
 public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
 {
     private const string CheatPassword = "aa123456";
+    // Keep 1 hardware thread reserved for Kestrel/SignalR Ping and player command latency during multi-core room ticks.
+    private static readonly ParallelOptions RoomParallelOptions = new() { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) };
     // Lock hierarchy (strict acyclic order): gate -> room.SyncRoot -> connectionGate; telemetryGate is independent.
     private readonly object gate = new();
     private readonly object connectionGate = new();
@@ -30,6 +70,7 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
     private readonly Dictionary<string, GameRoom> rooms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, string> memberships = [];
     private readonly Dictionary<string, Guid> connections = [];
+    private readonly HashSet<string> compressedConnections = [];
     private readonly Dictionary<string, (long Started, int Count)> rates = [];
     private readonly HashSet<Guid> admins = [];
     private readonly double[] recentTickMs = new double[40];
@@ -57,7 +98,16 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
     }
     public void Disconnect(string connectionId)
     {
-        lock (connectionGate) { connections.Remove(connectionId); rates.Remove(connectionId); }
+        lock (connectionGate) { connections.Remove(connectionId); compressedConnections.Remove(connectionId); rates.Remove(connectionId); }
+    }
+    public void SetSnapshotCompression(string connectionId, bool enabled)
+    {
+        lock (connectionGate)
+        {
+            if (!connections.ContainsKey(connectionId)) return;
+            if (enabled) compressedConnections.Add(connectionId);
+            else compressedConnections.Remove(connectionId);
+        }
     }
     public void CheckRate(string connectionId)
     {
@@ -258,7 +308,7 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
     {
         if (string.IsNullOrEmpty(roomId)) return [];
         GameRoom? room;
-        Dictionary<Guid, string[]> targets = [];
+        Dictionary<Guid, (string[] All, string[] Compressed)> targets = [];
         HashSet<Guid> onlineIds;
         lock (gate)
         {
@@ -267,13 +317,17 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             {
                 onlineIds = [.. connections.Values];
                 foreach (var group in connections.Where(x => memberships.TryGetValue(x.Value, out var id) && id == roomId).GroupBy(x => x.Value))
-                    targets[group.Key] = group.Select(c => c.Key).ToArray();
+                {
+                    var all = group.Select(c => c.Key).ToArray();
+                    var comp = all.Where(compressedConnections.Contains).ToArray();
+                    targets[group.Key] = (all, comp);
+                }
             }
         }
         if (targets.Count == 0) return [];
         lock (room.SyncRoot)
         {
-            return targets.Select(x => new SnapshotDelivery(x.Value, room.Snapshot(x.Key, onlineIds.Contains))).ToArray();
+            return targets.Select(x => new SnapshotDelivery(x.Value.All, room.Snapshot(x.Key, onlineIds.Contains), x.Value.Compressed)).ToArray();
         }
     }
     public RoomSnapshot Start(Guid actor)
@@ -441,7 +495,7 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
         }
         else
         {
-            Parallel.ForEach(activeRooms, room =>
+            Parallel.ForEach(activeRooms, RoomParallelOptions, room =>
             {
                 var finished = 0;
                 ProcessRoomTick(room, seconds, now, onlineIds, toRemove, ref finished);
@@ -471,7 +525,7 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
     }
     public SnapshotDelivery[] Deliveries()
     {
-        Dictionary<GameRoom, List<(Guid PlayerId, string[] ConnectionIds)>> byRoom = [];
+        Dictionary<GameRoom, List<(Guid PlayerId, string[] All, string[] Compressed)>> byRoom = [];
         HashSet<Guid> onlineIds;
         lock (gate)
         {
@@ -484,7 +538,9 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
                     if (!memberships.TryGetValue(group.Key, out var roomId) || !rooms.TryGetValue(roomId, out var room))
                         continue;
                     if (!byRoom.TryGetValue(room, out var list)) byRoom[room] = list = [];
-                    list.Add((group.Key, group.Select(c => c.Key).ToArray()));
+                    var all = group.Select(c => c.Key).ToArray();
+                    var comp = all.Where(compressedConnections.Contains).ToArray();
+                    list.Add((group.Key, all, comp));
                 }
             }
         }
@@ -495,18 +551,18 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             lock (room.SyncRoot)
             {
                 if (room.Status is RoomStatus.Finished or RoomStatus.Faulted) room.FinalBroadcastSent = true;
-                return viewers.Select(v => new SnapshotDelivery(v.ConnectionIds, room.Snapshot(v.PlayerId, onlineIds.Contains))).ToArray();
+                return viewers.Select(v => new SnapshotDelivery(v.All, room.Snapshot(v.PlayerId, onlineIds.Contains), v.Compressed)).ToArray();
             }
         }
         var output = new ConcurrentBag<SnapshotDelivery>();
-        Parallel.ForEach(byRoom, entry =>
+        Parallel.ForEach(byRoom, RoomParallelOptions, entry =>
         {
             var (room, viewers) = entry;
             lock (room.SyncRoot)
             {
                 if (room.Status is RoomStatus.Finished or RoomStatus.Faulted) room.FinalBroadcastSent = true;
                 foreach (var v in viewers)
-                    output.Add(new SnapshotDelivery(v.ConnectionIds, room.Snapshot(v.PlayerId, onlineIds.Contains)));
+                    output.Add(new SnapshotDelivery(v.All, room.Snapshot(v.PlayerId, onlineIds.Contains), v.Compressed));
             }
         });
         return [.. output];
@@ -583,8 +639,7 @@ public sealed class GameLoop(GameServer server, IHubContext<GameHub> hub, TimePr
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(2));
-            await Task.WhenAll(deliveries.Select(x => hub.Clients.Clients(x.Connections)
-                .SendAsync("Snapshot", x.Snapshot, timeout.Token)));
+            await Task.WhenAll(deliveries.Select(x => SnapshotCodec.SendDeliveryAsync(hub.Clients, x, cancellationToken: timeout.Token)));
         }
         catch (Exception error) when (!stoppingToken.IsCancellationRequested)
         {

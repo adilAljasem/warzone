@@ -178,10 +178,10 @@ export class DebugOverlay {
         if (this.open) this.render();
     }
 
-    recordInbound(kind: string, payload: unknown): void {
+    recordInbound(kind: string, payload: unknown, wireBytes?: number): void {
         if (!this.open && kind !== "Snapshot") return;
         const now = performance.now();
-        const bytes = this.open ? measureJsonBytes(payload) : 0;
+        const bytes = this.open ? (wireBytes ?? measureJsonBytes(payload)) : 0;
         if (bytes > 0) {
             this.rxTotalBytes += bytes;
             this.rxSamples.push({ at: now, bytes });

@@ -3143,8 +3143,20 @@ document.addEventListener("pointerup", releasePointer, true);
 document.addEventListener("pointercancel", flushDeferredSnapshot, true);
 document.addEventListener("contextmenu", flushDeferredSnapshot, true);
 window.addEventListener("blur", flushDeferredSnapshot);
-connection.on("Snapshot", (snapshot: Snapshot) => {
-    debugOverlay.recordInbound("Snapshot", snapshot);
+const supportsGzipDecompress = typeof DecompressionStream !== "undefined";
+let snapshotSeq = 0;
+let latestAppliedSnapshotSeq = 0;
+
+async function decodeSnapshotGz(base64: string): Promise<Snapshot> {
+    const bin = atob(base64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return JSON.parse(await new Response(stream).text()) as Snapshot;
+}
+
+function applyInboundSnapshot(snapshot: Snapshot, wireBytes?: number) {
+    debugOverlay.recordInbound("Snapshot", snapshot, wireBytes);
     if (snapshot.status === "Finished" || snapshot.status === "Faulted") {
         roomList = roomList.filter(r => r.id !== snapshot.id);
         syncAdminOverlay();
@@ -3153,6 +3165,19 @@ connection.on("Snapshot", (snapshot: Snapshot) => {
     if (state?.id !== snapshot.id) return;
     if (pointerPressed) { pendingSnapshot = snapshot; deferredSnapshotsCount++; return; }
     render(snapshot);
+}
+
+connection.on("Snapshot", (snapshot: Snapshot) => {
+    latestAppliedSnapshotSeq = ++snapshotSeq;
+    applyInboundSnapshot(snapshot);
+});
+connection.on("SnapshotGz", (base64: string) => {
+    const seq = ++snapshotSeq;
+    void decodeSnapshotGz(base64).then(snapshot => {
+        if (seq < latestAppliedSnapshotSeq) return;
+        latestAppliedSnapshotSeq = seq;
+        applyInboundSnapshot(snapshot, base64.length);
+    }).catch(() => { /* Next periodic snapshot recovers cleanly. */ });
 });
 connection.on("RoomsUpdated", (rooms: RoomSummary[]) => {
     debugOverlay.recordInbound("RoomsUpdated", rooms);
@@ -3175,6 +3200,7 @@ connection.onreconnected(() => {
     debugOverlay.recordReconnect();
     status();
     void perform(async () => {
+        if (supportsGzipDecompress) await connection.invoke("SetSnapshotCompression", true).catch(() => { /* Fall back to plain JSON snapshots. */ });
         const resumed = await connection.invoke<Snapshot | null>("Resume");
         if (resumed || state?.status !== "Finished") render(resumed);
     });
@@ -3187,6 +3213,7 @@ async function connect(resumeReserved = false) {
                 throw Error("Could not enter the realm.");
             await loadUnits();
             await connection.start();
+            if (supportsGzipDecompress) await connection.invoke("SetSnapshotCompression", true).catch(() => { /* Fall back to plain JSON snapshots. */ });
             adminEnabled = await connection.invoke<boolean>("CheckAdmin");
             roomList = await connection.invoke<RoomSummary[]>("ListRooms");
             const snapshot = await connection.invoke<Snapshot | null>('Resume');

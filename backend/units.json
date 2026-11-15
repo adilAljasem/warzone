@@ -1141,7 +1141,7 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 30,
+        "speed": 25,
         "carryCapacity": 5000,
         "wheatUpkeep": 1,
         "hitPoints": 25
@@ -1237,7 +1237,7 @@
         "attack": 18,
         "defenseInfantry": 38,
         "defenseCavalry": 75,
-        "speed": 16.5,
+        "speed": 14.5,
         "carryCapacity": 35,
         "wheatUpkeep": 1,
         "hitPoints": 100
@@ -1261,7 +1261,7 @@
         "attack": 75,
         "defenseInfantry": 56,
         "defenseCavalry": 30,
-        "speed": 15,
+        "speed": 14,
         "carryCapacity": 45,
         "wheatUpkeep": 1.5,
         "hitPoints": 100
