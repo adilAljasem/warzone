@@ -67,7 +67,7 @@ internal static class WarfareChecks
         Check(production.View.Muster.UpkeepPerMinute == 422 && production.View.Muster.FieldUpkeepPerMinute == 11, "Muster includes carried food upkeep without charging it to village production");
         Check(production.World.Snapshot(Guid.NewGuid()).Muster.Total == 0, "Muster never exposes another player's private formation");
         var persianOutput = new VillageEconomy(Guid.NewGuid(), TribeType.Persians, new(1500,1500));
-        Check(persianOutput.Snapshot().Production.Single(p => p.Resource == "Wood").Percent == 120, "Persian production bonus is visible in efficiency");
+        Check(persianOutput.Snapshot().Production.Single(p => p.Resource == "Wood").Percent == 100, "All tribes start with equal base resource production efficiency");
         var journal = new Realm(); _ = journal.World;
         var field = journal.A.Snapshot().Targets.First(x => x.Kind == "Building");
         journal.A.Apply(new(Guid.NewGuid(), CommandKind.Upgrade, field.Id), 0);

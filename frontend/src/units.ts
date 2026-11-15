@@ -22,7 +22,20 @@ export function compareUnitIds(aId: string, bId: string): number {
     return unitOrderIndex(aId) - unitOrderIndex(bId) || aId.localeCompare(bId);
 }
 export const unitCatalog = new Map<string, UnitDefinition>();
-export async function loadUnits() { const response = await fetch('/api/catalog'); if (!response.ok) throw Error('Unit catalog is unavailable.'); for (const unit of await response.json() as UnitDefinition[]) unitCatalog.set(unit.unitId, unit); }
+let loadingUnits: Promise<void> | undefined;
+export async function loadUnits() {
+    if (unitCatalog.size > 0) return;
+    loadingUnits ??= fetch('/api/catalog')
+        .then(async response => {
+            if (!response.ok) throw Error('Unit catalog is unavailable.');
+            for (const unit of await response.json() as UnitDefinition[]) unitCatalog.set(unit.unitId, unit);
+        })
+        .catch(err => {
+            loadingUnits = undefined;
+            throw err;
+        });
+    return loadingUnits;
+}
 export function unitPortrait(id:string,help=true){
     const unit=unitCatalog.get(id);if(!unit)return '';
     return `<span class="unit-portrait" data-unit="${id}" role="img" aria-label="${t(unit.displayName)}">${unitArtwork(id)}${help?`<span class="unit-help" role="button" tabindex="0" aria-label="${t('Unit properties')}" data-help-unit="${id}">?</span>`:''}</span>`;

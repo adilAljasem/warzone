@@ -15,7 +15,7 @@ public static class GameCatalog
         new TribeDefinition(TribeType.Greeks, "Greeks", "/assets/tribes/greeks.svg", new(WallMultiplier: 2, HealingMultiplier: 2)),
         new TribeDefinition(TribeType.Mongols, "Mongols / Nomads", "/assets/tribes/mongols.svg", new(CanRelocate: true)),
         new TribeDefinition(TribeType.Persians, "Persians / Babylonians", "/assets/tribes/persians.svg",
-            new(TrainingTimeMultiplier: .5, ResourceMultiplier: 1.2))
+            new(TrainingTimeMultiplier: .5))
     }.ToFrozenDictionary(x => x.Type);
 
     private sealed record JsonCost(long Wood, long Iron, long Stone, long Wheat);

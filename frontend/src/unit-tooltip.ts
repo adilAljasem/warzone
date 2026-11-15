@@ -6,15 +6,19 @@ const icon=(name:string)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentC
 export function initUnitTooltips(){
     const tip=document.createElement('aside');tip.id='unit-tooltip';tip.className='unit-tooltip';tip.hidden=true;tip.setAttribute('role','tooltip');document.body.append(tip);
     let trigger:HTMLElement|null=null,timer=0;
-    const hide=()=>{clearTimeout(timer);tip.hidden=true;trigger?.removeAttribute('aria-describedby');trigger=null;};
+    const hide=()=>{clearTimeout(timer);tip.hidden=true;trigger?.removeAttribute('aria-describedby');trigger=null;if(tip.parentElement!==document.body)document.body.append(tip);};
     const show=(element:HTMLElement)=>{
         const u=unitCatalog.get(element.dataset.helpUnit??'');if(!u)return;clearTimeout(timer);trigger=element;const s=u.stats;
+        const host=element.closest('dialog[open]')??document.body;
+        if(tip.parentElement!==host)host.append(tip);
         const stats:[string,number,string][]=[['Attack power',s.attack,'attack'],['Defense vs infantry',s.defenseInfantry,'shield'],['Defense vs cavalry',s.defenseCavalry,'shield'],['Hit points',s.hitPoints,'heart'],['Movement speed',s.speed,'speed'],['Carrying capacity',s.carryCapacity,'cargo'],['Wheat / minute',s.wheatUpkeep,'wheat']];
         const counters=(strong:boolean)=>Object.entries(u.matchups).filter(([,v])=>strong?v>1:v<1).map(([role,v])=>`<span>${safe(t(role))}<b dir="ltr">×${v}</b></span>`).join('');
         tip.innerHTML=`<header>${unitPortrait(u.unitId,false)}<div><strong>${safe(t(u.displayName))}</strong><small>${safe(t(u.tribeType))} · ${safe(t(u.role))}</small></div></header><div class="unit-stat-grid">${stats.map(([label,n,i])=>`<span>${icon(i)}<small>${t(label)}</small><b>${n}</b></span>`).join('')}</div><div class="unit-counters"><section class="strong"><strong>${t('Strong against')}</strong>${counters(true)||`<small>${t('Balanced role')}</small>`}</section><section class="weak"><strong>${t('Weak against')}</strong>${counters(false)||`<small>${t('No special penalty')}</small>`}</section></div><footer>${t('Multipliers apply to attack against that unit type. Mixed armies move at their slowest unit speed.')}</footer>`;
         tip.dir=currentLanguage()==='ar'?'rtl':'ltr';tip.hidden=false;element.setAttribute('aria-describedby',tip.id);
         const anchor=element.getBoundingClientRect(),r=tip.getBoundingClientRect();
-        tip.style.left=`${Math.max(8,Math.min(innerWidth-r.width-8,anchor.left-r.width-8))}px`;tip.style.top=`${Math.max(8,Math.min(innerHeight-r.height-8,anchor.top))}px`;
+        const leftPreferred=anchor.left-r.width-8;
+        const leftPos=leftPreferred>=8?leftPreferred:Math.min(innerWidth-r.width-8,anchor.right+8);
+        tip.style.left=`${Math.max(8,leftPos)}px`;tip.style.top=`${Math.max(8,Math.min(innerHeight-r.height-8,anchor.top))}px`;
     };
     document.addEventListener('pointerover',e=>{const help=(e.target as Element).closest<HTMLElement>('[data-help-unit]');if(help&&help!==trigger)show(help);if((e.target as Element).closest('#unit-tooltip'))clearTimeout(timer);});
     document.addEventListener('pointerout',e=>{if((e.target as Element).closest('[data-help-unit],#unit-tooltip'))timer=window.setTimeout(hide,160);});
@@ -23,4 +27,5 @@ export function initUnitTooltips(){
     document.addEventListener('click',e=>{const help=(e.target as Element).closest<HTMLElement>('[data-help-unit]');if(help){e.preventDefault();show(help);}else if(!(e.target as Element).closest('#unit-tooltip'))hide();});
     document.addEventListener('keydown',e=>{if(e.key==='Escape')hide();const help=(e.target as Element).closest<HTMLElement>('[data-help-unit]');if(help&&['Enter',' '].includes(e.key)){e.preventDefault();show(help);}});
     window.addEventListener('resize',hide);window.addEventListener('blur',hide);window.addEventListener('languagechange',hide);
+    document.addEventListener('close',hide,true);
 }

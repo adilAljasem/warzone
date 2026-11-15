@@ -98,8 +98,10 @@ public sealed partial class LogisticsWorld
                 ? enemy.Stack.Unit.Attack
                 : (targetMounted ? enemy.Stack.Unit.DefenseCavalry : enemy.Stack.Unit.DefenseInfantry);
             var oppMatchup = UnitBalance.Matchup(enemy.Stack.Unit, target.Stack.Unit.Definition.Role, !targetsAttacking);
-            var targetDef = enemyMounted ? target.Stack.Unit.DefenseCavalry : target.Stack.Unit.DefenseInfantry;
-            var mitigation = 100.0 / (100.0 + Math.Max(0, targetDef));
+            var rawTargetDef = enemyMounted ? target.Stack.Unit.DefenseCavalry : target.Stack.Unit.DefenseInfantry;
+            // Attackers cannot shield behind high defensive armor when marching offensively.
+            var targetDef = targetsAttacking ? Math.Min(target.Stack.Unit.Attack, rawTargetDef) : rawTargetDef;
+            var mitigation = 50.0 / (50.0 + Math.Max(0, targetDef));
             return enemy.Stack.Count * oppStat * oppMatchup * ForceModifier(enemy.Army) * mitigation;
         });
         return share * incoming * damageMultiplier * paceFactor;

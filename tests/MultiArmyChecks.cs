@@ -120,6 +120,40 @@ internal static class MultiArmyChecks
             Check(res.Winner==attCity.Village.OwnerId&&attSpearLoss>attClubLoss,"When attacking, weaker-attack Spearmen suffer more losses than stronger-attack Clubmen");
         }
         {
+            // Defensive units (Hoplites: 15 ATK / 72 DEF) attacking a 30-DEF unit suffer >= 2x losses, yet hold and win when defending against equal Swordsmen.
+            var hopCity=new VillageEconomy(Guid.NewGuid(),TribeType.Greeks,new(500,500));
+            var swCity=new VillageEconomy(Guid.NewGuid(),TribeType.Mongols,new(600,500));
+            var w1=new LogisticsWorld([hopCity,swCity]);double t1=0;
+            hopCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]),100)]);hopCity.AddResources(new(2000,2000,2000,2000));
+            swCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["mongols-swordsman"]),100)]);swCity.AddResources(new(2000,2000,2000,2000));
+            w1.Apply(hopCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,hopCity.Village.Id,Formation:new Dictionary<string,int>{{"greeks-infantry",100}},Wagons:0,X:550,Y:500,Enabled:false),t1,0);
+            w1.Apply(swCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,swCity.Village.Id,Formation:new Dictionary<string,int>{{"mongols-swordsman",100}},Wagons:0,X:580,Y:500,Enabled:false),t1,0);
+            var hArmy=w1.Snapshot(hopCity.Village.OwnerId).Armies.Single(a=>a.OwnerId==hopCity.Village.OwnerId).Id;
+            var sArmy=w1.Snapshot(swCity.Village.OwnerId).Armies.Single(a=>a.OwnerId==swCity.Village.OwnerId).Id;
+            for(var n=0;n<80;n++){t1+=.25;w1.Advance(.25,t1,0,3600);}
+            w1.Apply(hopCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,hArmy,DestinationId:sArmy),t1,0);
+            for(var n=0;n<600&&!w1.Snapshot(hopCity.Village.OwnerId).Reports.Any(r=>r.Kind=="Battle"&&r.Status!="Active");n++){t1+=.25;w1.Advance(.25,t1,0,3600);}
+            var rep1=w1.Snapshot(hopCity.Village.OwnerId).Reports.Single(r=>r.Kind=="Battle");
+            var attDead=rep1.AttackerLosses.Sum(l=>l.Dead+l.Wounded+l.Fled);
+            var defDead=rep1.DefenderLosses.Sum(l=>l.Dead+l.Wounded+l.Fled);
+            Check(rep1.Winner==swCity.Village.OwnerId&&attDead>=defDead*2,"Hoplites (15 ATK) attacking 30-DEF defenders require 2+ attackers per defender killed");
+
+            var romSwCity=new VillageEconomy(Guid.NewGuid(),TribeType.Romans,new(500,500));
+            var grkDefCity=new VillageEconomy(Guid.NewGuid(),TribeType.Greeks,new(600,500));
+            var w2=new LogisticsWorld([romSwCity,grkDefCity]);double t2=0;
+            romSwCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-swordsman"]),100)]);romSwCity.AddResources(new(2000,2000,2000,2000));
+            grkDefCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]),100)]);grkDefCity.AddResources(new(2000,2000,2000,2000));
+            w2.Apply(romSwCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,romSwCity.Village.Id,Formation:new Dictionary<string,int>{{"romans-swordsman",100}},Wagons:0,X:550,Y:500,Enabled:false),t2,0);
+            w2.Apply(grkDefCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,grkDefCity.Village.Id,Formation:new Dictionary<string,int>{{"greeks-infantry",100}},Wagons:0,X:580,Y:500,Enabled:false),t2,0);
+            var rArmy=w2.Snapshot(romSwCity.Village.OwnerId).Armies.Single(a=>a.OwnerId==romSwCity.Village.OwnerId).Id;
+            var gArmy=w2.Snapshot(grkDefCity.Village.OwnerId).Armies.Single(a=>a.OwnerId==grkDefCity.Village.OwnerId).Id;
+            for(var n=0;n<80;n++){t2+=.25;w2.Advance(.25,t2,0,3600);}
+            w2.Apply(romSwCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,rArmy,DestinationId:gArmy),t2,0);
+            for(var n=0;n<600&&!w2.Snapshot(romSwCity.Village.OwnerId).Reports.Any(r=>r.Kind=="Battle"&&r.Status!="Active");n++){t2+=.25;w2.Advance(.25,t2,0,3600);}
+            var rep2=w2.Snapshot(romSwCity.Village.OwnerId).Reports.Single(r=>r.Kind=="Battle");
+            Check(rep2.Winner==grkDefCity.Village.OwnerId,"Defending Hoplites (72 DEF) hold and defeat an equal force of attacking Roman Swordsmen (80 ATK)");
+        }
+        {
             var attCity=new VillageEconomy(Guid.NewGuid(),TribeType.Germans,new(500,500));
             var defCity=new VillageEconomy(Guid.NewGuid(),TribeType.Germans,new(600,500));
             var w=new LogisticsWorld([attCity,defCity]);double t=0;

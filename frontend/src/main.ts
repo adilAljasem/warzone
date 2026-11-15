@@ -175,7 +175,7 @@ const adminOverlay = new AdminOverlay({
     },
     onSpawnBotRooms: async (count, botsPerRoom, difficulty, speedMultiplier, shieldMinutes) => {
         roomList = await connection.invoke<RoomSummary[]>("AdminSpawnBotRooms", count, botsPerRoom, difficulty, speedMultiplier, shieldMinutes);
-        if (panel === "rooms") renderDrawer(true);
+        if (panel === "rooms") renderDrawer();
         syncAdminOverlay();
     },
     onClearBotRooms: async () => {
@@ -184,7 +184,7 @@ const adminOverlay = new AdminOverlay({
             closePanel();
             render(null);
         } else if (panel === "rooms") {
-            renderDrawer(true);
+            renderDrawer();
         }
         syncAdminOverlay();
     },
@@ -2501,7 +2501,7 @@ function renderDrawer(force = false) {
         const isAr = currentLanguage() === "ar";
         title = isAr ? "ساحات القتال والغرف" : "Realms & Lobbies";
         kicker = isAr ? "اللعب الجماعي والمشاهدة" : "MULTIPLAYER";
-        const roomCards = roomList.slice(page * 6, page * 6 + 6).map(r => {
+        const roomCards = roomList.map(r => {
             const full = r.humans + r.bots >= r.capacity;
             const canJoin = r.status === "Lobby" && !full;
             const canWatch = r.status === "Lobby" || r.status === "Running";
@@ -2546,7 +2546,6 @@ function renderDrawer(force = false) {
                 ${button(isAr ? "تحديث" : "Refresh", "refresh", "", "quiet")}
             </div>
             <div class="rooms-list">${roomCards}</div>
-            ${roomList.length > 6 ? pager(roomList.length, 6) : ""}
         </div>`;
     }
     else {
@@ -3268,7 +3267,7 @@ function applyInboundSnapshot(snapshot: Snapshot, wireBytes?: number) {
     if (snapshot.status === "Finished" || snapshot.status === "Faulted") {
         roomList = roomList.filter(r => r.id !== snapshot.id);
         syncAdminOverlay();
-        if (panel === "rooms") renderDrawer(true);
+        if (panel === "rooms") renderDrawer();
     }
     if (state?.id !== snapshot.id) return;
     if (pointerPressed) { pendingSnapshot = snapshot; deferredSnapshotsCount++; return; }
@@ -3291,14 +3290,14 @@ connection.on("RoomsUpdated", (rooms: RoomSummary[]) => {
     debugOverlay.recordInbound("RoomsUpdated", rooms);
     roomList = rooms.filter(r => r.status === "Lobby" || r.status === "Running");
     syncAdminOverlay();
-    if (panel === "rooms") renderDrawer(true);
+    if (panel === "rooms") renderDrawer();
 });
 window.setInterval(async () => {
     if ((panel === "rooms" || adminOverlay.isOpen()) && connection.state === HubConnectionState.Connected && !busy) {
         try {
             roomList = (await connection.invoke<RoomSummary[]>("ListRooms")).filter(r => r.status === "Lobby" || r.status === "Running");
             syncAdminOverlay();
-            if (panel === "rooms") renderDrawer(true);
+            if (panel === "rooms") renderDrawer();
         } catch { /* ignore background polling errors */ }
     }
 }, 3000);
