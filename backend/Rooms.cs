@@ -52,9 +52,10 @@ internal sealed class RoomPlayer(Guid id, string name, TribeType tribe, string f
     public Dictionary<Guid, (string Fingerprint, CommandResult Result)> Receipts { get; } = [];
 }
 
-// Accessed only while GameServer holds its state lock. No network calls occur inside it.
+// Each room owns its own SyncRoot lock; GameServer runs separate rooms concurrently. No network calls occur inside it.
 public sealed partial class GameRoom : IGameCommands
 {
+    internal readonly object SyncRoot = new();
     private static readonly string[] FlagPalette = ["#e11d48", "#2563eb", "#facc15", "#9333ea", "#06b6d4", "#f97316", "#f8fafc", "#18181b", "#ec4899", "#10b981", "#78350f", "#84cc16", "#1e3a8a", "#0f766e", "#f43f5e", "#d97706"];
     private readonly Dictionary<Guid, RoomPlayer> players = [];
     private readonly Dictionary<Guid, string> spectators = [];

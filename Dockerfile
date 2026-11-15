@@ -4,6 +4,8 @@ WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
+ARG APP_VERSION=v1.0.0-local
+ENV VITE_APP_VERSION=$APP_VERSION
 RUN npm run build
 
 # Stage 2: Publish the ASP.NET Core 10.0 server
@@ -24,8 +26,10 @@ WORKDIR /app/backend
 COPY --from=backend-build /app/backend ./
 COPY --from=frontend-build /src/frontend/dist /app/frontend/dist
 
+ARG APP_VERSION=v1.0.0-local
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV ASPNETCORE_URLS=http://+:8080
+ENV APP_VERSION=$APP_VERSION
 
 EXPOSE 8080
 

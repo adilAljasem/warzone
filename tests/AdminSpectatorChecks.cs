@@ -118,6 +118,49 @@ static class AdminSpectatorChecks
         Check(server.Resume(admin) is null, "Finished match is completely deleted from server and memberships after final delivery.");
         count += 4;
 
+        // 6. Multi-core parallel Tick + concurrent Execute / Deliveries / ListRooms / GetTelemetry safety
+        server.AdminSpawnBotRooms(admin, 24, 8, BotDifficulty.Normal, 10, 0);
+        var p1 = Guid.NewGuid();
+        var p2 = Guid.NewGuid();
+        server.Connect("c-p1", p1);
+        server.Connect("c-p2", p2);
+        var humanRoom1 = server.Create(p1, "P1", TribeType.Romans, "ParallelA", new(8, 60, 5, 1, 7, BotDifficulty.Normal, 45));
+        var humanRoom2 = server.Create(p2, "P2", TribeType.Germans, "ParallelB", new(8, 60, 5, 1, 7, BotDifficulty.Normal, 45));
+        server.Ready(p1, true); server.Start(p1);
+        server.Ready(p2, true); server.Start(p2);
+        var mainHall1 = server.Resume(p1)!.Economy!.Targets.First(t => t.Kind == "Building").Id;
+        var mainHall2 = server.Resume(p2)!.Economy!.Targets.First(t => t.Kind == "Building").Id;
+
+        using var cts = new CancellationTokenSource();
+        var simTask = Task.Run(() =>
+        {
+            for (var i = 0; i < 16; i++)
+            {
+                server.Tick(0.25);
+                var batch = server.Deliveries();
+                Check(batch.Any(d => d.Snapshot.Id == humanRoom1.Id) && batch.Any(d => d.Snapshot.Id == humanRoom2.Id), "Deliveries returns both connected players' rooms.");
+            }
+        });
+        var readerTask = Task.Run(() =>
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                _ = server.ListRooms();
+                _ = server.GetTelemetry(0);
+                _ = server.Execute(p1, new(Guid.NewGuid(), CommandKind.Upgrade, mainHall1));
+                _ = server.Execute(p2, new(Guid.NewGuid(), CommandKind.Upgrade, mainHall2));
+            }
+        });
+        simTask.GetAwaiter().GetResult();
+        cts.Cancel();
+        readerTask.GetAwaiter().GetResult();
+
+        var telemetry = server.GetTelemetry(0);
+        Check(telemetry.ActiveRooms >= 26 && telemetry.RunningRooms == telemetry.ActiveRooms, "All active rooms keep Running cleanly under parallel Tick + concurrent Execute.");
+        Check(server.Resume(p1)!.ElapsedSeconds >= 3.99 && server.Resume(p2)!.ElapsedSeconds >= 3.99, "Both human rooms advanced 4.0s cleanly during parallel simulation.");
+        server.AdminClearBotRooms(admin);
+        count += 3;
+
         return count;
     }
 }

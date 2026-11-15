@@ -244,6 +244,18 @@ const debugOverlay = new DebugOverlay({
     sendPing: (ts: number) => connection.invoke<ServerDebugTelemetry>("Ping", ts)
 }, syncDebugButton);
 syncDebugButton(debugOverlay.isOpen());
+{
+    const versionBadge = el("app-version");
+    const clientVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "v1.0.0-local";
+    versionBadge.textContent = clientVersion;
+    void fetch("/health", { cache: "no-store" })
+        .then(r => (r.ok ? r.json() as Promise<{ version?: string }> : null))
+        .then(data => {
+            if (data?.version && data.version !== clientVersion)
+                versionBadge.textContent = `${clientVersion} · srv:${data.version}`;
+        })
+        .catch(() => { /* Keep compiled version badge offline. */ });
+}
 initUnitTooltips();
 const alertInbox = new AlertInbox();
 const liveEvents = new LiveEventBar();
