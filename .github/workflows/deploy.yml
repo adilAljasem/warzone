@@ -48,26 +48,38 @@ jobs:
       # 2. SSH in, pull the latest image, and redeploy the stack
       - name: Deploy to Docker Swarm
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 2222
+          envs: GHCR_USER,GHCR_TOKEN
           script: |
-            # Navigate to where the stack file was copied
+            set -e
             cd /home/adil/
 
             # Ensure external overlay network exists before deploying
             docker network inspect traefik_public >/dev/null 2>&1 || docker network create --driver=overlay --attachable traefik_public
 
-            # Explicitly pull the latest image so Swarm gets the newest digest
-            docker pull ghcr.io/adilaljasem/warzone:latest
+            # Use a temporary DOCKER_CONFIG so existing server registry logins are untouched
+            DOCKER_CFG=$(mktemp -d)
+            trap 'rm -rf "$DOCKER_CFG"' EXIT
+            echo "$GHCR_TOKEN" | DOCKER_CONFIG="$DOCKER_CFG" docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            # Explicitly pull the latest image onto linux1 so Swarm has the newest digest
+            DOCKER_CONFIG="$DOCKER_CFG" docker pull ghcr.io/adilaljasem/warzone:latest
 
             # Deploy the stack with retry in case Swarm Raft state between managers is mid-sync ("update out of sequence")
+            deployed=0
             for i in 1 2 3; do
-              if docker stack deploy -c warzone-stack.yml warzone_stack --with-registry-auth; then
+              if DOCKER_CONFIG="$DOCKER_CFG" docker stack deploy -c warzone-stack.yml warzone_stack --with-registry-auth; then
+                deployed=1
                 break
               fi
               echo "Swarm update out of sequence, retrying in 5s (attempt $i/3)..."
               sleep 5
             done
+            [ "$deployed" -eq 1 ]
