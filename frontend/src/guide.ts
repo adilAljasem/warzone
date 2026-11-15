@@ -214,7 +214,7 @@ export class GameGuide {
             { key: 'SiegeWorkshop', name: { ar: 'ورشة الحصار', en: 'Siege Workshop' }, tag: { ar: 'الحصار والحاكم', en: 'Siege & Governor' }, desc: { ar: 'تصنيع الكباش والمقاليع وأبراج الحصار وتدريب الحاكم لاحتلال القرى.', en: 'Builds rams, catapults, siege towers, and Governors for city conquest.' } },
             { key: 'Smithy', name: { ar: 'الحداد', en: 'Smithy' }, tag: { ar: '+5% قوة قتالية/مستوى', en: '+5% Combat Power/lvl' }, desc: { ar: 'كل مستوى فوق 1 يرفع قوة هجوم ودفاع جميع جيوش هذه القرية بنسبة 5%.', en: 'Each level above 1 boosts combat power of armies from this village by 5%.' } },
             { key: 'Hospital', name: { ar: 'المستشفى', en: 'Hospital' }, tag: { ar: 'علاج 60% من الخسائر', en: 'Heals Wounded' }, desc: { ar: '60% من الجنود المصابين يعودون للمستشفى ويُشفون تلقائياً (ضعف السرعة للإغريق).', en: '60% of casualties become wounded and recover here over time (2x for Greeks).' } },
-            { key: 'Wall', name: { ar: 'السور', en: 'Wall' }, tag: { ar: '+8% حماية/مستوى (16% إغريق)', en: '+8% Def/lvl (16% Greeks)' }, desc: { ar: 'يحمي الحامية داخل القرية أثناء الحصار ويضاعف خسائر المهاجمين.', en: 'Reduces garrison casualties and multiplies attacker losses during sieges.' } },
+            { key: 'Wall', name: { ar: 'السور', en: 'Wall' }, tag: { ar: '+4% حماية/مستوى (8% إغريق)', en: '+4% Def/lvl (8% Greeks)' }, desc: { ar: 'يخفف خسائر الحامية داخل القرية أثناء الحصار ويزيد ضررها بشكل متوازن على المهاجمين.', en: 'Reduces garrison casualties during sieges and gives defenders a moderate wall-top counter bonus.' } },
             { key: 'Market', name: { ar: 'السوق', en: 'Market' }, tag: { ar: 'التجارة والإمداد', en: 'Trade & Supply' }, desc: { ar: 'مبادلة الموارد مع اللاعبين أو إرسال قوافل إمداد بين قراك.', en: 'Trade resources with other players or dispatch resource deliveries.' } }
         ];
 
@@ -252,7 +252,7 @@ export class GameGuide {
         const tribePerks: { name: Copy; badge: Copy; desc: Copy }[] = [
             { name: { ar: 'الرومان (Romans)', en: 'Romans' }, badge: { ar: '+1 بناء تلقائي', en: '+1 Auto Slot' }, desc: { ar: 'خانة تطوير تلقائي إضافية لتسريع نمو القرية بشكل مريح.', en: 'Extra automatic build slot to keep village upgrades flowing.' } },
             { name: { ar: 'الألمان (Germans)', en: 'Germans' }, badge: { ar: '-20% تكلفة · +20% نهب', en: '-20% Cost · +20% Loot' }, desc: { ar: 'تدريب أسرع 30%، تكلفة أقل 20%، وغنائم أكبر عند الإغارة.', en: '30% faster training, 20% cheaper troops, and +20% raid loot.' } },
-            { name: { ar: 'الإغريق (Greeks)', en: 'Greeks' }, badge: { ar: 'سور 2x · علاج 2x', en: '2x Wall · 2x Healing' }, desc: { ar: 'دفاع سور القرية مضاعف (16% للمستوى) وشفاء المستشفى أسرع مرتين.', en: 'Double wall defense bonus (+16%/level) and 2x faster hospital healing.' } },
+            { name: { ar: 'الإغريق (Greeks)', en: 'Greeks' }, badge: { ar: 'سور 2x · علاج 2x', en: '2x Wall · 2x Healing' }, desc: { ar: 'دفاع سور القرية مضاعف (+8% للمستوى) وشفاء المستشفى أسرع مرتين.', en: 'Double wall defense bonus (+8%/level) and 2x faster hospital healing.' } },
             { name: { ar: 'المغول (Mongols)', en: 'Mongols' }, badge: { ar: 'نقل القرية', en: 'Relocate Village' }, desc: { ar: 'قدرة فريدة على نقل القرية لموقع استراتيجي جديد على الخريطة.', en: 'Can relocate settlements to new strategic positions on the map.' } },
             { name: { ar: 'الفرس (Persians)', en: 'Persians' }, badge: { ar: '+20% موارد · تدريب أسرع 50%', en: '+20% Resources · 2x Train Speed' }, desc: { ar: 'اقتصاد قوي جداً مع سرعة تدريب مضاعفة لبناء الجيوش.', en: '+20% resource production and 50% faster unit training time.' } }
         ];
@@ -349,7 +349,7 @@ export class GameGuide {
                 </article>
                 <article class="guide-step-card">
                     <div class="guide-step-head"><span class="guide-step-badge">2</span><strong>${pick({ ar: 'السور والحداد', en: 'Wall & Smithy' })}</strong></div>
-                    <p>${pick({ ar: 'الحداد يرفع قوة جيشك +5% لكل مستوى. سور القرية يعطي +8% حماية للمستوى (16% للإغريق) ويُضعف المهاجم بشدة أثناء الحصار.', en: 'Smithy adds +5% army combat power per level. Village Wall gives +8% protection/lvl (16% for Greeks) during sieges.' })}</p>
+                    <p>${pick({ ar: 'الحداد يرفع قوة جيشك +5% لكل مستوى. سور القرية يعطي +4% حماية للمستوى (8% للإغريق) ويعزز صمود الحامية أثناء الحصار.', en: 'Smithy adds +5% army combat power per level. Village Wall gives +4% protection/lvl (8% for Greeks) to bolster garrison defense during sieges.' })}</p>
                 </article>
                 <article class="guide-step-card">
                     <div class="guide-step-head"><span class="guide-step-badge">3</span><strong>${pick({ ar: 'أوضاع الهجوم على القرية', en: 'City Attack Modes' })}</strong></div>

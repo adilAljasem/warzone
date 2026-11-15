@@ -398,6 +398,32 @@ function chosenDraft(id: string): Record<string, number> {
     return Object.keys(chosen).length > 0 ? chosen : {};
 }
 
+let disbandConfirmKey = "";
+let disbandConfirmTimer: number | undefined;
+function resetDisbandConfirm() {
+    if (disbandConfirmTimer !== undefined) { window.clearTimeout(disbandConfirmTimer); disbandConfirmTimer = undefined; }
+    disbandConfirmKey = "";
+}
+function currentDisbandKey(id: string, chosen: Record<string, number>) {
+    return `${id}:${Object.keys(chosen).sort().map(k => `${k}=${chosen[k]}`).join(",")}`;
+}
+function disbandUpkeepSaved(chosen: Record<string, number>): number {
+    const total = Object.entries(chosen).reduce((s, [u, n]) => s + n * (unitCatalog.get(u)?.stats.wheatUpkeep ?? 0), 0);
+    return Math.round(total * 10) / 10;
+}
+function disbandButtonLabel(chosen: Record<string, number>, isAr: boolean, confirming: boolean): string {
+    const count = Object.values(chosen).reduce((s, n) => s + n, 0);
+    if (confirming) return isAr ? `تأكيد تسريح ${count.toLocaleString()} وحدة؟ (اضغط للتأكيد)` : `Confirm disband ${count.toLocaleString()}? (Click again)`;
+    const saved = disbandUpkeepSaved(chosen);
+    if (count > 0 && saved > 0) return isAr ? `تسريح المحدد (${count.toLocaleString()} · −${saved.toLocaleString()} قمح/د)` : `Disband (${count.toLocaleString()} · −${saved.toLocaleString()} wheat/m)`;
+    return isAr ? `تسريح المحدد (${count.toLocaleString()})` : `Disband selected (${count.toLocaleString()})`;
+}
+function isVillageUnderSiege(villageId: string): boolean {
+    if (state?.economy?.villageId === villageId && state.economy.besieged) return true;
+    return (state?.world?.warfare?.settlements.some(s => s.id === villageId && s.besieged) ?? false)
+        || (state?.world?.warfare?.sieges.some(s => s.status === "Active" && s.villageId === villageId) ?? false);
+}
+
 function effectiveOrderFormation(id: string): Record<string, number> {
     const info = armyTroopMap(id);
     if (!info) return {};
@@ -1503,12 +1529,24 @@ function renderArmiesStrip() {
 }
 
 function refreshInspectorFooter(info: ControlledArmyInfo) {
-    const createBtn = el("drawer").querySelector<HTMLButtonElement>('[data-action="inspector-create-army"]');
-    if (!createBtn) return;
     syncArmyDraft(info);
-    const chosenSum = Object.values(armyDrafts[info.id] ?? {}).reduce((s, n) => s + n, 0);
+    const chosen = Object.fromEntries(Object.entries(armyDrafts[info.id] ?? {}).filter(([, n]) => n > 0));
+    const chosenSum = Object.values(chosen).reduce((s, n) => s + n, 0);
     const blockedField = !info.isHome && ["Battle", "Sieging", "Returning"].includes(info.order);
-    createBtn.disabled = !running() || chosenSum <= 0 || (!info.isHome && (chosenSum >= info.total || blockedField));
+    const createBtn = el("drawer").querySelector<HTMLButtonElement>('[data-action="inspector-create-army"]');
+    if (createBtn) {
+        createBtn.disabled = !running() || chosenSum <= 0 || (!info.isHome && (chosenSum >= info.total || blockedField));
+    }
+    const disbandBtn = el("drawer").querySelector<HTMLButtonElement>('[data-action="inspector-disband"]');
+    if (disbandBtn) {
+        const isAr = currentLanguage() === "ar";
+        const key = currentDisbandKey(info.id, chosen);
+        const confirming = chosenSum > 0 && disbandConfirmKey === key;
+        const blockedHome = info.isHome && isVillageUnderSiege(info.villageId);
+        disbandBtn.disabled = !running() || chosenSum <= 0 || blockedField || blockedHome;
+        disbandBtn.classList.toggle("disband-confirm", confirming);
+        disbandBtn.textContent = disbandButtonLabel(chosen, isAr, confirming);
+    }
 }
 
 function renderUnitSplitRows(info: ControlledArmyInfo, isAr: boolean): string {
@@ -1531,7 +1569,7 @@ function renderUnitSplitRows(info: ControlledArmyInfo, isAr: boolean): string {
             </div>
         </div>`;
     }).join("");
-    return `<section class="army-units-editor"><div class="army-units-editor-head"><strong>${isAr ? "وحدات الجيش والتقسيم" : "Units & New Army Split"}</strong><small>${info.total.toLocaleString()} ${isAr ? "وحدة" : "units"}</small></div>${rows}</section>`;
+    return `<section class="army-units-editor"><div class="army-units-editor-head"><strong>${isAr ? "وحدات الجيش والتقسيم" : "Units & Army Split"}</strong><span class="army-head-actions"><button type="button" class="mini-pill" data-action="inspector-clear" data-id="${info.id}">${isAr ? "تصفير" : "Clear"}</button><button type="button" class="mini-pill" data-action="inspector-all" data-id="${info.id}">${isAr ? "الكل" : "All"}</button><small>${info.total.toLocaleString()} ${isAr ? "وحدة" : "units"}</small></span></div>${rows}</section>`;
 }
 
 function renderCasualtiesGrid(wounded: number, dead: number, fled: number, isAr: boolean): string {
@@ -1584,6 +1622,47 @@ async function splitOrCreateArmy(id: string) {
         x: info.position.x, y: info.position.y, formation: chosen
     });
     if (ok) selectArmies([info.id], "replace", false);
+}
+
+async function disbandSelectedTroops(id: string) {
+    const info = armyTroopMap(id);
+    if (!info) return;
+    const chosen = chosenDraft(id);
+    const chosenSum = Object.values(chosen).reduce((s, n) => s + n, 0);
+    const isAr = currentLanguage() === "ar";
+    if (chosenSum <= 0) {
+        resetDisbandConfirm();
+        notice(isAr ? "اختر وحدة واحدة على الأقل للتسريح." : "Choose at least one unit to disband.", true);
+        return;
+    }
+    const key = currentDisbandKey(info.id, chosen);
+    if (disbandConfirmKey !== key) {
+        resetDisbandConfirm();
+        disbandConfirmKey = key;
+        refreshInspectorFooter(info);
+        disbandConfirmTimer = window.setTimeout(() => {
+            disbandConfirmKey = "";
+            disbandConfirmTimer = undefined;
+            const live = armyTroopMap(info.id);
+            if (live) refreshInspectorFooter(live);
+        }, 4500);
+        return;
+    }
+    resetDisbandConfirm();
+    const targetId = info.isHome ? info.villageId : info.id;
+    const saved = disbandUpkeepSaved(chosen);
+    const ok = await command("DisbandTroops", targetId, { formation: chosen });
+    if (!ok) return;
+    delete armyDrafts[info.id];
+    for (const k of [...editedDrafts]) if (k.startsWith(`${info.id}|`)) editedDrafts.delete(k);
+    if (!info.isHome && chosenSum >= info.total) {
+        selectedArmies = selectedArmies.filter(x => x !== info.id);
+        syncMapSelections();
+        if (selectedArmies.length === 0 && panel === "army") closePanel();
+    }
+    notice(isAr
+        ? `تم تسريح ${chosenSum.toLocaleString()} وحدة${saved > 0 ? ` وتخفيض الاستهلاك بمقدار ${saved.toLocaleString()} قمح/د` : ""}.`
+        : `Disbanded ${chosenSum.toLocaleString()} units${saved > 0 ? ` (saved ${saved.toLocaleString()} wheat/min)` : ""}.`);
 }
 
 async function executeRtsOrder(actionId: RadialActionId, target: MapSelection) {
@@ -1984,11 +2063,14 @@ function armyPanel() {
         const info = armyTroopMap(panelId);
         if (!info) return `<p class="empty">${isAr ? "لم تعد هناك وحدات متمركزة في هذه القرية." : "No troops remain in this village garrison."}</p>`;
         const sameEco = state?.economy?.villageId === info.villageId ? state.economy : null;
-        const chosenSum = Object.values(chosenDraft(info.id)).reduce((s, n) => s + n, 0);
+        const chosen = chosenDraft(info.id);
+        const chosenSum = Object.values(chosen).reduce((s, n) => s + n, 0);
         const villageHospital = sameEco?.wounded ?? 0;
         const recentVillageReports = (state?.world?.reports ?? []).filter(r => r.villageId === info.villageId && r.defender === state?.you);
         const vDead = recentVillageReports.reduce((s, r) => s + r.garrisonUnits.reduce((k, u) => k + u.dead, 0), 0);
         const vFled = recentVillageReports.reduce((s, r) => s + r.garrisonUnits.reduce((k, u) => k + u.fled, 0), 0);
+        const confirmingDisband = chosenSum > 0 && disbandConfirmKey === currentDisbandKey(info.id, chosen);
+        const blockedHome = isVillageUnderSiege(info.villageId);
 
         return `<div class="stat-line"><span>${isAr ? "حامية متمركزة" : "Home garrison"}</span><b>${info.total.toLocaleString()} ${isAr ? "وحدة" : "units"} · ${Math.round(info.position.x)}:${Math.round(info.position.y)}</b></div>
             <div><div class="stat-line"><span>${isAr ? "المؤونة المحمولة" : "Carried provisions"}</span><b>0</b></div>
@@ -1996,8 +2078,8 @@ function armyPanel() {
             ${renderLootRow({ wood: 0, iron: 0, stone: 0, wheat: 0 }, isAr ? "الموارد المحمولة" : "Carried resources")}
             ${renderCasualtiesGrid(villageHospital, vDead, vFled, isAr)}
             ${renderUnitSplitRows(info, isAr)}
-            <div class="army-inspector-hint">${isAr ? "حدد عدد الوحدات ثم اضغط «إنشاء جيش جديد» أو انقر كليك يمين على الهدف/الخريطة." : "Adjust units then click Create new army, or right-click a target on the map."}</div>
-            <div class="panel-footer">${button(isAr ? "إنشاء جيش جديد" : "Create new army", "inspector-create-army", info.id, "primary wide", !running() || chosenSum <= 0)}</div>`;
+            <div class="army-inspector-hint">${isAr ? "حدد عدد الوحدات ثم اضغط «إنشاء جيش جديد» أو «تسريح المحدد» لتقليل استهلاك القمح." : "Adjust counts to create a new army, or disband surplus units to reduce wheat upkeep."}</div>
+            <div class="panel-footer">${button(isAr ? "إنشاء جيش جديد" : "Create new army", "inspector-create-army", info.id, "primary wide", !running() || chosenSum <= 0)}${button(disbandButtonLabel(chosen, isAr, confirmingDisband), "inspector-disband", info.id, `danger wide${confirmingDisband ? " disband-confirm" : ""}`, !running() || chosenSum <= 0 || blockedHome)}</div>`;
     }
 
     const a = state!.world?.armies.find(a => a.id === panelId);
@@ -2032,9 +2114,11 @@ function armyPanel() {
     if (panelTab === "cargo") return `${cargoView(a.loot ?? { wood: 0, iron: 0, stone: 0, wheat: 0 }, "MATERIALS & LOOT ON BOARD")}<div class="stat-line"><span>Carried wheat / food capacity</span><b>${Math.floor(a.wheat ?? 0)} / ${Math.floor(a.capacity)}</b></div><p class="muted">Wheat is consumed during travel and combat. Remaining food and loot are credited when this army returns home.</p><div class="panel-footer">${button("Open battle reports", "show-reports", "", "primary wide")}</div>`;
 
     const info = armyTroopMap(a.id);
-    const chosenSum = info ? Object.values(chosenDraft(info.id)).reduce((s, n) => s + n, 0) : 0;
+    const chosen = info ? chosenDraft(info.id) : {};
+    const chosenSum = Object.values(chosen).reduce((s, n) => s + n, 0);
     const blockedField = inCombat || a.order === "Returning";
     const canSplit = !!info && running() && chosenSum > 0 && chosenSum < info.total && !blockedField;
+    const confirmingDisband = !!info && chosenSum > 0 && disbandConfirmKey === currentDisbandKey(info.id, chosen);
 
     const totalUnits = a.soldiers + a.wagons;
     return `${armyCountBanner(totalUnits, isAr, `${esc(t(a.order))} · ${a.soldiers.toLocaleString()} ${isAr ? "جندي" : "troops"} · ${a.wagons.toLocaleString()} ${isAr ? "عربة" : "wagons"}`)}
@@ -2045,8 +2129,8 @@ function armyPanel() {
         ${siege ? `<div class="battle-line"><strong>${siege.phase === "Persuading" ? "Establishing control" : "Siege in progress"}</strong><p>Gate ${Math.round(siege.gate)}% · Wall ${Math.round(siege.wall)}%<br/>Loyalty ${Math.round(siege.loyalty)}%</p></div>` : ""}
         ${info ? renderUnitSplitRows(info, isAr) : formationPortraits(a.formation, "Your army", "friendly")}
         ${afterSelect()}
-        <div class="army-inspector-hint">${isAr ? "قلّل الأعداد عن الإجمالي لفصل جيش جديد، أو كليك يمين على الهدف/الخريطة لأوامر هذا الجيش." : "Reduce counts below total to split a new army, or right-click a target on the map."}</div>
-        <div class="panel-footer">${button(isAr ? "إنشاء جيش جديد" : "Create new army", "inspector-create-army", a.id, "primary wide", !canSplit)}${button(isAr ? "العودة للقرية" : "Return to village", "recall", a.id, "quiet wide", !running() || inCombat || a.order === "Returning")}</div>`;
+        <div class="army-inspector-hint">${isAr ? "قلّل الأعداد عن الإجمالي لفصل جيش جديد، أو اختر عدداً واضغط «تسريح المحدد»، أو كليك يمين للأوامر." : "Reduce counts below total to split a new army, select counts to disband, or right-click to command."}</div>
+        <div class="panel-footer">${button(isAr ? "إنشاء جيش جديد" : "Create new army", "inspector-create-army", a.id, "primary wide", !canSplit)}${button(disbandButtonLabel(chosen, isAr, confirmingDisband), "inspector-disband", a.id, `danger wide${confirmingDisband ? " disband-confirm" : ""}`, !info || !running() || chosenSum <= 0 || blockedField)}${button(isAr ? "العودة للقرية" : "Return to village", "recall", a.id, "quiet wide", !running() || inCombat || a.order === "Returning")}</div>`;
 }
 function isArmyScouted(a: ArmyView): boolean {
     return Boolean(a.formation && Object.values(a.formation).some(n => n > 0) && (a.scoutedUntil == null || a.scoutedUntil > now()));
@@ -2576,6 +2660,7 @@ document.addEventListener("input", event => {
         const val = Math.min(Number(input.max), Math.max(0, Math.floor(Number(input.value) || 0)));
         (armyDrafts[armId] ??= {})[unitId] = val;
         editedDrafts.add(`${armId}|${unitId}`);
+        resetDisbandConfirm();
         const quickBtn = input.parentElement?.querySelector<HTMLButtonElement>('[data-action="inspector-quick"]');
         if (quickBtn) { delete quickBtn.dataset.quickStage; quickBtn.textContent = "½"; }
         const info = armyTroopMap(armId);
@@ -2711,14 +2796,37 @@ document.addEventListener("click", event => {
         b.textContent = isSecondClick ? "½" : (currentLanguage() === "ar" ? "الكل" : "All");
         (armyDrafts[armId] ??= {})[id] = next;
         editedDrafts.add(`${armId}|${id}`);
+        resetDisbandConfirm();
         const input = b.parentElement?.querySelector<HTMLInputElement>(`input[data-inspector-unit="${id}"][data-army-id="${armId}"]`);
         if (input) input.value = String(next);
         const info = armyTroopMap(armId);
         if (info) refreshInspectorFooter(info);
         return;
     }
+    if (action === "inspector-clear" || action === "inspector-all") {
+        const info = armyTroopMap(id);
+        if (!info) return;
+        const draft = (armyDrafts[info.id] ??= {});
+        for (const [u, max] of Object.entries(info.troops)) {
+            if (max <= 0) continue;
+            const next = action === "inspector-all" ? max : 0;
+            draft[u] = next;
+            editedDrafts.add(`${info.id}|${u}`);
+            const input = el("drawer").querySelector<HTMLInputElement>(`input[data-inspector-unit="${u}"][data-army-id="${info.id}"]`);
+            if (input) input.value = String(next);
+            const quickBtn = input?.parentElement?.querySelector<HTMLButtonElement>('[data-action="inspector-quick"]');
+            if (quickBtn) { delete quickBtn.dataset.quickStage; quickBtn.textContent = "½"; }
+        }
+        resetDisbandConfirm();
+        refreshInspectorFooter(info);
+        return;
+    }
     if (action === "inspector-create-army") {
         void perform(() => splitOrCreateArmy(id));
+        return;
+    }
+    if (action === "inspector-disband") {
+        void perform(() => disbandSelectedTroops(id));
         return;
     }
     if (action === "formation-quick") {

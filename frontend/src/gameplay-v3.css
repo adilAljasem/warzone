@@ -27,10 +27,10 @@
 .drawer[data-panel=report] button.report-unit,.scouted-forces .report-unit{display:flex;flex-direction:column;align-items:center;gap:5px}
 .scouted-forces .report-force{flex-direction:column;align-items:stretch;gap:8px}
 .scouted-forces .report-force>strong{flex:none;width:auto;max-width:none;font-size:11px;color:var(--muted)}
-.report-unit .unit-counts{display:inline-flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap;font:700 12.5px/1.25 "Cairo","DM Sans",system-ui;direction:ltr;letter-spacing:0}
-.unit-counts i{font-style:normal;color:#9eb295;font-weight:700}.unit-counts b{font-weight:800}
+.report-unit .unit-counts{display:inline-flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap;font:800 16px/1.15 "Cairo","DM Sans",system-ui;direction:ltr;letter-spacing:0;padding:2px 7px;border-radius:6px;background:rgba(10,18,15,.55);border:1px solid rgba(255,255,255,.08);text-shadow:0 1px 2px rgba(0,0,0,.85)}
+.unit-counts i{font-style:normal;color:#9eb295;font-weight:700;opacity:.75}.unit-counts b{font-weight:800}
 @media(max-height:850px){.panel-hero>.building-art,.panel-hero>.scenery-art{width:120px;height:120px}.drawer button.choice-tile{min-height:30px;font-size:10px;padding:5px}.choice-field legend{font-size:9px;margin-bottom:4px}.dispatch-directives .choice-tile{min-height:30px}.drawer[data-panel=dispatch] #drawer-body{gap:5px}}
-@media(max-width:700px){.welcome-card{padding:22px}.choice-tile,.drawer button.choice-tile{font-size:10.5px;min-height:32px;padding:5px;gap:3px}.choice-field legend{font-size:10px}.language-control .choice-tile{min-height:16px;min-width:22px;padding:1px 3px;font-size:8px}.language-control{top:4px;left:9px}.report-unit .unit-counts{font-size:10.5px;gap:3px}.choice-field{margin:3px 0}.unit-tooltip{width:270px;padding:12px}.unit-stat-grid b{font-size:14px}}
+@media(max-width:700px){.welcome-card{padding:22px}.choice-tile,.drawer button.choice-tile{font-size:10.5px;min-height:32px;padding:5px;gap:3px}.choice-field legend{font-size:10px}.language-control .choice-tile{min-height:16px;min-width:22px;padding:1px 3px;font-size:8px}.language-control{top:4px;left:9px}.report-unit .unit-counts{font-size:13px;gap:3px;padding:1px 5px}.choice-field{margin:3px 0}.unit-tooltip{width:270px;padding:12px}.unit-stat-grid b{font-size:14px}}
 @media(prefers-reduced-motion:reduce){.building-art,.scenery-art{transition:none}}
 
 body:has(#welcome:not([hidden])) .hud{z-index:70}

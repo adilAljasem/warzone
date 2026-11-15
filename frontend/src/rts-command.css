@@ -108,8 +108,25 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   font-size: 12px;
   color: #e6d5a7;
+}
+.army-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.army-head-actions .mini-pill {
+  padding: 2px 7px;
+  font-size: 10px;
+  border-radius: 5px;
+}
+button.disband-confirm {
+  background: linear-gradient(135deg, #9c2b23, #6d1b16) !important;
+  border-color: #ff8a7a !important;
+  color: #fff2ec !important;
+  font-weight: 700;
 }
 .army-inspector-unit {
   display: grid;

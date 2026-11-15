@@ -107,7 +107,7 @@ button.action-capture{background:linear-gradient(135deg,#623e354d,#4e37302b);bor
 .unit-counters{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;border-top:1px solid #ffffff20;padding-top:9px}
 .unit-counters section{display:grid;gap:5px;align-content:start}.unit-counters strong{font-size:11px}.unit-counters span{display:flex;justify-content:space-between;font-size:10px;gap:7px}.unit-counters .strong{color:#b8d79e}.unit-counters .weak{color:#efae91}
 .unit-tabs .unit-portrait{width:36px;height:36px;flex-shrink:0}.train-portrait>.unit-portrait{width:84px;height:84px;flex-shrink:0}.unit-tabs{overflow:visible;flex-wrap:wrap;max-height:none}
-.report-army{border-top:1px solid var(--line);padding-top:7px}.report-army>header{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#e8c783}.report-army>header small{font-size:9px}
+.report-army{padding-top:6px}.report-army:first-child{padding-top:0}.report-army>header{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#e8c783}.report-army>header small{font-size:9px}
 @media(max-width:700px){#drawer{top:102px;bottom:auto;max-height:calc(100dvh / var(--ui-scale,1) - var(--command-height) - 120px)}#drawer[data-panel=rooms]{top:75px;bottom:12px;max-height:none}#drawer[data-panel=lobby]{top:75px;bottom:58px;max-height:none}.unit-help{width:16px;height:16px;font-size:10px}.report-army>header{font-size:10px}}
 @media(max-height:700px){#drawer{top:82px}.oasis-summary{position:static}.unit-tabs button{font-size:10px;padding:6px}.train-portrait>.unit-portrait{width:50px;height:50px}}
 

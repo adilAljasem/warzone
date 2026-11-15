@@ -1069,7 +1069,7 @@
         "attack": 35,
         "defenseInfantry": 35,
         "defenseCavalry": 35,
-        "speed": 16.0,
+        "speed": 14.0,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
         "hitPoints": 100

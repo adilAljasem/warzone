@@ -81,9 +81,9 @@ public sealed partial class LogisticsWorld
     // Scales round tempo gently for larger battles and accelerates prolonged stalemates so fights always finish naturally.
     private static double RoundPaceFactor(int totalFighters, int round)
     {
-        var sizeBoost = 1.0 + Math.Min(0.6, Math.Max(0, totalFighters - 300) / 1500.0);
+        var sizeBoost = 1.0 + Math.Min(0.30, Math.Max(0, totalFighters - 300) / 2400.0);
         var roundBoost = round <= 10 ? 1.0 : 1.0 + Math.Min(2.0, (round - 10) * 0.12);
-        return 0.25 * sizeBoost * roundBoost;
+        return 0.22 * sizeBoost * roundBoost;
     }
 
     private double ComputeTierSlotDamage(TierSlot target, int tierTotal, TierSlot[] activeOpponents, bool targetsAttacking, double damageMultiplier, double paceFactor)

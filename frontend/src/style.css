@@ -2675,6 +2675,20 @@ svg {
     border-top: 1px solid var(--line)
 }
 
+.report-side-group {
+    padding: 2px 0;
+}
+
+.report-side-group+.report-side-group {
+    border-top: 1px solid var(--line);
+    margin-top: 8px;
+    padding-top: 10px;
+}
+
+.report-side-group .report-force+.report-force {
+    border-top: 0;
+}
+
 .report-role-attacker,
 .report-role-defender {
     position: relative;
@@ -2691,7 +2705,7 @@ svg {
 .report-role-defender::before {
     content: "";
     position: absolute;
-    inset: 6px 12px;
+    inset: 2px 12px;
     background-position: center;
     background-repeat: no-repeat;
     background-size: contain;
@@ -2726,7 +2740,7 @@ svg {
     min-width: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 10px 14px;
+    gap: 10px 16px;
     align-items: flex-start;
     justify-content: flex-start;
     direction: ltr
@@ -2778,8 +2792,8 @@ svg {
 
 .unknown-unit-slot .unit-counts b {
     color: #e2b887;
-    font-size: 13px;
-    font-weight: 700
+    font-size: 16px;
+    font-weight: 800
 }
 
 .report-unit-grid[data-dense=true] .unit-portrait {
@@ -3881,8 +3895,8 @@ svg {
 
 .oasis-stationed-forces .unit-counts {
     margin-top: 3px;
-    font-size: 10px;
-    font-weight: 600;
+    font-size: 12.5px;
+    font-weight: 700;
 }
 
 .oasis-own-block,

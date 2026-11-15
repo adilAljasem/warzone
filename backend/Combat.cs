@@ -442,17 +442,18 @@ public sealed partial class LogisticsWorld
         var garrison = city.Garrison();
         var actualDefenders = garrison.Sum(x => x.Count);
         var wallBonus = GameCatalog.Tribes[city.Village.Tribe].Bonuses.WallMultiplier;
-        var protection = 1 + city.BuildingLevel(BuildingType.Wall) * .08 * wallBonus * siege.Wall / 100;
+        var protection = 1 + city.BuildingLevel(BuildingType.Wall) * .04 * wallBonus * siege.Wall / 100;
         var attackers = siege.Attackers.Where(a => a.Order == "Sieging" && !a.Routing && Fighters(a) > 0).ToArray();
         siege.Gate = Math.Max(0, siege.Gate - attackers.Sum(a => RoleCount(a, UnitRole.Ram) * 12 + Fighters(a) * .03));
         siege.Wall = Math.Max(0, siege.Wall - attackers.Sum(a => RoleCount(a, UnitRole.Catapult) * 5));
         if (actualDefenders > 0)
         {
             var defenders = new Army(city.Village.OwnerId, city.Village.Position, city.Village.Id, garrison);
-            var defenderMult = (siege.Gate > 0 ? .65 : 1.3) / protection;
+            var defenderMult = (siege.Gate > 0 ? .82 : 1.15) / protection;
+            var attackerMult = 1 + (protection - 1) * .35;
             var pace = RoundPaceFactor(attackers.Sum(Count) + actualDefenders, siege.Round);
             var defPlan = PlanSideRoundDamage([defenders], attackers, false, defenderMult, pace, siege.DamagePool, _ => city.Village.Id);
-            var attPlan = PlanSideRoundDamage(attackers, [defenders], true, protection, pace, siege.DamagePool, a => a.Id);
+            var attPlan = PlanSideRoundDamage(attackers, [defenders], true, attackerMult, pace, siege.DamagePool, a => a.Id);
             CommitSideRoundPlan([defenders], defPlan, siege.DamagePool, now, attacker.OwnerId, false);
             CommitSideRoundPlan(attackers, attPlan, siege.DamagePool, now, city.Village.OwnerId, true);
             city.ReplaceGarrison(defenders.Troops);

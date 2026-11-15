@@ -204,7 +204,6 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
         lock (gate)
         {
             if (memberships.ContainsKey(actor)) LeaveLocked(actor);
-            if (rooms.Count >= 128) throw new GameRuleException("room_limit", "The server has reached its room limit.");
             room = new GameRoom(actor, playerName, tribe, name, settings, time.GetUtcNow());
             rooms.Add(room.Id, room);
             memberships.Add(actor, room.Id);
@@ -416,7 +415,6 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             if (botsPerRoom is < 8 or > 16) throw new GameRuleException("capacity", "Bots per room must be between 8 and 16.");
             if (!Enum.IsDefined(difficulty)) throw new GameRuleException("difficulty", "Invalid bot difficulty.");
             if (shieldMinutes is not (0 or 5 or 10)) shieldMinutes = 5;
-            if (rooms.Count + count > 128) throw new GameRuleException("room_limit", $"Server room limit (128) exceeded ({rooms.Count} active).");
 
             var now = time.GetUtcNow();
             var settings = new RoomSettings(botsPerRoom, 60, shieldMinutes, 1, botsPerRoom, difficulty, 45);

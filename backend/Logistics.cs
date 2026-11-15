@@ -131,6 +131,7 @@ public sealed partial class LogisticsWorld
         if (ApplyMarket(actor, command, now)) return;
         if (ApplyOasis(actor, command, now)) return;
         if (ApplyWarfare(actor, command, now, shieldUntil)) return;
+        if (command.Kind == CommandKind.DisbandTroops) { ApplyDisbandTroops(actor, command, now); return; }
         var home = Primary(actor) ?? throw new GameRuleException("eliminated", "You have no surviving settlements.");
         if (command.Kind == CommandKind.DispatchArmy)
         {
@@ -1159,6 +1160,64 @@ public sealed partial class LogisticsWorld
         army.TargetId = null;
         army.Order = army.AfterAttack == AfterAttack.Return ? "Returning" : "Idle";
         army.Destination = army.AfterAttack == AfterAttack.Return ? villages[army.HomeVillageId].Village.Position : army.Position;
+    }
+
+    private void ApplyDisbandTroops(Guid actor, GameCommand command, double now)
+    {
+        var requested = command.Formation is null
+            ? new Dictionary<string, int> { [command.UnitId ?? ""] = command.Quantity }
+            : new Dictionary<string, int>(command.Formation);
+        if (requested.Count is < 1 or > 70 || requested.Any(x => x.Value is < 1 or > 100000 || !GameCatalog.Units.ContainsKey(x.Key)))
+            throw new GameRuleException("unit", "Choose valid troop counts to disband.");
+
+        if (villages.TryGetValue(command.TargetId, out var village))
+        {
+            if (village.Village.OwnerId != actor || village.Ruined)
+                throw new GameRuleException("not_owned", "Disband troops from your own active village.");
+            if (village.Besieged)
+                throw new GameRuleException("siege", "Cannot disband garrison while the village is under siege.");
+            var count = village.Disband(requested);
+            Note(actor, now, $"Disbanded {count} garrison troops to reduce wheat upkeep.");
+            return;
+        }
+
+        var army = Owned(actor, command.TargetId);
+        if (Engaged(army) || oasisSieges.Any(s => s.Status == "Active" && s.Attackers.Contains(army)) || army.Order is "Battle" or "Sieging" or "Returning" || army.Routing)
+            throw new GameRuleException("engaged", "Cannot disband troops from an army that is engaged in combat or returning.");
+
+        var stackCounts = army.Troops.ToDictionary(t => t.Unit.UnitId, t => t.Count);
+        foreach (var (id, qty) in requested)
+        {
+            if (stackCounts.GetValueOrDefault(id) < qty)
+                throw new GameRuleException("troops", "Not enough available troops of that type in this army.");
+        }
+
+        var surviving = new List<TroopStack>();
+        foreach (var t in army.Troops)
+        {
+            var cut = requested.GetValueOrDefault(t.Unit.UnitId);
+            if (t.Count > cut) surviving.Add(new(t.Unit, t.Count - cut));
+        }
+
+        var disbanded = requested.Values.Sum();
+        var wagonsBefore = RoleCount(army, UnitRole.Wagon);
+        villages[army.HomeVillageId].LoseDeployed(disbanded);
+        FinalizeArmyDamage(army, surviving, disbanded, wagonsBefore);
+
+        if (surviving.Count == 0)
+        {
+            if (army.Order == "Burning") WithdrawFromSieges(army, now, army.TargetId, army.Order);
+            armies.Remove(army);
+        }
+        else if (Fighters(army) == 0 && army.Order is "Burning" or "Occupying" or "Blockading" or "Capturing")
+        {
+            WithdrawFromSieges(army, now, army.TargetId, army.Order);
+            Route(army);
+        }
+
+        Note(actor, now, surviving.Count == 0
+            ? $"Disbanded all {disbanded} units from the army."
+            : $"Disbanded {disbanded} units from the army.");
     }
 
     private void ApplyMergeArmies(Guid actor, GameCommand command, double now)
