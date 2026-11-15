@@ -6,71 +6,71 @@
     },
     "Spearman": {
       "attack": {
-        "Cavalry": 0.65,
-        "LightCavalry": 0.7,
-        "HeavyCavalry": 0.6,
-        "Swordsman": 0.6
+        "Cavalry": 1,
+        "LightCavalry": 1,
+        "HeavyCavalry": 1,
+        "Swordsman": 1
       },
       "defense": {
-        "Cavalry": 1.3,
-        "LightCavalry": 1.35,
-        "HeavyCavalry": 1.2,
-        "Swordsman": 0.65
+        "Cavalry": 1,
+        "LightCavalry": 1,
+        "HeavyCavalry": 1,
+        "Swordsman": 1
       }
     },
     "Swordsman": {
       "attack": {
-        "Spearman": 1.45,
-        "Infantry": 1.25,
-        "HeavyCavalry": 0.7
+        "Spearman": 1,
+        "Infantry": 1,
+        "HeavyCavalry": 1
       },
       "defense": {
-        "Spearman": 1.35,
-        "Infantry": 1.2,
-        "HeavyCavalry": 0.75
+        "Spearman": 1,
+        "Infantry": 1,
+        "HeavyCavalry": 1
       }
     },
     "LightCavalry": {
       "attack": {
-        "Wagon": 2,
-        "Spearman": 0.55,
-        "HeavyCavalry": 0.65
+        "Wagon": 1,
+        "Spearman": 1,
+        "HeavyCavalry": 1
       },
       "defense": {
-        "Spearman": 0.6,
-        "HeavyCavalry": 0.65
+        "Spearman": 1,
+        "HeavyCavalry": 1
       }
     },
     "Cavalry": {
       "attack": {
-        "Infantry": 1.2,
-        "Spearman": 0.55
+        "Infantry": 1,
+        "Spearman": 1
       },
       "defense": {
-        "Spearman": 0.65
+        "Spearman": 1
       }
     },
     "HeavyCavalry": {
       "attack": {
-        "Infantry": 1.4,
-        "Swordsman": 1.4,
-        "Spearman": 0.65
+        "Infantry": 1,
+        "Swordsman": 1,
+        "Spearman": 1
       },
       "defense": {
-        "Infantry": 1.35,
-        "Swordsman": 1.35,
-        "Spearman": 0.7
+        "Infantry": 1,
+        "Swordsman": 1,
+        "Spearman": 1
       }
     },
     "Scout": {
       "attack": {
-        "Wagon": 1.5,
-        "Infantry": 0.5,
-        "Cavalry": 0.4
+        "Wagon": 1,
+        "Infantry": 1,
+        "Cavalry": 1
       },
       "defense": {
-        "Infantry": 0.5,
-        "Cavalry": 0.4
+        "Infantry": 1,
+        "Cavalry": 1
       }
     },
     "Wagon": {
@@ -100,15 +100,15 @@
       "requiredBuildingLevel": 1,
       "trainingSeconds": 4,
       "cost": {
-        "wood": 25,
-        "iron": 10,
+        "wood": 10,
+        "iron": 25,
         "stone": 0,
         "wheat": 20
       },
       "stats": {
         "attack": 46,
-        "defenseInfantry": 40,
-        "defenseCavalry": 40,
+        "defenseInfantry": 25,
+        "defenseCavalry": 25,
         "speed": 16.5,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
@@ -157,7 +157,7 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 15,
+        "speed": 30,
         "carryCapacity": 5000,
         "wheatUpkeep": 1,
         "hitPoints": 25
@@ -241,16 +241,16 @@
       "role": "Spearman",
       "displayName": "حراس الإمبراطور",
       "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 2,
+      "requiredBuildingLevel": 6,
       "trainingSeconds": 5,
       "cost": {
-        "wood": 40,
-        "iron": 35,
+        "wood": 25,
+        "iron": 50,
         "stone": 0,
         "wheat": 20
       },
       "stats": {
-        "attack": 18,
+        "attack": 25,
         "defenseInfantry": 60,
         "defenseCavalry": 40,
         "speed": 16.5,
@@ -265,18 +265,18 @@
       "role": "Swordsman",
       "displayName": "جندي مهاجم",
       "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 3,
+      "requiredBuildingLevel": 9,
       "trainingSeconds": 6,
       "cost": {
-        "wood": 35,
-        "iron": 50,
+        "wood": 25,
+        "iron": 60,
         "stone": 0,
-        "wheat": 30
+        "wheat": 20
       },
       "stats": {
         "attack": 80,
         "defenseInfantry": 40,
-        "defenseCavalry": 46,
+        "defenseCavalry": 30,
         "speed": 15,
         "carryCapacity": 45,
         "wheatUpkeep": 1.5,
@@ -289,19 +289,19 @@
       "role": "LightCavalry",
       "displayName": "سلاح الفرسان",
       "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 2,
+      "requiredBuildingLevel": 6,
       "trainingSeconds": 6,
       "cost": {
-        "wood": 60,
-        "iron": 55,
+        "wood": 30,
+        "iron": 65,
         "stone": 0,
         "wheat": 45
       },
       "stats": {
-        "attack": 70,
-        "defenseInfantry": 26,
-        "defenseCavalry": 20,
-        "speed": 52.5,
+        "attack": 75,
+        "defenseInfantry": 35,
+        "defenseCavalry": 35,
+        "speed": 60,
         "carryCapacity": 100,
         "wheatUpkeep": 2,
         "hitPoints": 100
@@ -313,7 +313,7 @@
       "role": "HeavyCavalry",
       "displayName": "فرسان قيصر",
       "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 5,
+      "requiredBuildingLevel": 10,
       "trainingSeconds": 10,
       "cost": {
         "wood": 100,
@@ -346,10 +346,10 @@
         "wheat": 20
       },
       "stats": {
-        "attack": 35,
-        "defenseInfantry": 15,
+        "attack": 25,
+        "defenseInfantry": 10,
         "defenseCavalry": 10,
-        "speed": 18,
+        "speed": 17,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
         "hitPoints": 100
@@ -397,7 +397,7 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 15,
+        "speed": 30,
         "carryCapacity": 5000,
         "wheatUpkeep": 1,
         "hitPoints": 25
@@ -481,18 +481,18 @@
       "role": "Spearman",
       "displayName": "مقاتل برمح",
       "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 2,
+      "requiredBuildingLevel": 6,
       "trainingSeconds": 5,
       "cost": {
         "wood": 10,
         "iron": 0,
-        "stone": 40,
+        "stone": 30,
         "wheat": 45
       },
       "stats": {
         "attack": 22,
-        "defenseInfantry": 34,
-        "defenseCavalry": 80,
+        "defenseInfantry": 40,
+        "defenseCavalry": 70,
         "speed": 16.5,
         "carryCapacity": 35,
         "wheatUpkeep": 1,
@@ -505,7 +505,7 @@
       "role": "Swordsman",
       "displayName": "مقاتل بفأس",
       "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 3,
+      "requiredBuildingLevel": 9,
       "trainingSeconds": 6,
       "cost": {
         "wood": 10,
@@ -514,9 +514,9 @@
         "wheat": 15
       },
       "stats": {
-        "attack": 85,
-        "defenseInfantry": 42,
-        "defenseCavalry": 22,
+        "attack": 80,
+        "defenseInfantry": 35,
+        "defenseCavalry": 20,
         "speed": 15,
         "carryCapacity": 45,
         "wheatUpkeep": 1.5,
@@ -529,7 +529,7 @@
       "role": "LightCavalry",
       "displayName": "مقاتل القيصر",
       "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 2,
+      "requiredBuildingLevel": 6,
       "trainingSeconds": 6,
       "cost": {
         "wood": 10,
@@ -538,10 +538,10 @@
         "wheat": 60
       },
       "stats": {
-        "attack": 72,
+        "attack": 65,
         "defenseInfantry": 65,
         "defenseCavalry": 18,
-        "speed": 52.5,
+        "speed": 65,
         "carryCapacity": 100,
         "wheatUpkeep": 2,
         "hitPoints": 100
@@ -553,17 +553,17 @@
       "role": "HeavyCavalry",
       "displayName": "فرسان الجرمان",
       "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 5,
+      "requiredBuildingLevel": 10,
       "trainingSeconds": 10,
       "cost": {
         "wood": 30,
         "iron": 60,
-        "stone": 130,
+        "stone": 100,
         "wheat": 100
       },
       "stats": {
-        "attack": 130,
-        "defenseInfantry": 84,
+        "attack": 120,
+        "defenseInfantry": 70,
         "defenseCavalry": 60,
         "speed": 36,
         "carryCapacity": 60,
@@ -637,7 +637,7 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 15,
+        "speed": 30,
         "carryCapacity": 5000,
         "wheatUpkeep": 1,
         "hitPoints": 25
@@ -721,11 +721,11 @@
       "role": "Spearman",
       "displayName": "رماح الفالانكس",
       "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 2,
+      "requiredBuildingLevel": 6,
       "trainingSeconds": 5,
       "cost": {
         "wood": 20,
-        "iron": 10,
+        "iron": 20,
         "stone": 45,
         "wheat": 0
       },
@@ -745,7 +745,7 @@
       "role": "Swordsman",
       "displayName": "مبارز",
       "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 3,
+      "requiredBuildingLevel": 9,
       "trainingSeconds": 6,
       "cost": {
         "wood": 15,
@@ -755,7 +755,7 @@
       },
       "stats": {
         "attack": 84,
-        "defenseInfantry": 64,
+        "defenseInfantry": 40,
         "defenseCavalry": 36,
         "speed": 15,
         "carryCapacity": 45,
@@ -769,7 +769,7 @@
       "role": "LightCavalry",
       "displayName": "رعد الإغريق",
       "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 2,
+      "requiredBuildingLevel": 6,
       "trainingSeconds": 6,
       "cost": {
         "wood": 30,
@@ -781,7 +781,7 @@
         "attack": 70,
         "defenseInfantry": 26,
         "defenseCavalry": 20,
-        "speed": 79.5,
+        "speed": 65,
         "carryCapacity": 100,
         "wheatUpkeep": 2,
         "hitPoints": 100
@@ -793,16 +793,16 @@
       "role": "HeavyCavalry",
       "displayName": "فرسان الهنود الحمر",
       "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 5,
+      "requiredBuildingLevel": 10,
       "trainingSeconds": 10,
       "cost": {
         "wood": 30,
         "iron": 50,
         "stone": 100,
-        "wheat": 0
+        "wheat": 50
       },
       "stats": {
-        "attack": 126,
+        "attack": 100,
         "defenseInfantry": 86,
         "defenseCavalry": 62,
         "speed": 36,
@@ -820,18 +820,18 @@
       "requiredBuildingLevel": 1,
       "trainingSeconds": 4,
       "cost": {
-        "wood": 35,
+        "wood": 28,
         "iron": 0,
         "stone": 0,
-        "wheat": 50
+        "wheat": 10
       },
       "stats": {
         "attack": 42,
-        "defenseInfantry": 48,
-        "defenseCavalry": 40,
-        "speed": 16.5,
+        "defenseInfantry": 25,
+        "defenseCavalry": 30,
+        "speed": 20.0,
         "carryCapacity": 40,
-        "wheatUpkeep": 1,
+        "wheatUpkeep": 0.5,
         "hitPoints": 100
       }
     },
@@ -855,7 +855,7 @@
         "defenseCavalry": 14,
         "speed": 97.5,
         "carryCapacity": 35,
-        "wheatUpkeep": 1,
+        "wheatUpkeep": 0.5,
         "hitPoints": 100
       }
     },
@@ -877,9 +877,9 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 24,
+        "speed": 35,
         "carryCapacity": 5000,
-        "wheatUpkeep": 1,
+        "wheatUpkeep": 0.5,
         "hitPoints": 25
       }
     },
@@ -901,9 +901,9 @@
         "attack": 100,
         "defenseInfantry": 10,
         "defenseCavalry": 5,
-        "speed": 6.75,
+        "speed": 20,
         "carryCapacity": 0,
-        "wheatUpkeep": 4,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -925,9 +925,9 @@
         "attack": 40,
         "defenseInfantry": 25,
         "defenseCavalry": 10,
-        "speed": 9,
+        "speed": 20,
         "carryCapacity": 0,
-        "wheatUpkeep": 3,
+        "wheatUpkeep": 1.5,
         "hitPoints": 100
       }
     },
@@ -951,7 +951,7 @@
         "defenseCavalry": 20,
         "speed": 13.5,
         "carryCapacity": 10,
-        "wheatUpkeep": 3,
+        "wheatUpkeep": 1.5,
         "hitPoints": 100
       }
     },
@@ -961,7 +961,7 @@
       "role": "Spearman",
       "displayName": "رماح السهوب",
       "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 2,
+      "requiredBuildingLevel": 6,
       "trainingSeconds": 5,
       "cost": {
         "wood": 40,
@@ -970,12 +970,12 @@
         "wheat": 55
       },
       "stats": {
-        "attack": 18,
+        "attack": 25,
         "defenseInfantry": 36,
-        "defenseCavalry": 82,
-        "speed": 16.5,
+        "defenseCavalry": 70,
+        "speed": 20.0,
         "carryCapacity": 35,
-        "wheatUpkeep": 1,
+        "wheatUpkeep": 0.5,
         "hitPoints": 100
       }
     },
@@ -985,21 +985,21 @@
       "role": "Swordsman",
       "displayName": "سياف الكشيك",
       "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 3,
+      "requiredBuildingLevel": 9,
       "trainingSeconds": 6,
       "cost": {
         "wood": 40,
         "iron": 20,
         "stone": 0,
-        "wheat": 70
+        "wheat": 30
       },
       "stats": {
         "attack": 84,
-        "defenseInfantry": 54,
-        "defenseCavalry": 28,
-        "speed": 15,
+        "defenseInfantry": 30,
+        "defenseCavalry": 35,
+        "speed": 22,
         "carryCapacity": 45,
-        "wheatUpkeep": 1.5,
+        "wheatUpkeep": 0.75,
         "hitPoints": 100
       }
     },
@@ -1009,21 +1009,21 @@
       "role": "LightCavalry",
       "displayName": "مغير السهوب",
       "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 2,
+      "requiredBuildingLevel": 6,
       "trainingSeconds": 6,
       "cost": {
         "wood": 60,
         "iron": 10,
         "stone": 0,
-        "wheat": 90
+        "wheat": 60
       },
       "stats": {
         "attack": 74,
         "defenseInfantry": 26,
         "defenseCavalry": 20,
-        "speed": 82.5,
+        "speed": 82,
         "carryCapacity": 100,
-        "wheatUpkeep": 2,
+        "wheatUpkeep": 1,
         "hitPoints": 100
       }
     },
@@ -1033,21 +1033,21 @@
       "role": "HeavyCavalry",
       "displayName": "فارس الخان الثقيل",
       "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 5,
+      "requiredBuildingLevel": 10,
       "trainingSeconds": 10,
       "cost": {
         "wood": 60,
         "iron": 40,
         "stone": 25,
-        "wheat": 180
+        "wheat": 150
       },
       "stats": {
-        "attack": 130,
+        "attack": 120,
         "defenseInfantry": 84,
         "defenseCavalry": 62,
-        "speed": 45,
+        "speed": 60,
         "carryCapacity": 60,
-        "wheatUpkeep": 3.5,
+        "wheatUpkeep": 1.75,
         "hitPoints": 100
       }
     },
@@ -1061,15 +1061,15 @@
       "trainingSeconds": 4,
       "cost": {
         "wood": 0,
-        "iron": 40,
-        "stone": 25,
+        "iron": 20,
+        "stone": 15,
         "wheat": 20
       },
       "stats": {
-        "attack": 48,
-        "defenseInfantry": 55,
-        "defenseCavalry": 50,
-        "speed": 16.5,
+        "attack": 35,
+        "defenseInfantry": 35,
+        "defenseCavalry": 35,
+        "speed": 16.0,
         "carryCapacity": 40,
         "wheatUpkeep": 1,
         "hitPoints": 100
@@ -1081,13 +1081,13 @@
       "role": "Cavalry",
       "displayName": "فيل الحرب",
       "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 3,
+      "requiredBuildingLevel": 6,
       "trainingSeconds": 7,
       "cost": {
-        "wood": 10,
-        "iron": 80,
+        "wood": 50,
+        "iron": 150,
         "stone": 50,
-        "wheat": 50
+        "wheat": 70
       },
       "stats": {
         "attack": 145,
@@ -1141,7 +1141,7 @@
         "attack": 1,
         "defenseInfantry": 2,
         "defenseCavalry": 2,
-        "speed": 15,
+        "speed": 30,
         "carryCapacity": 5000,
         "wheatUpkeep": 1,
         "hitPoints": 25
@@ -1225,7 +1225,7 @@
       "role": "Spearman",
       "displayName": "رماح ملكي",
       "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 2,
+      "requiredBuildingLevel": 6,
       "trainingSeconds": 5,
       "cost": {
         "wood": 10,
@@ -1236,7 +1236,7 @@
       "stats": {
         "attack": 18,
         "defenseInfantry": 38,
-        "defenseCavalry": 84,
+        "defenseCavalry": 75,
         "speed": 16.5,
         "carryCapacity": 35,
         "wheatUpkeep": 1,
@@ -1249,16 +1249,16 @@
       "role": "Swordsman",
       "displayName": "سياف ملكي",
       "trainingBuilding": "Barracks",
-      "requiredBuildingLevel": 3,
+      "requiredBuildingLevel": 9,
       "trainingSeconds": 6,
       "cost": {
         "wood": 0,
-        "iron": 65,
+        "iron": 45,
         "stone": 35,
         "wheat": 30
       },
       "stats": {
-        "attack": 85,
+        "attack": 75,
         "defenseInfantry": 56,
         "defenseCavalry": 30,
         "speed": 15,
@@ -1273,19 +1273,19 @@
       "role": "HeavyCavalry",
       "displayName": "خيالة مدرعة",
       "trainingBuilding": "Stable",
-      "requiredBuildingLevel": 5,
+      "requiredBuildingLevel": 10,
       "trainingSeconds": 10,
       "cost": {
         "wood": 20,
-        "iron": 140,
+        "iron": 135,
         "stone": 100,
         "wheat": 60
       },
       "stats": {
-        "attack": 128,
-        "defenseInfantry": 88,
+        "attack": 110,
+        "defenseInfantry": 70,
         "defenseCavalry": 64,
-        "speed": 36,
+        "speed": 35,
         "carryCapacity": 60,
         "wheatUpkeep": 3.5,
         "hitPoints": 100

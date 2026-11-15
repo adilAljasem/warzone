@@ -1,0 +1,52 @@
+version: '3.8'
+
+networks:
+  # Shared external network for Traefik reverse proxy
+  traefik_public:
+    external: true
+
+services:
+  # ==========================================
+  # WARZONEE (UI + API + SignalR Real-Time Engine)
+  # ==========================================
+  warzone:
+    image: ghcr.io/adilaljasem/warzone:latest
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+    networks:
+      - traefik_public
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      update_config:
+        order: stop-first
+        failure_action: rollback
+      restart_policy:
+        condition: any
+        delay: 5s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.swarm.network=traefik_public"
+        # Primary apex domain router
+        - "traefik.http.routers.warzone.rule=Host(`warzonee.com`)"
+        - "traefik.http.routers.warzone.entrypoints=websecure"
+        - "traefik.http.routers.warzone.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.warzone.service=warzone"
+        - "traefik.http.services.warzone.loadbalancer.server.port=8080"
+        # Optional www -> apex canonical redirect
+        - "traefik.http.routers.warzone-www.rule=Host(`www.warzonee.com`)"
+        - "traefik.http.routers.warzone-www.entrypoints=websecure"
+        - "traefik.http.routers.warzone-www.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.warzone-www.service=warzone"
+        - "traefik.http.routers.warzone-www.middlewares=warzone-www-redirect"
+        - "traefik.http.middlewares.warzone-www-redirect.redirectregex.regex=^https://www\\.warzonee\\.com/(.*)"
+        - "traefik.http.middlewares.warzone-www-redirect.redirectregex.replacement=https://warzonee.com/$${1}"
+        - "traefik.http.middlewares.warzone-www-redirect.redirectregex.permanent=true"
+        # Edge rate limit — 50 req/s average per client IP, allowing short bursts up to 100
+        - "traefik.http.middlewares.warzone-rl.ratelimit.average=50"
+        - "traefik.http.middlewares.warzone-rl.ratelimit.burst=100"
+        - "traefik.http.middlewares.warzone-rl.ratelimit.period=1s"
+        - "traefik.http.routers.warzone.middlewares=warzone-rl"

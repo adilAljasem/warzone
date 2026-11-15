@@ -8,7 +8,7 @@ export class GameMenu {
     private dialog=document.createElement('dialog');
     private pending=false;
     private uiScale=1;
-    constructor(private audio:GameAudio,private status:()=>string|null,private leave:()=>Promise<void>){
+    constructor(private audio:GameAudio,private status:()=>string|null,private leave:()=>Promise<void>,private openGuide?:()=>void,private replayTutorial?:()=>void){
         try {
             const saved = Number(localStorage.getItem(UI_SCALE_KEY));
             if (Number.isFinite(saved) && saved >= 0.75 && saved <= 1.25) this.uiScale = clampScale(saved);
@@ -16,7 +16,7 @@ export class GameMenu {
         this.applyUiScale();
         this.dialog.id='game-menu';this.dialog.className='game-menu';
         this.dialog.setAttribute('aria-labelledby','game-menu-title');
-        this.dialog.innerHTML=`<header><div><span class="eyebrow">WARZONE</span><h2 id="game-menu-title">Game menu</h2></div><button type="button" id="close-game-menu" aria-label="Close menu">×</button></header>
+        this.dialog.innerHTML=`<header><div><span class="eyebrow">WARZONEE</span><h2 id="game-menu-title">Game menu</h2></div><button type="button" id="close-game-menu" aria-label="Close menu">×</button></header>
             <p id="menu-live-note" class="menu-note">The match continues while this menu is open.</p>
             <section class="sound-settings" aria-labelledby="sound-heading"><h3 id="sound-heading">Sound effects</h3>
               <label for="sound-volume"><span>Volume</span><output id="sound-volume-value" for="sound-volume" data-no-translate></output></label>
@@ -31,12 +31,16 @@ export class GameMenu {
               <p class="menu-note">Scales menus, HUD bars and report panels without shrinking the battlefield map.</p>
             </section>
             <p id="menu-error" role="alert" hidden></p>
+            <button type="button" id="open-guide" class="wide">Game guide</button>
+            <button type="button" id="replay-tutorial" class="wide">Replay tutorial</button>
             <button type="button" id="return-game" class="primary wide">Return to game</button>
             <button type="button" id="exit-game" class="wide menu-exit">Exit to main menu</button>
             <p id="menu-exit-note" class="menu-note">Your match keeps running after you exit. You can return from the main menu.</p>
             <footer><kbd>ESC</kbd><span>Open or close this menu</span></footer>`;
         document.body.append(this.dialog);
         this.element('close-game-menu').onclick=()=>this.close();this.element('return-game').onclick=()=>this.close();
+        this.element('open-guide').onclick=()=>{this.close();this.openGuide?.();};
+        this.element('replay-tutorial').onclick=()=>{this.close();this.replayTutorial?.();};
         this.element<HTMLInputElement>('sound-volume').oninput=event=>{this.audio.setVolume(Number((event.target as HTMLInputElement).value)/100);this.refreshSound();};
         this.element('sound-mute').onclick=()=>{this.audio.setMuted(!this.audio.muted);this.refreshSound();};
         this.element('sound-preview').onclick=()=>void this.audio.preview();
@@ -51,6 +55,7 @@ export class GameMenu {
         });
         document.addEventListener('keydown',event=>{
             if(event.key!=='Escape')return;
+            if(document.querySelector('#game-guide[open]'))return;
             event.preventDefault();event.stopPropagation();
             if(!event.repeat){if(this.dialog.open)this.close();else this.open();}
         },true);
@@ -84,6 +89,7 @@ export class GameMenu {
         if(this.dialog.open)return;
         const status=this.status();
         this.element('exit-game').hidden=!status;
+        this.element('replay-tutorial').hidden=status!=='Running';
         this.element('menu-exit-note').hidden=status!=='Running';
         this.element('menu-live-note').hidden=status!=='Running';
         this.element('return-game').textContent=t(status?'Return to game':'Close menu');

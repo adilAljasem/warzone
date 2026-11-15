@@ -341,7 +341,7 @@ public sealed partial class LogisticsWorld
             {
                 var site = DefenseSite(siteId);
                 if (site.Owner == winner.SupportedOwnerId)
-                { winner.Order = "Guarding"; winner.TargetId = siteId; winner.Destination = site.Position; return; }
+                { winner.Order = "Guarding"; winner.TargetId = siteId; winner.Destination = site.Position; MergeOasisGuards(siteId); return; }
             }
             catch (GameRuleException) { }
             Route(winner); return;

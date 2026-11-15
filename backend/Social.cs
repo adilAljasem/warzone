@@ -1,6 +1,6 @@
 namespace Warzone;
 
-public sealed record ChatMessageSnapshot(long Id, Guid? SenderId, string Text, double At, string Kind);
+public sealed record ChatMessageSnapshot(long Id, Guid? SenderId, string Text, double At, string Kind, string? SenderName = null);
 public sealed record AllianceSnapshot(Guid FirstPlayerId, Guid SecondPlayerId, double Since);
 public sealed record AllianceRequestSnapshot(Guid Id, Guid SenderId, Guid RecipientId, double CreatedAt);
 internal sealed record AllianceRequest(Guid Id, Guid SenderId, Guid RecipientId, double CreatedAt);
@@ -27,9 +27,12 @@ public sealed partial class GameRoom
     public bool HasPendingRequest(Guid first, Guid second) =>
         allianceRequests.Any(r => (r.SenderId == first && r.RecipientId == second) || (r.SenderId == second && r.RecipientId == first));
 
-    private void AddChat(Guid? sender, string text, string kind = "Player")
+    private void AddChat(Guid? sender, string text, string kind = "Player", string? senderName = null)
     {
-        chatMessages.Add(new(++chatMessageId, sender, text, ElapsedSeconds, kind));
+        var resolvedName = senderName ?? (sender is { } id
+            ? (players.TryGetValue(id, out var p) ? p.Name : spectators.TryGetValue(id, out var sName) ? sName : null)
+            : null);
+        chatMessages.Add(new(++chatMessageId, sender, text, ElapsedSeconds, kind, resolvedName));
         if (chatMessages.Count > 120) chatMessages.RemoveAt(0);
     }
 
@@ -61,7 +64,9 @@ public sealed partial class GameRoom
             var text = command.Message?.Trim() ?? "";
             if (text.Length is < 1 or > 300 || text.Any(char.IsControl))
                 throw new GameRuleException("chat", "Messages must contain 1-300 visible characters.");
-            AddChat(actor, text);
+            var authorName = players.TryGetValue(actor, out var p) ? p.Name
+                : spectators.TryGetValue(actor, out var sName) ? $"{sName} (Spectator)" : null;
+            AddChat(actor, text, senderName: authorName);
             return true;
         }
         if (command.Kind == CommandKind.ProposeAlliance)

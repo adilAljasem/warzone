@@ -49,6 +49,10 @@ export function oasisSprite(resource:string, width=120) {
 function croppedArt(path:string,rect:Rectangle,width:number,height:number,css:string){
     return `<span class="${css}" aria-hidden="true"><svg viewBox="${rect.x} ${rect.y} ${rect.width} ${rect.height}" style="overflow:hidden" xmlns="http://www.w3.org/2000/svg"><image href="${path}" width="${width}" height="${height}"/></svg></span>`;
 }
+export function oasisArt(resource:string){
+    const index=Math.max(0,['Wood','Iron','Stone','Wheat'].indexOf(resource));
+    return croppedArt('/art/oases-v5.png',new Rectangle(index*543,60,543,580),2172,724,'oasis-art');
+}
 export function buildingArt(name:string,tribe='Romans'){
     if(name==='Market')return '<span class="building-art" aria-hidden="true"><svg viewBox="0 0 160 150" xmlns="http://www.w3.org/2000/svg"><ellipse cx="80" cy="131" rx="68" ry="12" fill="#263b2d" opacity=".2"/><path d="m22 71 63-28 57 25v58l-59 16-61-21Z" fill="#bd9760"/><path d="m83 85 59-17v58l-59 16Z" fill="#876039"/><path d="m15 65 68-35 66 29-7 19-59 19-61-17Z" fill="#b75442"/><path d="m31 57 16-8 17 40-17-5Zm33-17 19-10 5 65-18-3Zm38-2 18 8-11 42-18 5Zm34 15 13 6-7 19-17 5Z" fill="#f1dba7"/><path d="M24 78v43m57-26v43m58-60v46" stroke="#63452c" stroke-width="5"/><path d="m26 108 55 13 55-17v21l-55 16-55-16Z" fill="#b07c47"/><path d="m26 108 55 13 55-17-55-12Z" fill="#d8b57b"/><g fill="#e8c16b" stroke="#967441" stroke-width="1"><circle cx="43" cy="107" r="6"/><circle cx="54" cy="108" r="6"/><circle cx="48" cy="99" r="6"/></g><path d="m92 106 15-14 17 5-8 14Z" fill="#809899"/><path d="m65 106 10-15 12 5-8 15Z" fill="#a5bb70"/><path d="M81 31V9" stroke="#715234" stroke-width="3"/><path d="m82 9 23 4-7 9-16-3Z" fill="#e1bd68"/><rect x="4" y="117" width="21" height="17" rx="3" fill="#b68750"/><path d="m6 120 17 11m-17 0 17-11" stroke="#795333" stroke-width="2"/></svg></span>';
     return croppedArt('/art/buildings-v3.png',buildingFrame(name,tribe),atlasWidth,atlasHeight,'building-art');

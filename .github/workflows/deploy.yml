@@ -1,0 +1,73 @@
+name: Build, Push, and Deploy Warzonee
+
+on:
+  push:
+    branches: [ "main" ]
+
+# Prevent overlapping deployments from racing on Docker Swarm Raft state ("update out of sequence")
+concurrency:
+  group: deploy-warzone-stack
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/adilaljasem/warzone:latest
+
+      # 1. Copy the updated warzone-stack.yml to the server
+      - name: Copy Stack File to Server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: 2222
+          source: "warzone-stack.yml"
+          target: "/home/adil/"
+
+      # 2. SSH in, pull the latest image, and redeploy the stack
+      - name: Deploy to Docker Swarm
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: 2222
+          script: |
+            # Navigate to where the stack file was copied
+            cd /home/adil/
+
+            # Ensure external overlay network exists before deploying
+            docker network inspect traefik_public >/dev/null 2>&1 || docker network create --driver=overlay --attachable traefik_public
+
+            # Explicitly pull the latest image so Swarm gets the newest digest
+            docker pull ghcr.io/adilaljasem/warzone:latest
+
+            # Deploy the stack with retry in case Swarm Raft state between managers is mid-sync ("update out of sequence")
+            for i in 1 2 3; do
+              if docker stack deploy -c warzone-stack.yml warzone_stack --with-registry-auth; then
+                break
+              fi
+              echo "Swarm update out of sequence, retrying in 5s (attempt $i/3)..."
+              sleep 5
+            done

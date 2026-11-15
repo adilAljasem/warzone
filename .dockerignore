@@ -1,0 +1,15 @@
+.git
+.github
+.artifacts
+.vs
+.idea
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/*.user
+tests
+README.md
+*.yml
+Dockerfile
+.dockerignore

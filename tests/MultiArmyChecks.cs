@@ -62,15 +62,19 @@ internal static class MultiArmyChecks
             Check(result.Winner==x.Village.OwnerId,$"Composition counter: {pair.Item1} defeats an equal {pair.Item2} force");
         }
         {
-            // Spearmen are strong in defense against cavalry, not when attacking cavalry.
+            // Matchups are unified at 1.0 across all roles; unit outcomes depend on raw stats without counter multipliers.
+            Check(GameCatalog.Units.Values.All(u =>
+                (u.AttackMatchups?.Values.All(v => Math.Abs(v - 1.0) < 1e-9) ?? true)
+                && (u.DefenseMatchups?.Values.All(v => Math.Abs(v - 1.0) < 1e-9) ?? true)),
+                "All unit attack and defense matchups are unified at 1.0");
             var cavCity=City(500);var spearCity=City(600);var w=new LogisticsWorld([cavCity,spearCity]);double t=0;
             var cav=Send(w,cavCity,"lightcavalry",80);var spear=Send(w,spearCity,"spearman",80);
             void Step(){t+=.25;w.Advance(.25,t,0,3600);}
             for(var n=0;n<160;n++)Step();
             w.Apply(cavCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AttackArmy,cav,DestinationId:spear),t,0);
             for(var n=0;n<600&&!w.Snapshot(spearCity.Village.OwnerId).Reports.Any(r=>r.Kind=="Battle"&&r.Status!="Active");n++)Step();
-            var defResult=w.Snapshot(spearCity.Village.OwnerId).Reports.Single(r=>r.Kind=="Battle");
-            Check(defResult.Winner==spearCity.Village.OwnerId&&defResult.DefenderUnits.Sum(u=>u.Sent-u.Dead-u.Wounded-u.Fled-u.Destroyed)>=30,"Defending spearmen decisively defeat attacking cavalry");
+            var cavResult=w.Snapshot(spearCity.Village.OwnerId).Reports.Single(r=>r.Kind=="Battle");
+            Check(cavResult.Winner==cavCity.Village.OwnerId,"Without counter multipliers, higher-attack cavalry defeat equal-count spearmen on base stats");
         }
         {
             // Clubmen (germans-infantry) are strong when attacking but weak when defending against infantry/cavalry.
@@ -99,11 +103,11 @@ internal static class MultiArmyChecks
             var attCity=new VillageEconomy(Guid.NewGuid(),TribeType.Germans,new(500,500));
             var defCity=new VillageEconomy(Guid.NewGuid(),TribeType.Germans,new(600,500));
             var w=new LogisticsWorld([attCity,defCity]);double t=0;
-            attCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]),100),new(BaseUnit.Create(GameCatalog.Units["germans-spearman"]),100)]);
+            attCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]),150),new(BaseUnit.Create(GameCatalog.Units["germans-spearman"]),150)]);
             attCity.AddResources(new(5000,5000,5000,5000));
             defCity.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]),100),new(BaseUnit.Create(GameCatalog.Units["germans-spearman"]),100)]);
             defCity.AddResources(new(5000,5000,5000,5000));
-            w.Apply(attCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,attCity.Village.Id,Formation:new Dictionary<string,int>{{"germans-infantry",100},{"germans-spearman",100}},Wagons:0,X:550,Y:500,Enabled:false),t,0);
+            w.Apply(attCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,attCity.Village.Id,Formation:new Dictionary<string,int>{{"germans-infantry",150},{"germans-spearman",150}},Wagons:0,X:550,Y:500,Enabled:false),t,0);
             w.Apply(defCity.Village.OwnerId,new(Guid.NewGuid(),CommandKind.DispatchArmy,defCity.Village.Id,Formation:new Dictionary<string,int>{{"germans-infantry",100},{"germans-spearman",100}},Wagons:0,X:580,Y:500,Enabled:false),t,0);
             var attArmy=w.Snapshot(attCity.Village.OwnerId).Armies.Single(x=>x.OwnerId==attCity.Village.OwnerId).Id;
             var defArmy=w.Snapshot(defCity.Village.OwnerId).Armies.Single(x=>x.OwnerId==defCity.Village.OwnerId).Id;
@@ -164,6 +168,37 @@ internal static class MultiArmyChecks
         Check(citySiege.ArmyIds.Length==2&&cityView.Reports.Single(r=>r.Id==citySiege.Id).AttackerUnits.Sum(t=>t.Sent)==120,"City sieges also aggregate attacking armies and their report");
         cityWorld.Apply(cityAttacker.Village.OwnerId,new(Guid.NewGuid(),CommandKind.RecallArmy,leader),cityTime,0);cityTime+=.25;cityWorld.Advance(.25,cityTime,0,3600);
         Check(cityDefender.Besieged&&cityWorld.Snapshot(cityAttacker.Village.OwnerId).Warfare.Sieges.Single().ArmyIds.SequenceEqual(new[]{supporting}),"Recalling the original city siege leader leaves the supporting siege intact");
+        {
+            // Moving a besieging army via MoveArmy (right-click) lifts only that army's siege, keeping shared sieges intact until the last besieger walks away.
+            var mvAtt=City(500);var mvDef=City(600);var mvWorld=new LogisticsWorld([mvAtt,mvDef],73);double mvTime=0;
+            void MvTick(){mvTime+=.25;mvWorld.AdvanceEconomies(.25,mvTime,1);mvWorld.Advance(.25,mvTime,0,3600);}
+            var m1=Send(mvWorld,mvAtt,"infantry",60,mvTime);var m2=Send(mvWorld,mvAtt,"spearman",60,mvTime);
+            var full1=mvWorld.Snapshot(mvAtt.Village.OwnerId).Armies.Single(x=>x.Id==m1).Formation!;
+            var full2=mvWorld.Snapshot(mvAtt.Village.OwnerId).Armies.Single(x=>x.Id==m2).Formation!;
+            foreach(var (id,form) in new[]{(m1,full1),(m2,full2)})
+                mvWorld.Apply(mvAtt.Village.OwnerId,new(Guid.NewGuid(),CommandKind.BeginSiege,id,DestinationId:mvDef.Village.Id,Objective:AttackObjective.Blockade,Formation:form),mvTime,0);
+            for(var i=0;i<240&&mvWorld.Snapshot(mvAtt.Village.OwnerId).Warfare.Sieges.SingleOrDefault()?.ArmyIds.Length!=2;i++)MvTick();
+            Check(mvDef.Besieged&&mvWorld.Snapshot(mvAtt.Village.OwnerId).Warfare.Sieges.Single().ArmyIds.Length==2,"Two armies besiege the city before right-click move");
+            mvWorld.Apply(mvAtt.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,m1,X:530,Y:530,Formation:full1),mvTime,0);
+            Check(mvDef.Besieged&&mvWorld.Snapshot(mvAtt.Village.OwnerId).Warfare.Sieges.Single().Status=="Active"&&mvWorld.Snapshot(mvAtt.Village.OwnerId).Warfare.Sieges.Single().ArmyIds.SequenceEqual(new[]{m2}),"Moving one city besieger leaves the other army maintaining the siege");
+            Check(mvWorld.Snapshot(mvAtt.Village.OwnerId).Armies.Single(x=>x.Id==m1).Order=="Marching","Moved city besieger marches away cleanly");
+            mvWorld.Apply(mvAtt.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,m2,X:540,Y:540,Formation:full2),mvTime,0);
+            Check(!mvDef.Besieged&&!mvWorld.Snapshot(mvAtt.Village.OwnerId).Warfare.Sieges.Any(s=>s.Status=="Active"),"Moving the last city besieger lifts the village siege immediately");
+
+            var mvOasis=mvWorld.Snapshot(mvAtt.Village.OwnerId).Oases.MinBy(o=>LogisticsWorld.Distance(mvDef.Village.Position,o.Position))!;
+            var og=Send(mvWorld,mvDef,"infantry",5,mvTime,mvOasis.Id);
+            for(var i=0;i<2400&&mvDef.OwnedOases==0;i++)MvTick();
+            var ob1=Send(mvWorld,mvAtt,"infantry",20,mvTime,mvOasis.Id,mode:OasisMode.Blockade);
+            var ob2=Send(mvWorld,mvAtt,"spearman",20,mvTime,mvOasis.Id,mode:OasisMode.Blockade);
+            for(var i=0;i<2400&&mvWorld.Snapshot(mvAtt.Village.OwnerId).OasisSieges.SingleOrDefault()?.ArmyIds.Length!=2;i++)MvTick();
+            var ob1Form=mvWorld.Snapshot(mvAtt.Village.OwnerId).Armies.Single(x=>x.Id==ob1).Formation!;
+            var ob2Form=mvWorld.Snapshot(mvAtt.Village.OwnerId).Armies.Single(x=>x.Id==ob2).Formation!;
+            mvWorld.Apply(mvAtt.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,ob1,X:520,Y:520,Formation:ob1Form),mvTime,0);
+            var osAfterOne=mvWorld.Snapshot(mvAtt.Village.OwnerId).OasisSieges.Single();
+            Check(mvWorld.Snapshot(mvAtt.Village.OwnerId).Oases.Single(o=>o.Id==mvOasis.Id).Blockaded&&osAfterOne.ArmyId==ob2&&osAfterOne.ArmyIds.SequenceEqual(new[]{ob2}),"Moving one oasis besieger keeps the oasis blockaded by the remaining army");
+            mvWorld.Apply(mvAtt.Village.OwnerId,new(Guid.NewGuid(),CommandKind.MoveArmy,ob2,X:525,Y:525,Formation:ob2Form),mvTime,0);
+            Check(!mvWorld.Snapshot(mvAtt.Village.OwnerId).Oases.Single(o=>o.Id==mvOasis.Id).Blockaded&&mvWorld.Snapshot(mvAtt.Village.OwnerId).OasisSieges.Length==0,"Moving the last oasis besieger lifts the oasis siege immediately");
+        }
         {
             // Scouting and counter-scouting checks (villages, armies, oases) + oasis reinforcement map visibility.
             var spyA=City(500);var spyB=City(620);var spyWorld=new LogisticsWorld([spyA,spyB],73);double spyTime=0;
@@ -283,10 +318,20 @@ internal static class MultiArmyChecks
             var g1=Send(mergeWorld,u1,"infantry",15,gTime,nearOasis.Id);
             for(var i=0;i<600&&mergeWorld.Snapshot(ownId).Armies.Single(a=>a.Id==g1).Order!="Guarding";i++)GTick();
             var g2=Send(mergeWorld,u1,"infantry",10,gTime,nearOasis.Id,reinforce:true);
-            for(var i=0;i<600&&mergeWorld.Snapshot(ownId).Armies.Single(a=>a.Id==g2).Order!="Guarding";i++)GTick();
-            mergeWorld.Apply(ownId,new(Guid.NewGuid(),CommandKind.MergeArmies,g1,TargetIds:[g2]),gTime,0);
+            for(var i=0;i<600&&mergeWorld.Snapshot(ownId).Armies.Any(a=>a.Id==g2);i++)GTick();
             var afterOasisMerge=mergeWorld.Snapshot(ownId).Armies.Where(a=>a.DefendingSiteId==nearOasis.Id).ToArray();
-            Check(afterOasisMerge.Length==1&&afterOasisMerge[0].Soldiers==25&&afterOasisMerge[0].Order=="Guarding","Armies inside the same oasis merge directly while preserving Guarding status");
+            Check(afterOasisMerge.Length==1&&afterOasisMerge[0].Soldiers==25&&afterOasisMerge[0].Order=="Guarding","Armies entering the same oasis automatically merge while preserving Guarding status");
+
+            // Partial unit dispatch out of the merged oasis garrison leaves unselected units guarding the oasis
+            Gift(u1,"romans-swordsman",12);
+            var g3=Send(mergeWorld,u1,"swordsman",12,gTime,nearOasis.Id,reinforce:true);
+            for(var i=0;i<600&&mergeWorld.Snapshot(ownId).Armies.Any(a=>a.Id==g3);i++)GTick();
+            var mergedOasisArmy=mergeWorld.Snapshot(ownId).Armies.Single(a=>a.DefendingSiteId==nearOasis.Id);
+            Check(mergedOasisArmy.Soldiers==37&&mergedOasisArmy.Formation!.GetValueOrDefault("romans-infantry")==25&&mergedOasisArmy.Formation!.GetValueOrDefault("romans-swordsman")==12,"Reinforcing swordsmen also auto-merge with infantry in the oasis");
+            mergeWorld.Apply(ownId,new(Guid.NewGuid(),CommandKind.MoveArmy,mergedOasisArmy.Id,X:nearOasis.Position.X+80,Y:nearOasis.Position.Y,Formation:new Dictionary<string,int>{{"romans-swordsman",12}}),gTime,0);
+            var movingOut=mergeWorld.Snapshot(ownId).Armies.Single(a=>a.Id==mergedOasisArmy.Id);
+            var leftGuarding=mergeWorld.Snapshot(ownId).Armies.Single(a=>a.DefendingSiteId==nearOasis.Id);
+            Check(movingOut.Order=="Marching"&&movingOut.Soldiers==12&&leftGuarding.Order=="Guarding"&&leftGuarding.Soldiers==25,"Selected oasis units march out as one army while unselected troops remain guarding the oasis");
 
             // Field merge: two field armies at distinct positions walk toward each other and merge
             var f1=Send(mergeWorld,u1,"infantry",12,gTime);

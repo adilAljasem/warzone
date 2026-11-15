@@ -5,25 +5,28 @@ namespace Warzone;
 public enum RoomStatus { Lobby, Running, Finished, Faulted }
 public enum BotPersonality { Aggressive, Economic, Defensive }
 public enum BotDifficulty { Easy, Normal, Hard }
-public sealed record RoomSettings(int Capacity = 8, int DurationMinutes = 45, int ShieldMinutes = 5,
-    double ResourceSpeed = 1, int BotCount = 7, BotDifficulty BotDifficulty = BotDifficulty.Normal)
+public sealed record RoomSettings(int Capacity = 8, int DurationMinutes = 60, int ShieldMinutes = 5,
+    double ResourceSpeed = 1, int BotCount = 7, BotDifficulty BotDifficulty = BotDifficulty.Normal, int CastleUnlockMinutes = 45)
 {
-    public void Validate()
+    public void Validate(bool allowBotOnly = false)
     {
-        if (Capacity is < 8 or > 16 || DurationMinutes is < 30 or > 60
+        var maxBots = allowBotOnly ? Capacity : Capacity - 1;
+        if (Capacity is < 8 or > 16 || DurationMinutes is < 30 or > 999 || CastleUnlockMinutes is < 1 or > 999
             || ShieldMinutes is not (0 or 5 or 10) || !double.IsFinite(ResourceSpeed) || ResourceSpeed is < .5 or > 5
-            || BotCount < 0 || BotCount >= Capacity || !Enum.IsDefined(BotDifficulty))
-            throw new GameRuleException("settings", "Invalid room settings: capacity 8-16, duration 30-60, shield 0/5/10, speed 0.5-5.");
+            || BotCount < 0 || BotCount > maxBots || !Enum.IsDefined(BotDifficulty))
+            throw new GameRuleException("settings", "Invalid room settings: capacity 8-16, duration 30-999, castle unlock 1-999, shield 0/5/10, speed 0.5-5.");
     }
 }
 
 public sealed record PlayerSnapshot(Guid Id, string Name, TribeType Tribe, bool IsBot, BotPersonality? Personality,
-    bool Ready, bool Online, Guid? VillageId, Position? Position, int? Level, string FlagColor, int Team = 0, bool RandomTribe = false);
-public sealed record RoomSummary(string Id, string Name, RoomStatus Status, int Humans, int Bots, int Capacity);
+    bool Ready, bool Online, Guid? VillageId, Position? Position, int? Level, string FlagColor, int Team = 0, bool RandomTribe = false, int? SpawnSlot = null, int? EffectiveSpawnSlot = null);
+public sealed record SpectatorSnapshot(Guid Id, string Name);
+public sealed record RoomSummary(string Id, string Name, RoomStatus Status, int Humans, int Bots, int Capacity, int Spectators = 0, double SpeedMultiplier = 1, bool IsBotOnly = false);
 public sealed record RoomSnapshot(string Id, string Name, Guid HostId, Guid You, long Revision, RoomStatus Status,
     RoomSettings Settings, double ElapsedSeconds, double RemainingSeconds, double ShieldRemainingSeconds,
     string Phase, string? EndReason, PlayerSnapshot[] Players, EconomySnapshot? Economy, WorldSnapshot? World, MatchResult? Result,
-    ChatMessageSnapshot[] Chat, AllianceSnapshot[] Alliances, AllianceRequestSnapshot[] AllianceRequests);
+    ChatMessageSnapshot[] Chat, AllianceSnapshot[] Alliances, AllianceRequestSnapshot[] AllianceRequests,
+    bool IsSpectator = false, SpectatorSnapshot[]? Spectators = null, double SpeedMultiplier = 1);
 
 public interface IGameCommands
 {
@@ -37,7 +40,8 @@ internal sealed class RoomPlayer(Guid id, string name, TribeType tribe, string f
     public TribeType Tribe { get; set; } = tribe;
     public bool RandomTribe { get; set; }
     public int Team { get; set; } = 0;
-    public string FlagColor { get; } = flagColor;
+    public int? SpawnSlot { get; set; }
+    public string FlagColor { get; set; } = flagColor;
     public BotPersonality? Personality { get; set; } = personality;
     public bool IsBot => Personality.HasValue;
     public bool Ready { get; set; }
@@ -51,8 +55,9 @@ internal sealed class RoomPlayer(Guid id, string name, TribeType tribe, string f
 // Accessed only while GameServer holds its state lock. No network calls occur inside it.
 public sealed partial class GameRoom : IGameCommands
 {
-    private static readonly string[] FlagPalette = ["#e11d48", "#2563eb", "#facc15", "#16a34a", "#f97316", "#06b6d4", "#c026d3", "#84cc16", "#4f46e5", "#f9a8d4", "#78350f", "#7f1d1d", "#1e3a8a", "#115e59", "#f8fafc", "#1e293b"];
+    private static readonly string[] FlagPalette = ["#e11d48", "#2563eb", "#facc15", "#9333ea", "#06b6d4", "#f97316", "#f8fafc", "#18181b", "#ec4899", "#10b981", "#78350f", "#84cc16", "#1e3a8a", "#0f766e", "#f43f5e", "#d97706"];
     private readonly Dictionary<Guid, RoomPlayer> players = [];
+    private readonly Dictionary<Guid, string> spectators = [];
     private LogisticsWorld? world;
     private string NextFlagColor() => FlagPalette.FirstOrDefault(color => players.Values.All(player => player.FlagColor != color)) ?? FlagPalette[players.Count % FlagPalette.Length];
     public string Id { get; } = Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
@@ -65,8 +70,14 @@ public sealed partial class GameRoom : IGameCommands
     public string? EndReason { get; private set; }
     public MatchResult? Result { get; private set; }
     public DateTimeOffset LastOccupiedAt { get; internal set; }
+    internal DateTimeOffset? FinishedAt { get; set; }
+    internal bool FinalBroadcastSent { get; set; }
+    public bool KeepAliveWhenEmpty { get; private set; }
+    public double SpeedMultiplier { get; private set; } = 1;
     public IEnumerable<Guid> HumanIds => players.Values.Where(x => !x.IsBot).Select(x => x.Id);
-    public bool Contains(Guid playerId) => players.ContainsKey(playerId);
+    public IEnumerable<Guid> ViewerIds => HumanIds.Concat(spectators.Keys);
+    public bool IsSpectator(Guid actor) => spectators.ContainsKey(actor);
+    public bool Contains(Guid playerId) => players.ContainsKey(playerId) || spectators.ContainsKey(playerId);
     internal IReadOnlyDictionary<Guid, RoomPlayer> Players => players;
 
     public GameRoom(Guid hostId, string playerName, TribeType? tribe, string name, RoomSettings settings, DateTimeOffset now)
@@ -79,6 +90,26 @@ public sealed partial class GameRoom : IGameCommands
         Join(hostId, playerName, tribe);
         SyncBots();
     }
+
+    private GameRoom(string name, RoomSettings settings, DateTimeOffset now, double speedMultiplier)
+    {
+        settings.Validate(allowBotOnly: true);
+        if (settings.BotCount < 2) throw new GameRuleException("settings", "Bot-only rooms require at least 2 bots.");
+        Name = ValidateName(name);
+        HostId = Guid.Empty;
+        Settings = settings;
+        LastOccupiedAt = now;
+        KeepAliveWhenEmpty = true;
+        SpeedMultiplier = ClampSpeed(speedMultiplier);
+        SyncBots();
+        StartInternal();
+    }
+
+    public static GameRoom CreateBotMatch(string name, RoomSettings settings, DateTimeOffset now, double speedMultiplier = 1)
+        => new(name, settings, now, speedMultiplier);
+
+    private static double ClampSpeed(double speed)
+        => !double.IsFinite(speed) ? 1 : Math.Clamp(Math.Round(speed), 1, 20);
 
     private TribeType GetAvailableTribe()
     {
@@ -145,13 +176,50 @@ public sealed partial class GameRoom : IGameCommands
         if (HumanIds.Count() + Settings.BotCount >= Settings.Capacity)
             throw new GameRuleException("full", "This room is full, including reserved bot seats.");
 
+        spectators.Remove(id);
         var assignedTribe = tribe ?? GetAvailableTribe();
         players.Add(id, new(id, ValidateName(name), assignedTribe, NextFlagColor())
         {
             Team = 0,
             RandomTribe = false
         });
+        if (HostId == Guid.Empty || !players.ContainsKey(HostId)) HostId = id;
         Revision++;
+    }
+
+    public void JoinSpectator(Guid id, string name)
+    {
+        if (id == Guid.Empty) throw new GameRuleException("player", "Invalid spectator.");
+        if (Status == RoomStatus.Faulted) throw new GameRuleException("faulted", "This room has stopped due to an error.");
+        if (players.ContainsKey(id)) return;
+        if (!spectators.ContainsKey(id) && spectators.Count >= 32)
+            throw new GameRuleException("spectator_full", "Spectator limit reached for this room.");
+        spectators[id] = ValidateName(name);
+        Revision++;
+    }
+
+    public void SwitchSpectator(Guid actor, bool spectate, TribeType? tribe = null)
+    {
+        RequireLobby();
+        if (spectate)
+        {
+            if (spectators.ContainsKey(actor)) return;
+            if (!players.TryGetValue(actor, out var current) || current.IsBot)
+                throw new GameRuleException("membership", "Join the room first.");
+            if (spectators.Count >= 32)
+                throw new GameRuleException("spectator_full", "Spectator limit reached for this room.");
+            var name = current.Name;
+            players.Remove(actor);
+            spectators[actor] = name;
+            if (HostId == actor) HostId = HumanIds.FirstOrDefault();
+            Revision++;
+            return;
+        }
+
+        if (players.ContainsKey(actor)) return;
+        if (!spectators.TryGetValue(actor, out var specName))
+            throw new GameRuleException("membership", "Join the room as spectator first.");
+        Join(actor, specName, tribe);
     }
 
     public void ChangeTribe(Guid actor, Guid targetId, string tribeOrRandom)
@@ -192,6 +260,57 @@ public sealed partial class GameRoom : IGameCommands
         Revision++;
     }
 
+    public void ChangeColor(Guid actor, Guid targetId, string color)
+    {
+        RequireLobby();
+        if (!players.TryGetValue(targetId, out var target))
+            throw new GameRuleException("player", "Player not found.");
+        if (targetId != actor && !(actor == HostId && target.IsBot))
+            throw new GameRuleException("permission", "You can only change your own color or a bot's color as host.");
+
+        var normalized = (color ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalized.Length != 7 || normalized[0] != '#' || !normalized.Skip(1).All(Uri.IsHexDigit))
+            throw new GameRuleException("color", "Choose a valid hex color.");
+
+        var existing = players.Values.FirstOrDefault(p => p.Id != targetId && string.Equals(p.FlagColor, normalized, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            if (!existing.IsBot)
+                throw new GameRuleException("color", "That color is already taken by another player.");
+            existing.FlagColor = target.FlagColor;
+        }
+
+        target.FlagColor = normalized;
+        Revision++;
+    }
+
+    public void ChangeSpawnSlot(Guid actor, Guid targetId, int? slot)
+    {
+        RequireLobby();
+        if (!players.TryGetValue(targetId, out var target))
+            throw new GameRuleException("player", "Player not found.");
+        if (targetId != actor && !(actor == HostId && target.IsBot))
+            throw new GameRuleException("permission", "You can only change your own map position or a bot's position as host.");
+
+        if (slot is { } chosen)
+        {
+            if (chosen < 0 || chosen >= Settings.Capacity)
+                throw new GameRuleException("spawn_slot", $"Map position must be between 0 and {Settings.Capacity - 1}.");
+            var resolved = ResolveLobbySlots();
+            var occupantId = resolved.FirstOrDefault(kv => kv.Value == chosen && kv.Key != targetId).Key;
+            var occupant = occupantId != Guid.Empty ? players.GetValueOrDefault(occupantId) : null;
+            if (occupant is not null)
+            {
+                if (!occupant.IsBot)
+                    throw new GameRuleException("spawn_slot", "That map position is already taken by another player.");
+                occupant.SpawnSlot = null;
+            }
+        }
+
+        target.SpawnSlot = slot;
+        Revision++;
+    }
+
     public void Configure(Guid actor, RoomSettings settings)
     {
         RequireHost(actor); RequireLobby(); settings.Validate();
@@ -199,6 +318,7 @@ public sealed partial class GameRoom : IGameCommands
             throw new GameRuleException("full", "Settings would exceed room capacity.");
         Settings = settings;
         SyncBots();
+        foreach (var p in players.Values.Where(x => x.SpawnSlot >= settings.Capacity)) p.SpawnSlot = null;
         foreach (var player in players.Values.Where(x => !x.IsBot)) player.Ready = false;
         Revision++;
     }
@@ -214,6 +334,11 @@ public sealed partial class GameRoom : IGameCommands
 
     public void Leave(Guid actor)
     {
+        if (spectators.Remove(actor))
+        {
+            Revision++;
+            return;
+        }
         if (Status == RoomStatus.Running) throw new GameRuleException("running", "Your seat is reserved until the match ends. Disconnect to leave temporarily.");
         if (!players.Remove(actor)) return;
         if (HostId == actor) HostId = HumanIds.FirstOrDefault();
@@ -222,6 +347,11 @@ public sealed partial class GameRoom : IGameCommands
 
     internal void Abandon(Guid actor)
     {
+        if (spectators.Remove(actor))
+        {
+            Revision++;
+            return;
+        }
         if (Status == RoomStatus.Lobby) { Leave(actor); return; }
         if (!players.TryGetValue(actor, out var player)) return;
         player.Personality ??= BotPersonality.Economic;
@@ -250,6 +380,135 @@ public sealed partial class GameRoom : IGameCommands
         return ordered;
     }
 
+    private static Position SlotPosition(int slot, int ringSize)
+    {
+        var angle = slot * Math.Tau / ringSize;
+        return new(
+            LogisticsWorld.MapCenter + LogisticsWorld.SettlementRadius * Math.Cos(angle),
+            LogisticsWorld.MapCenter + LogisticsWorld.SettlementRadius * Math.Sin(angle));
+    }
+
+    private Dictionary<Guid, int> ResolveLobbySlots()
+    {
+        var ringSize = Math.Max(players.Count, Settings.Capacity);
+        var slots = new RoomPlayer?[ringSize];
+        foreach (var player in players.Values.Where(p => p.SpawnSlot is { } s && s >= 0 && s < ringSize).OrderBy(p => p.IsBot))
+        {
+            if (slots[player.SpawnSlot!.Value] is null)
+                slots[player.SpawnSlot!.Value] = player;
+        }
+
+        var placed = slots.Where(p => p is not null).ToHashSet()!;
+
+        int? NextOpenFrom(int start, int dir)
+        {
+            for (var step = 1; step < ringSize; step++)
+            {
+                var idx = ((start + dir * step) % ringSize + ringSize) % ringSize;
+                if (slots[idx] is null) return idx;
+            }
+            return null;
+        }
+
+        void PlaceAdjacentToAnchor(int anchor, List<RoomPlayer> members)
+        {
+            var humans = members.Where(m => !m.IsBot).ToList();
+            var bots = members.Where(m => m.IsBot).ToList();
+            var half = bots.Count / 2;
+            var left = bots.Take(half).ToList();
+            var right = humans.Concat(bots.Skip(half)).ToList();
+
+            foreach (var m in left)
+            {
+                var idx = NextOpenFrom(anchor, -1);
+                if (idx is { } chosen) { slots[chosen] = m; placed.Add(m); }
+            }
+            foreach (var m in right)
+            {
+                var idx = NextOpenFrom(anchor, 1);
+                if (idx is { } chosen) { slots[chosen] = m; placed.Add(m); }
+            }
+        }
+
+        (int Start, int Length) LargestEmptyGap()
+        {
+            if (slots.All(s => s is null)) return (0, ringSize);
+            var bestStart = 0;
+            var bestLen = 0;
+            for (var i = 0; i < ringSize; i++)
+            {
+                if (slots[i] is not null) continue;
+                var prev = (i - 1 + ringSize) % ringSize;
+                if (slots[prev] is null) continue;
+                var len = 0;
+                while (len < ringSize && slots[(i + len) % ringSize] is null) len++;
+                if (len > bestLen) { bestLen = len; bestStart = i; }
+            }
+            return (bestStart, bestLen);
+        }
+
+        // Place teamed players together so same-team bots and humans sit adjacently on the map.
+        foreach (var teamGroup in players.Values
+            .Where(p => p.Team is >= 1 and <= 4)
+            .GroupBy(p => p.Team)
+            .OrderBy(g => g.Key))
+        {
+            var unpinnedTeam = teamGroup.Where(p => !placed.Contains(p)).ToList();
+            if (unpinnedTeam.Count == 0) continue;
+
+            var pinnedAnchor = -1;
+            for (var i = 0; i < ringSize; i++)
+            {
+                if (slots[i]?.Team == teamGroup.Key) { pinnedAnchor = i; break; }
+            }
+
+            if (pinnedAnchor >= 0)
+            {
+                PlaceAdjacentToAnchor(pinnedAnchor, unpinnedTeam);
+                continue;
+            }
+
+            var orderedTeam = ArrangeSpawnOrder(unpinnedTeam);
+            var (gapStart, gapLen) = LargestEmptyGap();
+            if (gapLen > 0)
+            {
+                var offset = Math.Max(0, (gapLen - orderedTeam.Count) / 2);
+                var cursor = (gapStart + offset) % ringSize;
+                var remaining = new List<RoomPlayer>();
+                foreach (var member in orderedTeam)
+                {
+                    if (slots[cursor] is null)
+                    {
+                        slots[cursor] = member;
+                        placed.Add(member);
+                        cursor = (cursor + 1) % ringSize;
+                    }
+                    else
+                    {
+                        remaining.Add(member);
+                    }
+                }
+                if (remaining.Count > 0) PlaceAdjacentToAnchor(gapStart, remaining);
+            }
+        }
+
+        var unaligned = ArrangeSpawnOrder(players.Values.Where(p => !placed.Contains(p)));
+        var openSlots = Enumerable.Range(0, ringSize).Where(i => slots[i] is null).ToList();
+        for (var i = 0; i < unaligned.Count && openSlots.Count > 0; i++)
+        {
+            var idx = openSlots[i * openSlots.Count / unaligned.Count];
+            slots[idx] = unaligned[i];
+            placed.Add(unaligned[i]);
+        }
+
+        var result = new Dictionary<Guid, int>(players.Count);
+        for (var i = 0; i < ringSize; i++)
+        {
+            if (slots[i] is { } p) result[p.Id] = i;
+        }
+        return result;
+    }
+
     public void Start(Guid actor, Func<Guid, bool> online)
     {
         RequireHost(actor); RequireLobby();
@@ -258,26 +517,33 @@ public sealed partial class GameRoom : IGameCommands
             throw new GameRuleException("minimum_players", "At least two players are required to start the match.");
         if (players.Values.Where(x => !x.IsBot).Any(x => !x.Ready || !online(x.Id)))
             throw new GameRuleException("not_ready", "Every human player must be online and ready.");
+        StartInternal();
+    }
 
+    private void StartInternal()
+    {
         foreach (var bot in players.Values.Where(x => x.IsBot && x.RandomTribe))
         {
             bot.Tribe = GetAvailableTribe();
             bot.RandomTribe = false;
         }
 
-        var orderedPlayers = ArrangeSpawnOrder(players.Values);
-
-        var index = 0;
+        var lobbySlots = ResolveLobbySlots();
+        var ringSize = Math.Max(players.Count, Settings.Capacity);
+        var orderedPlayers = players.Values
+            .OrderBy(p => lobbySlots[p.Id])
+            .ToList();
+        var seq = 0;
         foreach (var player in orderedPlayers)
         {
-            var angle = index++ * Math.Tau / orderedPlayers.Count;
-            player.Economy = new(player.Id, player.Tribe, new(
-                LogisticsWorld.MapCenter + LogisticsWorld.SettlementRadius * Math.Cos(angle),
-                LogisticsWorld.MapCenter + LogisticsWorld.SettlementRadius * Math.Sin(angle)));
-            player.NextBotAction = 1 + index * .25;
+            player.Economy = new(player.Id, player.Tribe, SlotPosition(lobbySlots[player.Id], ringSize));
+            player.NextBotAction = Settings.BotDifficulty == BotDifficulty.Hard ? 0 : 1 + (++seq) * .25;
         }
 
-        world = new(orderedPlayers.Select(x => x.Economy!), Random.Shared.Next());
+        world = new(orderedPlayers.Select(x => x.Economy!), Random.Shared.Next(), Settings.CastleUnlockMinutes * 60);
+        world.ConfigureBotContext(Settings.BotDifficulty,
+            players.Values.Where(p => p.IsBot).Select(p => p.Id),
+            players.Values.Where(p => !p.IsBot).Select(p => p.Id));
         InitializeTeamAlliances();
         world.SetAlliances(AllianceView());
         Status = RoomStatus.Running;
@@ -286,11 +552,28 @@ public sealed partial class GameRoom : IGameCommands
 
     public CommandResult Execute(Guid actorId, GameCommand command)
     {
-        if (!players.TryGetValue(actorId, out var player)) return new(command.RequestId, false, "membership", "You are not in this room.");
-        var fingerprint = JsonSerializer.Serialize(command with { Formation = command.Formation?.OrderBy(x => x.Key).ToDictionary(x => x.Key, x => x.Value) });
-        if (player.Receipts.TryGetValue(command.RequestId, out var receipt))
+        var isSpectator = spectators.ContainsKey(actorId);
+        if (!isSpectator && !players.TryGetValue(actorId, out _))
+            return new(command.RequestId, false, "membership", "You are not in this room.");
+        var player = isSpectator ? null : players[actorId];
+        if (isSpectator)
+        {
+            if (command.Kind != CommandKind.SendChat || Status is not (RoomStatus.Lobby or RoomStatus.Running))
+                return new(command.RequestId, false, "spectator", "Spectators can only use chat.");
+            try
+            {
+                ApplySocial(actorId, command);
+                Revision++;
+                return new(command.RequestId, true, "ok", "Command accepted.");
+            }
+            catch (GameRuleException error) { return new(command.RequestId, false, error.Code, error.Message); }
+        }
+        var fingerprint = !player!.IsBot
+            ? JsonSerializer.Serialize(command with { Formation = command.Formation?.OrderBy(x => x.Key).ToDictionary(x => x.Key, x => x.Value) })
+            : string.Empty;
+        if (!player.IsBot && player.Receipts.TryGetValue(command.RequestId, out var receipt))
             return receipt.Fingerprint == fingerprint ? receipt.Result : new(command.RequestId, false, "request_conflict", "Request ID was already used for another command.");
-        if (command.RequestId == Guid.Empty || player.Receipts.Count >= 4096)
+        if (command.RequestId == Guid.Empty || (!player.IsBot && player.Receipts.Count >= 4096))
             return new(command.RequestId, false, "request_limit", "A non-empty unique request ID is required; limit 4096 per player per match.");
         CommandResult result;
         try
@@ -316,13 +599,21 @@ public sealed partial class GameRoom : IGameCommands
             result = new(command.RequestId, true, "ok", "Command accepted.");
         }
         catch (GameRuleException error) { result = new(command.RequestId, false, error.Code, error.Message); }
-        player.Receipts.Add(command.RequestId, (fingerprint, result));
+        if (!player.IsBot) player.Receipts.Add(command.RequestId, (fingerprint, result));
         return result;
     }
 
     public void Advance(double seconds)
     {
         if (!double.IsFinite(seconds) || seconds <= 0 || seconds > 1) throw new ArgumentOutOfRangeException(nameof(seconds));
+        if (Status != RoomStatus.Running) return;
+        var repeats = Math.Clamp((int)Math.Round(SpeedMultiplier), 1, 20);
+        for (var i = 0; i < repeats && Status == RoomStatus.Running; i++)
+            AdvanceStep(seconds);
+    }
+
+    private void AdvanceStep(double seconds)
+    {
         if (Status != RoomStatus.Running) return;
         var step = Math.Min(seconds, Settings.DurationMinutes * 60 - ElapsedSeconds);
         ElapsedSeconds += step;
@@ -341,9 +632,42 @@ public sealed partial class GameRoom : IGameCommands
                 if (player.Economy is null) continue;
                 BotController.Act(this, player, Settings.BotDifficulty);
                 BotController.ActSocial(this, player);
-                if (ElapsedSeconds > 8) world.BotAct(player.Id, this, player.Personality!.Value, Settings.BotDifficulty);
-                player.NextBotAction = ElapsedSeconds + (Settings.BotDifficulty switch { BotDifficulty.Easy => 8, BotDifficulty.Hard => 2, _ => 4 });
+                if (Settings.BotDifficulty == BotDifficulty.Hard || ElapsedSeconds > 8)
+                    world.BotAct(player.Id, this, player.Personality!.Value, Settings.BotDifficulty);
+                player.NextBotAction = ElapsedSeconds + (Settings.BotDifficulty switch { BotDifficulty.Easy => 8, BotDifficulty.Hard => 0.5, _ => 4 });
             }
+        Revision++;
+    }
+
+    internal void AdminSetSpeed(double multiplier)
+    {
+        SpeedMultiplier = ClampSpeed(multiplier);
+        Revision++;
+    }
+
+    internal void AdminGiveResources(Guid targetPlayerId, long wood, long iron, long stone, long wheat)
+    {
+        if (Status != RoomStatus.Running || world is null)
+            throw new GameRuleException("not_running", "Resources can only be granted during a running match.");
+        var city = world.Primary(targetPlayerId) ?? throw new GameRuleException("player", "Target player has no active settlement.");
+        var clamp = (long v) => Math.Clamp(v, 0L, 10_000_000L);
+        city.ReceiveCargo(new Resources(clamp(wood), clamp(iron), clamp(stone), clamp(wheat)));
+        Revision++;
+    }
+
+    internal void AdminGiveTroops(Guid targetPlayerId, string unitId, int count)
+    {
+        if (Status != RoomStatus.Running || world is null)
+            throw new GameRuleException("not_running", "Troops can only be granted during a running match.");
+        if (count is < 1 or > 20000)
+            throw new GameRuleException("count", "Troop gift count must be between 1 and 20,000.");
+        var city = world.Primary(targetPlayerId) ?? throw new GameRuleException("player", "Target player has no active settlement.");
+        if (!GameCatalog.Units.TryGetValue(unitId, out var def))
+            throw new GameRuleException("unit", "Unknown unit ID.");
+        if (def.TribeType != city.Village.Tribe)
+            throw new GameRuleException("tribe", "Selected unit must match the target player's tribe.");
+        if (!city.ReceiveGift([new TroopStack(BaseUnit.Create(def), count)]))
+            throw new GameRuleException("population", "Target village exceeded maximum unit limit (100,000).");
         Revision++;
     }
 
@@ -354,31 +678,56 @@ public sealed partial class GameRoom : IGameCommands
         Revision++;
     }
 
-    public RoomSummary Summary() => new(Id, Name, Status, HumanIds.Count(), Settings.BotCount, Settings.Capacity);
+    public RoomSummary Summary() => new(Id, Name, Status, HumanIds.Count(), Settings.BotCount, Settings.Capacity, spectators.Count, SpeedMultiplier, KeepAliveWhenEmpty);
     public RoomSnapshot Snapshot(Guid viewer, Func<Guid, bool> online)
     {
-        if (!players.ContainsKey(viewer)) throw new GameRuleException("membership", "You are not in this room.");
+        var isSpectator = spectators.ContainsKey(viewer);
+        if (!isSpectator && !players.ContainsKey(viewer)) throw new GameRuleException("membership", "You are not in this room.");
         var running = Status != RoomStatus.Lobby;
         var remaining = Math.Max(0, Settings.DurationMinutes * 60 - ElapsedSeconds);
-        var phase = Status != RoomStatus.Running ? Status.ToString() : ElapsedSeconds >= 1800 || remaining <= 900 ? "Finale" : ElapsedSeconds < 600 ? "Foundation" : "Expansion";
+        var castleUnlockSeconds = Settings.CastleUnlockMinutes * 60;
+        var phase = Status != RoomStatus.Running ? Status.ToString() : ElapsedSeconds >= castleUnlockSeconds || remaining <= 900 ? "Finale" : ElapsedSeconds < 600 ? "Foundation" : "Expansion";
+        var lobbySlots = world is null ? ResolveLobbySlots() : null;
+        var ringSize = Math.Max(players.Count, Settings.Capacity);
         return new(Id, Name, HostId, viewer, Revision, Status, Settings, ElapsedSeconds, remaining,
             running ? Math.Max(0, Settings.ShieldMinutes * 60 - ElapsedSeconds) : Settings.ShieldMinutes * 60,
             phase, EndReason, players.Values.OrderBy(x => x.IsBot).ThenBy(x => x.Name).Select(x =>
             {
                 var city = world is null ? x.Economy : world.Primary(x.Id);
+                var effSlot = lobbySlots is not null && lobbySlots.TryGetValue(x.Id, out var slotIndex) ? slotIndex : x.SpawnSlot;
+                var pos = city?.Village.Position ?? (effSlot is { } s ? SlotPosition(s, ringSize) : (Position?)null);
                 return new PlayerSnapshot(x.Id, x.Name, x.Tribe, x.IsBot, x.Personality,
-                    x.Ready, x.IsBot || online(x.Id), city?.Village.Id, city?.Village.Position, city?.Village.Level, x.FlagColor, x.Team, x.RandomTribe);
+                    x.Ready, x.IsBot || online(x.Id), city?.Village.Id, pos, city?.Village.Level ?? (world is null ? 1 : (int?)null), x.FlagColor, x.Team, x.RandomTribe, x.SpawnSlot, effSlot);
             }).ToArray(),
-            world?.EconomySnapshot(viewer, players[viewer].SelectedVillageId, Settings.ResourceSpeed), world?.Snapshot(viewer), Result,
-            ChatView(), AllianceView(), AllianceRequestView(viewer));
+            isSpectator ? null : world?.EconomySnapshot(viewer, players[viewer].SelectedVillageId, Settings.ResourceSpeed),
+            world?.Snapshot(viewer, omniscient: isSpectator || (!isSpectator && world.Primary(viewer) is null)),
+            Result,
+            ChatView(), AllianceView(), AllianceRequestView(viewer),
+            isSpectator,
+            spectators.OrderBy(s => s.Value).Select(s => new SpectatorSnapshot(s.Key, s.Value)).ToArray(),
+            SpeedMultiplier);
     }
 }
 
 internal static class BotController
 {
-    private static int UnitPriority(TargetSnapshot target, BotPersonality? personality)
+    private static int UnitPriority(TargetSnapshot target, BotPersonality? personality, BotDifficulty difficulty = BotDifficulty.Normal)
     {
         var role = target.UnitId?.Split('-').LastOrDefault() ?? "";
+        if (difficulty == BotDifficulty.Hard)
+        {
+            return role switch
+            {
+                "heavycavalry" => 98,
+                "swordsman" => 95,
+                "catapult" => 92,
+                "cavalry" => 89,
+                "spearman" => 85,
+                "lightcavalry" => 78,
+                "infantry" => 60,
+                _ => 0
+            };
+        }
         return (role, personality) switch
         {
             ("heavycavalry", _) => 94,
@@ -401,19 +750,38 @@ internal static class BotController
             || economy.Resources.Iron >= economy.Capacity * 2 / 3
             || economy.Resources.Stone >= economy.Capacity * 2 / 3
             || economy.Resources.Wheat >= economy.Capacity * 2 / 3;
+        var mainHallLevel = economy.Targets.FirstOrDefault(t => t.Name == "MainHall")?.Level ?? 1;
         var barracksLevel = economy.Targets.FirstOrDefault(t => t.Name == "Barracks")?.Level ?? 1;
-        var hardBonus = difficulty == BotDifficulty.Hard ? 8 : 0;
+        if (difficulty == BotDifficulty.Hard)
+        {
+            var militaryCapped = economy.Targets.Any(t => t.Kind == "Building"
+                && t.Name is "Barracks" or "Stable" or "SiegeWorkshop" or "Smithy"
+                && t.Level >= mainHallLevel);
+            score -= b.Name switch
+            {
+                "MainHall" => (militaryCapped ? 72 : mainHallLevel < 5 ? 52 : 34) + (personality == BotPersonality.Economic ? 6 : 0),
+                "Barracks" => (b.Level < 3 ? 84 : b.Level < 10 ? 66 : 46) + (personality == BotPersonality.Aggressive ? 8 : 0),
+                "Stable" => (b.Level < 5 ? 82 : b.Level < 10 ? 64 : 44) + (personality != BotPersonality.Defensive ? 6 : 0),
+                "SiegeWorkshop" => (barracksLevel >= 2 && b.Level < 3 ? 78 : b.Level < 10 ? 60 : 40),
+                "Smithy" => (b.Level < 10 ? 68 : 48) + (personality == BotPersonality.Aggressive ? 6 : 0),
+                "Warehouse" => nearCap ? 90 : b.Level < 6 ? 32 : 16,
+                "Hospital" => economy.Wounded > 0 ? 46 : b.Level < 4 ? 18 : 8,
+                "Wall" => economy.Besieged ? 68 : b.Level < 4 ? 18 : 8,
+                "Market" => b.Level < 2 ? 26 : 6,
+                _ => 0
+            };
+            return score;
+        }
         score -= b.Name switch
         {
-            "Warehouse" => (nearCap ? 82 : 24) + (personality == BotPersonality.Economic ? 12 : 0) + (difficulty == BotDifficulty.Hard && b.Level < 6 ? 12 : 0),
-            "MainHall" => 26 + (personality == BotPersonality.Economic ? 12 : 0) + hardBonus,
-            "Barracks" => (b.Level < 3 ? 52 : b.Level < 5 ? 30 : b.Level < 8 ? 18 : 8) + (personality == BotPersonality.Aggressive ? 12 : 0) + hardBonus,
-            "Stable" => (b.Level < 3 ? 42 : b.Level < 5 ? 26 : b.Level < 8 ? 16 : 6) + (personality != BotPersonality.Defensive ? 8 : 0) + hardBonus,
-            "Smithy" => (b.Level < 7 ? 26 : 14) + (personality == BotPersonality.Aggressive ? 10 : 0) + (difficulty == BotDifficulty.Hard && b.Level < 9 ? 14 : 0),
+            "Warehouse" => (nearCap ? 82 : 24) + (personality == BotPersonality.Economic ? 12 : 0),
+            "MainHall" => 26 + (personality == BotPersonality.Economic ? 12 : 0),
+            "Barracks" => (b.Level < 3 ? 52 : b.Level < 5 ? 30 : b.Level < 8 ? 18 : 8) + (personality == BotPersonality.Aggressive ? 12 : 0),
+            "Stable" => (b.Level < 3 ? 42 : b.Level < 5 ? 26 : b.Level < 8 ? 16 : 6) + (personality != BotPersonality.Defensive ? 8 : 0),
+            "Smithy" => (b.Level < 7 ? 26 : 14) + (personality == BotPersonality.Aggressive ? 10 : 0),
             "Wall" => (economy.Besieged ? 60 : 14) + (personality == BotPersonality.Defensive ? 24 : b.Level < 3 ? 10 : 0),
             "Hospital" => (economy.Wounded > 0 ? 40 : 10) + (personality == BotPersonality.Defensive ? 16 : b.Level < 3 ? 8 : 0),
-            "SiegeWorkshop" => (barracksLevel >= 3 && b.Level < 3 ? (difficulty == BotDifficulty.Hard ? 44 : 30)
-                : b.Level < 5 && (personality == BotPersonality.Aggressive || difficulty == BotDifficulty.Hard) ? 20 : 6),
+            "SiegeWorkshop" => (barracksLevel >= 3 && b.Level < 3 ? 30 : b.Level < 5 && personality == BotPersonality.Aggressive ? 20 : 6),
             "Market" => b.Level < (personality == BotPersonality.Economic ? 4 : 2) ? (personality == BotPersonality.Economic ? 24 : 10) : 0,
             _ => 0
         };
@@ -421,90 +789,201 @@ internal static class BotController
     }
 
     public static void Act(IGameCommands commands, RoomPlayer player, BotDifficulty difficulty = BotDifficulty.Normal) =>
-        ActEconomy(commands, player.Id, player.Economy!.Snapshot(), player.Personality, difficulty);
+        ActEconomy(commands, player.Id, player.Economy!.Snapshot(), player.Personality, difficulty, () => player.Economy!.Snapshot());
 
-    public static void ActEconomy(IGameCommands commands, Guid actorId, EconomySnapshot economy, BotPersonality? personality, BotDifficulty difficulty = BotDifficulty.Normal)
+    public static void ActEconomy(IGameCommands commands, Guid actorId, EconomySnapshot economy, BotPersonality? personality,
+        BotDifficulty difficulty = BotDifficulty.Normal, Func<EconomySnapshot>? refresh = null)
     {
+        var isHard = difficulty == BotDifficulty.Hard;
+        var garrisonTotal = economy.Garrison.Values.Sum();
+        var marchWheatReserve = isHard && garrisonTotal >= 180 ? Math.Clamp(garrisonTotal * 3L, 600L, 4200L) : 0L;
         var wheatNet = economy.Production.FirstOrDefault(p => p.Resource == "Wheat")?.NetPerMinute ?? 0;
-        var starving = economy.FoodShortage || (economy.Resources.Wheat < 220 && wheatNet < 0);
-        var trainings = economy.Targets.Where(x => x.Kind == "Training").ToArray();
-        if (starving)
+        var starving = isHard
+            ? (economy.FoodShortage && wheatNet < 0) || (garrisonTotal >= 240 && economy.Resources.Wheat < marchWheatReserve && wheatNet < 200)
+            : economy.FoodShortage || (economy.Resources.Wheat < 220 && wheatNet < 0);
+
+        var autoPasses = isHard ? 8 : 1;
+        for (var pass = 0; pass < autoPasses; pass++)
         {
-            var active = trainings.Where(x => x.Auto).OrderBy(x => UnitPriority(x, personality)).FirstOrDefault();
-            if (active is not null)
-                commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.SetAutoQueue, active.Id, Enabled: false));
-        }
-        else if (economy.Resources.Wheat >= 300 || wheatNet >= 15)
-        {
-            var nonCombatAuto = trainings.FirstOrDefault(x => x.Auto && UnitPriority(x, personality) == 0);
-            if (nonCombatAuto is not null)
-                commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.SetAutoQueue, nonCombatAuto.Id, Enabled: false));
-            else
+            var trainings = economy.Targets.Where(x => x.Kind == "Training").ToArray();
+            var acted = false;
+            if (starving)
             {
-                var unlockedCombat = trainings.Where(x => x.Unlocked && UnitPriority(x, personality) > 0)
-                    .OrderByDescending(x => UnitPriority(x, personality)).ToArray();
-                var desired = new List<TargetSnapshot>();
-                if (unlockedCombat.FirstOrDefault(x => x.TrainingBuilding == "Barracks") is { } bestBarracks)
-                    desired.Add(bestBarracks);
-                if (unlockedCombat.FirstOrDefault(x => x.TrainingBuilding == "Stable") is { } bestStable)
-                    desired.Add(bestStable);
-                foreach (var unit in unlockedCombat)
-                    if (desired.Count < economy.AutoSlots && !desired.Contains(unit)
-                        && (difficulty == BotDifficulty.Easy || UnitPriority(unit, personality) >= 75 || desired.Count == 0))
-                        desired.Add(unit);
-                var missing = desired.FirstOrDefault(x => !x.Auto);
-                if (missing is not null)
+                var active = trainings.Where(x => x.Auto).OrderBy(x => UnitPriority(x, personality, difficulty)).FirstOrDefault();
+                if (active is not null)
+                    acted = commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.SetAutoQueue, active.Id, Enabled: false)).Accepted;
+            }
+            else if (isHard || economy.Resources.Wheat >= 300 || wheatNet >= 15)
+            {
+                var nonCombatAuto = trainings.FirstOrDefault(x => x.Auto && UnitPriority(x, personality, difficulty) == 0);
+                if (nonCombatAuto is not null)
                 {
-                    if (economy.UsedAutoSlots < economy.AutoSlots)
-                        commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.SetAutoQueue, missing.Id, Enabled: true));
-                    else if (trainings.Where(x => x.Auto && !desired.Contains(x)).OrderBy(x => UnitPriority(x, personality)).FirstOrDefault() is { } obsolete)
-                        commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.SetAutoQueue, obsolete.Id, Enabled: false));
+                    acted = commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.SetAutoQueue, nonCombatAuto.Id, Enabled: false)).Accepted;
+                }
+                else
+                {
+                    var unlockedCombat = trainings.Where(x => x.Unlocked && UnitPriority(x, personality, difficulty) > 0)
+                        .OrderByDescending(x => UnitPriority(x, personality, difficulty)).ToArray();
+                    var desired = new List<TargetSnapshot>();
+                    if (unlockedCombat.FirstOrDefault(x => x.TrainingBuilding == "Barracks") is { } bestBarracks)
+                        desired.Add(bestBarracks);
+                    if (unlockedCombat.FirstOrDefault(x => x.TrainingBuilding == "Stable") is { } bestStable)
+                        desired.Add(bestStable);
+                    if (isHard && unlockedCombat.FirstOrDefault(x => x.TrainingBuilding == "SiegeWorkshop") is { } bestSiege)
+                        desired.Add(bestSiege);
+                    foreach (var unit in unlockedCombat)
+                        if (desired.Count < economy.AutoSlots && !desired.Contains(unit)
+                            && (difficulty == BotDifficulty.Easy || UnitPriority(unit, personality, difficulty) >= 75 || desired.Count == 0))
+                            desired.Add(unit);
+
+                    var obsolete = trainings.Where(x => x.Auto && !desired.Contains(x))
+                        .OrderBy(x => UnitPriority(x, personality, difficulty)).FirstOrDefault();
+                    var missing = desired.FirstOrDefault(x => !x.Auto);
+                    if (missing is not null)
+                    {
+                        if (economy.UsedAutoSlots < economy.AutoSlots)
+                            acted = commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.SetAutoQueue, missing.Id, Enabled: true)).Accepted;
+                        else if (obsolete is not null)
+                            acted = commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.SetAutoQueue, obsolete.Id, Enabled: false)).Accepted;
+                    }
                 }
             }
+            if (!acted || refresh is null) break;
+            economy = refresh();
         }
 
-        var mainHallLevel = economy.Targets.FirstOrDefault(t => t.Name == "MainHall")?.Level ?? 1;
-        var remaining = economy.Resources;
-        var building = economy.Targets.Where(x => x.Kind == "Building" && (x.Name == "MainHall" || x.Level < mainHallLevel) && x.UpgradeCost is { } cost && remaining.Covers(cost))
-            .OrderBy(x => BuildingScore(x, economy, personality, difficulty)).FirstOrDefault();
-        if (building is not null)
+        var maxUnitTier = isHard ? 10 : difficulty == BotDifficulty.Normal ? 5 : 2;
+        var upgradePasses = isHard ? 8 : 1;
+        for (var pass = 0; pass < upgradePasses; pass++)
         {
-            if (commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.Upgrade, building.Id)).Accepted)
-                remaining -= building.UpgradeCost!.Value;
+            var mainHallLevel = economy.Targets.FirstOrDefault(t => t.Name == "MainHall")?.Level ?? 1;
+            var remaining = economy.Resources;
+            var trainings = economy.Targets.Where(x => x.Kind == "Training").ToArray();
+            var upgradeWheatFloor = isHard ? 140L : 0L;
+            var building = economy.Targets
+                .Where(x => x.Kind == "Building" && (x.Name == "MainHall" || x.Level < mainHallLevel)
+                    && x.UpgradeCost is { } cost && remaining.Covers(cost)
+                    && remaining.Wheat >= cost.Wheat + (x.Name is "Farm" or "Granary" ? upgradeWheatFloor : Math.Max(upgradeWheatFloor, marchWheatReserve)))
+                .OrderBy(x => BuildingScore(x, economy, personality, difficulty))
+                .FirstOrDefault();
+
+            var upgradedAny = false;
+            if (building is not null && commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.Upgrade, building.Id)).Accepted)
+            {
+                upgradedAny = true;
+                if (refresh is not null)
+                {
+                    economy = refresh();
+                    remaining = economy.Resources;
+                    mainHallLevel = economy.Targets.FirstOrDefault(t => t.Name == "MainHall")?.Level ?? 1;
+                    trainings = economy.Targets.Where(x => x.Kind == "Training").ToArray();
+                }
+                else
+                {
+                    remaining -= building.UpgradeCost!.Value;
+                }
+            }
+
+            var canInvestTier = isHard
+                ? mainHallLevel >= 2 && (building is null || remaining.Total > economy.Capacity * 0.35)
+                : difficulty == BotDifficulty.Normal && mainHallLevel >= 3 && building is null && remaining.Total > economy.Capacity * 1.1;
+            if (canInvestTier)
+            {
+                var tier = trainings
+                    .Where(x => (x.Auto || UnitPriority(x, personality, difficulty) >= 84) && x.Unlocked && x.Level < maxUnitTier
+                        && x.UpgradeCost is { } c && remaining.Covers(c) && remaining.Wheat >= c.Wheat + Math.Max(upgradeWheatFloor, marchWheatReserve))
+                    .OrderBy(x => x.Level)
+                    .ThenByDescending(x => UnitPriority(x, personality, difficulty))
+                    .FirstOrDefault();
+                if (tier is not null && commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.Upgrade, tier.Id)).Accepted)
+                {
+                    upgradedAny = true;
+                    if (refresh is not null) economy = refresh();
+                }
+            }
+
+            if (!upgradedAny || refresh is null) break;
         }
 
-        var maxUnitTier = difficulty == BotDifficulty.Hard ? 10 : difficulty == BotDifficulty.Normal ? 5 : 2;
-        var canInvestTier = difficulty == BotDifficulty.Hard
-            ? mainHallLevel >= 2 && (building is null || remaining.Total > economy.Capacity * 0.72)
-            : difficulty == BotDifficulty.Normal && mainHallLevel >= 3 && building is null && remaining.Total > economy.Capacity * 1.1;
-        if (canInvestTier)
+        if (isHard && !starving)
         {
-            var tier = trainings.Where(x => (x.Auto || UnitPriority(x, personality) >= 84) && x.Unlocked && x.Level < maxUnitTier
-                    && x.UpgradeCost is { } c && remaining.Covers(c))
-                .OrderBy(x => x.Level).ThenByDescending(x => UnitPriority(x, personality)).FirstOrDefault();
-            if (tier is not null)
-                commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.Upgrade, tier.Id));
+            var siegeLvl = economy.Targets.FirstOrDefault(t => t.Name == "SiegeWorkshop")?.Level ?? 1;
+            var mainLvl = economy.Targets.FirstOrDefault(t => t.Name == "MainHall")?.Level ?? 1;
+            var needUnlockSave = mainLvl < 5 || siegeLvl < 3;
+            var keepWood = needUnlockSave ? 220L : 0L;
+            var keepIron = needUnlockSave ? 200L : 0L;
+            var keepStone = needUnlockSave ? 150L : 0L;
+            foreach (var lane in new[] { "Barracks", "Stable", "SiegeWorkshop" })
+            {
+                if (lane == "SiegeWorkshop" && siegeLvl < 3) continue;
+                for (var batchPass = 0; batchPass < 2; batchPass++)
+                {
+                    if (economy.Jobs.Count(j => j.Lane == lane) >= 2) break;
+                    var bestUnit = economy.Targets
+                        .Where(x => x.Kind == "Training" && x.Unlocked && x.TrainingBuilding == lane
+                            && UnitPriority(x, personality, difficulty) > 0 && x.TrainingCost is not null)
+                        .OrderByDescending(x => UnitPriority(x, personality, difficulty))
+                        .FirstOrDefault();
+                    if (bestUnit?.TrainingCost is not { } unitCost) break;
+                    var batch = Math.Max(1, bestUnit.AutoBatchSize);
+                    var batchCost = new Resources(unitCost.Wood * batch, unitCost.Iron * batch, unitCost.Stone * batch, unitCost.Wheat * batch);
+                    var wheatReserve = Math.Max(needUnlockSave ? 150L : 0L, Math.Max(marchWheatReserve, wheatNet > 60 ? 0L : 200L));
+                    if (!economy.Resources.Covers(batchCost)
+                        || economy.Resources.Wood < batchCost.Wood + keepWood
+                        || economy.Resources.Iron < batchCost.Iron + keepIron
+                        || economy.Resources.Stone < batchCost.Stone + keepStone
+                        || economy.Resources.Wheat < batchCost.Wheat + wheatReserve) break;
+                    if (!commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.Train, bestUnit.Id, Quantity: batch)).Accepted) break;
+                    if (refresh is null) break;
+                    economy = refresh();
+                }
+            }
         }
     }
 
     public static void ActSocial(GameRoom room, RoomPlayer player)
     {
+        var isHardCoalition = room.Settings.BotDifficulty == BotDifficulty.Hard && room.HumanIds.Any();
         var pending = room.PendingRequestsFor(player.Id);
         foreach (var req in pending)
         {
             var sender = room.Players.GetValueOrDefault(req.SenderId);
+            var sameTeam = sender is not null && player.Team > 0 && player.Team == sender.Team;
             var teamMismatch = sender is not null && (player.Team > 0 || sender.Team > 0) && player.Team != sender.Team;
-            var currentAlliances = room.AllianceCount(player.Id);
-            var maxAlliances = player.Personality == BotPersonality.Economic ? 2 : 1;
-            var accept = !teamMismatch && currentAlliances < maxAlliances;
+            bool accept;
+            if (isHardCoalition)
+            {
+                if (sender is not null && !sender.IsBot)
+                    accept = sameTeam;
+                else
+                    accept = sender is not null && sender.IsBot && !teamMismatch;
+            }
+            else
+            {
+                var currentAlliances = room.AllianceCount(player.Id);
+                var maxAlliances = player.Personality == BotPersonality.Economic ? 2 : 1;
+                accept = !teamMismatch && currentAlliances < maxAlliances;
+            }
             room.Execute(player.Id, new(Guid.NewGuid(), CommandKind.RespondAlliance, req.Id, Enabled: accept));
         }
 
-        if (room.ElapsedSeconds < 15 || player.NextSocialAction > room.ElapsedSeconds) return;
-        player.NextSocialAction = room.ElapsedSeconds + 35;
+        if (!isHardCoalition && (room.ElapsedSeconds < 15 || player.NextSocialAction > room.ElapsedSeconds)) return;
+        if (!isHardCoalition) player.NextSocialAction = room.ElapsedSeconds + 35;
 
         // Team alliances are established at match start; bots assigned to a team never ally outside it.
         if (player.Team > 0) return;
+
+        if (isHardCoalition)
+        {
+            var botAllies = room.Players.Values
+                .Where(p => p.Id != player.Id && p.IsBot && p.Economy is not null && p.Team == 0
+                    && !room.IsAllied(player.Id, p.Id)
+                    && !room.HasPendingRequest(player.Id, p.Id))
+                .ToArray();
+            foreach (var botAlly in botAllies)
+                room.Execute(player.Id, new(Guid.NewGuid(), CommandKind.ProposeAlliance, botAlly.Id));
+            return;
+        }
 
         if (room.AllianceCount(player.Id) >= (player.Personality == BotPersonality.Economic ? 2 : 1)) return;
 

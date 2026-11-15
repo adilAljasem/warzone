@@ -2675,6 +2675,39 @@ svg {
     border-top: 1px solid var(--line)
 }
 
+.report-role-attacker,
+.report-role-defender {
+    position: relative;
+    overflow: hidden;
+}
+
+.report-role-attacker>*,
+.report-role-defender>* {
+    position: relative;
+    z-index: 1;
+}
+
+.report-role-attacker::before,
+.report-role-defender::before {
+    content: "";
+    position: absolute;
+    inset: 6px 12px;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+    opacity: 0.12;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.report-role-attacker::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg fill='%23ffffff'%3E%3Cg transform='rotate(42 32 32)'%3E%3Cpath d='M32 4 36 12 35 41H29L28 12Z'/%3E%3Crect x='21' y='41' width='22' height='4' rx='2'/%3E%3Crect x='29.5' y='45' width='5' height='9' rx='1'/%3E%3Ccircle cx='32' cy='56' r='3.5'/%3E%3C/g%3E%3Cg transform='rotate(-42 32 32)'%3E%3Cpath d='M32 4 36 12 35 41H29L28 12Z'/%3E%3Crect x='21' y='41' width='22' height='4' rx='2'/%3E%3Crect x='29.5' y='45' width='5' height='9' rx='1'/%3E%3Ccircle cx='32' cy='56' r='3.5'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+.report-role-defender::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23ffffff' fill-rule='evenodd' d='M32 6 54 14V31C54 45.5 44.5 54.5 32 59 19.5 54.5 10 45.5 10 31V14ZM32 11.5 48.5 17.5V31C48.5 42 41 49.5 32 53.3 23 49.5 15.5 42 15.5 31V17.5ZM32 14.5 45.5 19.4V31C45.5 40.3 39.2 46.8 32 50.1 24.8 46.8 18.5 40.3 18.5 31V19.4Z'/%3E%3C/svg%3E");
+}
+
 .report-force>strong {
     font-size: 13px;
     font-weight: 700;
@@ -3399,7 +3432,7 @@ svg {
 
 /* تنسيقات اللوبي الجديدة والخلفية الخضراء للاعب الجاهز */
 .drawer[data-panel=lobby] {
-    width: min(460px, calc(100vw / var(--ui-scale, 1) - 24px));
+    width: min(500px, calc(100vw / var(--ui-scale, 1) - 24px));
 }
 
 #drawer[data-panel=lobby] #drawer-body:has(.lobby-leaders-list) {
@@ -3412,10 +3445,181 @@ svg {
     flex-direction: column;
     gap: 6px;
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 140px;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #9a87555e transparent;
+}
+
+.lobby-settings-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.lobby-settings-pane.readonly .choice-tile,
+.lobby-settings-pane.readonly input {
+    pointer-events: none;
+    opacity: 0.72;
+}
+
+.lobby-setup {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 12px;
+    margin: 6px 0 8px;
+    border-radius: 12px;
+    background: rgba(18, 22, 20, 0.72);
+    border: 1px solid rgba(218, 187, 114, 0.2);
+}
+
+.lobby-map-col {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+}
+
+.lobby-map-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.lobby-auto-btn {
+    padding: 2px 8px;
+    font-size: 11px;
+    min-height: 0;
+    border-radius: 999px;
+    border: 1px solid rgba(218, 187, 114, 0.25);
+}
+
+.lobby-auto-btn.active {
+    background: rgba(218, 187, 114, 0.24);
+    border-color: #e7c673;
+    color: #fff3cf;
+}
+
+.lobby-spawn-map {
+    position: relative;
+    width: 146px;
+    height: 146px;
+    flex-shrink: 0;
+}
+
+.lobby-spawn-map svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.lobby-map-slot {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 21px;
+    height: 21px;
+    padding: 0;
+    min-height: 0;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.45);
+    background: var(--slot-color, rgba(255, 255, 255, 0.2));
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    display: grid;
+    place-items: center;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.lobby-map-slot:hover:not(:disabled) {
+    transform: translate(-50%, -50%) scale(1.18);
+    border-color: #fff;
+}
+
+.lobby-map-slot.mine {
+    width: 24px;
+    height: 24px;
+    border: 2px solid #fff3cf;
+    box-shadow: 0 0 0 2px rgba(231, 198, 115, 0.65), 0 2px 8px rgba(0, 0, 0, 0.7);
+    z-index: 2;
+}
+
+.lobby-map-slot.locked {
+    opacity: 0.72;
+    cursor: not-allowed;
+}
+
+.lobby-map-slot.bot-slot {
+    border-style: dashed;
+    border-color: rgba(255, 243, 207, 0.85);
+}
+
+.lobby-color-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.lobby-color-bar {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.lobby-swatch {
+    width: 100%;
+    height: 24px;
+    padding: 0;
+    min-height: 0;
+    border-radius: 7px;
+    background: var(--swatch);
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.lobby-swatch:hover:not(:disabled) {
+    transform: scale(1.08);
+    border-color: #fff;
+}
+
+.lobby-swatch.active {
+    border: 2px solid #fff3cf;
+    box-shadow: 0 0 0 2px rgba(231, 198, 115, 0.65);
+}
+
+.lobby-swatch.locked {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.lobby-hint {
+    opacity: 0.8;
+}
+
+.lobby-player-color {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    margin-inline-end: 6px;
+    vertical-align: middle;
 }
 
 .lobby-player-row {
@@ -3679,6 +3883,97 @@ svg {
     margin-top: 3px;
     font-size: 10px;
     font-weight: 600;
+}
+
+.oasis-own-block,
+.oasis-ally-row {
+    display: grid;
+    gap: 5px;
+}
+
+.oasis-garrison-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.oasis-garrison-head strong {
+    font-size: 11px;
+    color: var(--gold);
+}
+
+.oasis-garrison-actions {
+    display: inline-flex;
+    gap: 4px;
+}
+
+.oasis-unit-tile {
+    position: relative;
+    cursor: pointer;
+    width: 100%;
+    transition: border-color 0.14s ease, background 0.14s ease, transform 0.1s ease;
+}
+
+.oasis-unit-tile:hover {
+    border-color: #ebd09088;
+    background: #ffffff18;
+}
+
+.oasis-unit-tile.selected {
+    border-color: #66f0a5;
+    background: rgba(44, 118, 82, 0.36);
+    box-shadow: 0 0 0 1px rgba(102, 240, 165, 0.38), inset 0 0 8px rgba(102, 240, 165, 0.18);
+}
+
+.oasis-unit-check {
+    position: absolute;
+    top: 2px;
+    inset-inline-end: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #22c55e;
+    color: #052e16;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 14px;
+    text-align: center;
+    z-index: 2;
+}
+
+.oasis-garrison-hint {
+    display: block;
+    font-size: 9.5px;
+    color: #c5d6bf;
+    line-height: 1.35;
+}
+
+.oasis-ally-row {
+    margin-top: 6px;
+    padding: 7px 8px;
+    border-radius: 7px;
+    background: rgba(56, 161, 105, 0.13);
+    border: 1px solid rgba(104, 211, 145, 0.32);
+}
+
+.oasis-ally-row .oasis-garrison-head strong {
+    color: #9ae6b4;
+}
+
+.oasis-ally-row .report-unit.oasis-ally-unit {
+    background: rgba(56, 161, 105, 0.16);
+    border-color: rgba(110, 231, 167, 0.34);
+    cursor: default;
+}
+
+.oasis-ally-owner {
+    font-size: 8.5px;
+    color: #c6f6d5;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Top HUD navigation: Reports and Kingdoms positioned to the right of resources */

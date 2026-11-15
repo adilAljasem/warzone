@@ -20,7 +20,7 @@ public sealed partial class LogisticsWorld
 {
     private readonly Dictionary<Guid, WarStatistics> statistics = [];
     private readonly CentralCastle castle = new();
-    private double warTime, protectionUntil, matchDuration = 1800;
+    private double warTime, protectionUntil, matchDuration = 1800, castleUnlockSeconds = 1800;
     private void InitializeWarfare() { foreach (var owner in economies.Keys) statistics[owner] = new(); }
     private void RegisterLoss(Army force, BaseUnit unit, int count, double now, Guid enemy, bool deployed)
     {
@@ -52,7 +52,7 @@ public sealed partial class LogisticsWorld
     {
         if (command.Kind == CommandKind.CaptureCastle)
         {
-            if (!castle.Active) throw new GameRuleException("castle", "The central castle opens at 30 minutes.");
+            if (!castle.Active) throw new GameRuleException("castle", $"The central castle opens at {Math.Round(castleUnlockSeconds / 60)} minutes.");
             var army = Owned(actor, command.TargetId);
             if (army.Routing || Engaged(army)) throw new GameRuleException("engaged", "This army cannot take castle orders now.");
             if (OrderFighters(army, command.Formation) == 0) throw new GameRuleException("troops", "Fighting troops are required to claim the castle.");
@@ -87,6 +87,7 @@ public sealed partial class LogisticsWorld
                 attacker.Troops = Array.AsReadOnly(attacker.Troops.Select(x => x == governor ? x.Count > 1 ? new TroopStack(x.Unit, x.Count - 1) : null : x)
                     .Where(x => x is not null).Cast<TroopStack>().ToArray());
                 city.ChangeOwner(attacker.OwnerId, fallback);
+                city.SetHardBotBonuses(worldBotDifficulty == BotDifficulty.Hard && hardBotOwners.Contains(attacker.OwnerId));
                 Note(attacker.OwnerId, now, "The city's loyalty reached zero. Your governor has established a new province.");
                 Note(former, now, "Your city has been conquered.");
             }
@@ -135,9 +136,22 @@ public sealed partial class LogisticsWorld
     public Guid? CrownWinner { get; private set; }
     private readonly Dictionary<string, (Guid EnemyId, double ExpiresAt)> teamFocusTargets = [];
     private readonly Dictionary<string, Guid> lastTeamFocusTargets = [];
+    private readonly HashSet<Guid> hardBotOwners = [];
+    private readonly HashSet<Guid> humanOwners = [];
+    private BotDifficulty worldBotDifficulty = BotDifficulty.Normal;
+    internal void ConfigureBotContext(BotDifficulty difficulty, IEnumerable<Guid> bots, IEnumerable<Guid> humans)
+    {
+        worldBotDifficulty = difficulty;
+        hardBotOwners.Clear();
+        foreach (var id in bots) hardBotOwners.Add(id);
+        humanOwners.Clear();
+        foreach (var id in humans) humanOwners.Add(id);
+        foreach (var v in villages.Values)
+            v.SetHardBotBonuses(difficulty == BotDifficulty.Hard && hardBotOwners.Contains(v.Village.OwnerId));
+    }
     private void AdvancePolitics(double seconds, double now, double duration)
     {
-        castle.Active = now >= 1800;
+        castle.Active = now >= castleUnlockSeconds;
         if (!castle.Active) return;
         var present = armies.Where(x => Distance(x.Position, castle.Position) < 45 && !x.Routing && Fighters(x) > 0).ToArray();
         var owners = present.Select(x => x.OwnerId).Distinct().ToArray();
@@ -266,11 +280,20 @@ public sealed partial class LogisticsWorld
         var enemyCities = villages.Values.Where(v => !v.Ruined && v.Village.OwnerId != actor && !CampAllied(actor, v.Village.OwnerId)).ToArray();
         if (enemyCities.Length == 0) return null;
 
+        var prioritizingHumans = worldBotDifficulty == BotDifficulty.Hard && humanOwners.Count > 0;
+        if (prioritizingHumans)
+        {
+            var humanCities = enemyCities.Where(v => humanOwners.Contains(v.Village.OwnerId)).ToArray();
+            if (humanCities.Length > 0) enemyCities = humanCities;
+            else prioritizingHumans = false;
+        }
+
         var allies = economies.Keys.Where(id => (id == actor || CampAllied(actor, id)) && Primary(id) is not null).OrderBy(id => id).ToArray();
         if (allies.Length <= 1)
         {
             var soloTarget = enemyCities.OrderBy(c =>
-                Distance(c.Village.Position, home.Village.Position)
+                (prioritizingHumans && sieges.Any(s => s.Status == "Active" && s.City == c) ? 1200 : 0)
+                + Distance(c.Village.Position, home.Village.Position)
                 + EffectiveCityThreatDefense(c) * 2
                 + IncomingPressureOnOwner(c.Village.OwnerId, [actor]) * 550).First();
             return (soloTarget.Village.OwnerId, soloTarget);
@@ -278,6 +301,26 @@ public sealed partial class LogisticsWorld
 
         var allySet = allies.ToHashSet();
         var distinctEnemyOwners = enemyCities.Select(c => c.Village.OwnerId).Distinct().Count();
+
+        if (prioritizingHumans)
+        {
+            // Coordinate mass attack against human players first; open 2nd/3rd fronts if a human owns multiple cities and one is already besieged.
+            var unbesiegedHumanCity = enemyCities
+                .Where(c => !sieges.Any(s => s.Status == "Active" && s.City == c))
+                .OrderBy(c => CityPressureStats(c.Village.Id, allySet).DistinctOwners * 900
+                    + EffectiveCityThreatDefense(c) * 1.5
+                    + Distance(c.Village.Position, home.Village.Position))
+                .FirstOrDefault();
+            if (unbesiegedHumanCity is not null && enemyCities.Any(c => sieges.Any(s => s.Status == "Active" && s.City == c)))
+                return (unbesiegedHumanCity.Village.OwnerId, unbesiegedHumanCity);
+
+            var primaryHuman = enemyCities
+                .OrderBy(c => CityPressureStats(c.Village.Id, allySet).DistinctOwners * 400
+                    + EffectiveCityThreatDefense(c) * 1.5
+                    + Distance(c.Village.Position, home.Village.Position))
+                .First();
+            return (primaryHuman.Village.OwnerId, primaryHuman);
+        }
 
         // Converge up to two allies on an active siege/march; overflow extra allies to spread multi-front pressure across all enemy players.
         var activeAlliedSiege = sieges.Where(s => s.Status == "Active" && allySet.Contains(s.Attacker.OwnerId) && !CampAllied(actor, s.DefenderOwner) && !s.City.Ruined)
@@ -346,15 +389,20 @@ public sealed partial class LogisticsWorld
             if (alliedSiege.Objective == AttackObjective.Conquest) return governors > 0 ? AttackObjective.Conquest : null;
             if (alliedSiege.Objective == AttackObjective.Raid) return AttackObjective.Raid;
             if (catapults > 0 && (difficulty == BotDifficulty.Hard || (isContender && (personality == BotPersonality.Aggressive || hasAllies)))) return AttackObjective.Raze;
-            if (isContender && governors > 0 && fighters >= 35) return AttackObjective.Conquest;
-            return fighters >= 26 ? AttackObjective.Raid : null;
+            if (governors > 0 && (difficulty == BotDifficulty.Hard ? fighters >= 24 : isContender && fighters >= 35)) return AttackObjective.Conquest;
+            return fighters >= (difficulty == BotDifficulty.Hard ? 20 : 26) ? AttackObjective.Raid : null;
         }
-        if (catapults > 0 && (difficulty == BotDifficulty.Hard || (isContender && (personality == BotPersonality.Aggressive || hasAllies))))
+        if (difficulty == BotDifficulty.Hard)
+        {
+            if (catapults > 0) return AttackObjective.Raze;
+            if (governors > 0 && fighters >= 24) return AttackObjective.Conquest;
+        }
+        if (catapults > 0 && (isContender && (personality == BotPersonality.Aggressive || hasAllies)))
             return AttackObjective.Raze;
         if (isContender && governors > 0 && fighters >= 35) return AttackObjective.Conquest;
         var cityDefense = targetCity.Garrison().Sum(t => t.Count) + targetCity.BuildingLevel(BuildingType.Wall) * 5 + Guards(targetCity.Village.Id, actor).Sum(Fighters);
         if (difficulty == BotDifficulty.Hard && Guards(targetCity.Village.Id, actor).Sum(Fighters) == 0 && fighters >= 18
-            && (fighters < cityDefense * .9 || (hasAllies && fighters < 28)))
+            && (fighters < cityDefense * .9 || (hasAllies && fighters < 75)))
             return AttackObjective.Blockade;
         return AttackObjective.Raid;
     }
@@ -367,6 +415,7 @@ public sealed partial class LogisticsWorld
             .OrderByDescending(Fighters).FirstOrDefault();
         var homeTroops = HomeCombatTroops(home);
 
+        var fieldCount = ActiveFieldArmyCount(ownArmies);
         // 1. Join nearby active allied field battles
         var allyBattle = battles.FirstOrDefault(b => b.Status == "Active"
             && (SideAlliedWith(b.Attackers, actor) ^ SideAlliedWith(b.Defenders, actor))
@@ -408,7 +457,7 @@ public sealed partial class LogisticsWorld
                         commands.Execute(actor, new(Guid.NewGuid(), CommandKind.Reinforce, helper.Id, DestinationId: threatenedCity.Village.Id));
                     return true;
                 }
-                if (ownArmies.Length < maxArmies && homeTroops >= 18)
+                if (fieldCount < maxArmies && ownArmies.Length < 12 && homeTroops >= 18)
                 {
                     var relief = BuildBotFormation(home, threatenedCity.Village.Position, 70, false, false, 4);
                     if (relief is not null)
@@ -433,7 +482,7 @@ public sealed partial class LogisticsWorld
                 commands.Execute(actor, new(Guid.NewGuid(), CommandKind.Reinforce, helper.Id, DestinationId: threatenedAllyOasis.Id));
                 return true;
             }
-            if (difficulty == BotDifficulty.Hard && ownArmies.Length < maxArmies - 1 && homeTroops >= 24)
+            if (difficulty == BotDifficulty.Hard && fieldCount < maxArmies && ownArmies.Length < 12 && homeTroops >= 24)
             {
                 var relief = BuildBotFormation(home, threatenedAllyOasis.Position, 50, false, false, 6);
                 if (relief is not null)
@@ -448,7 +497,7 @@ public sealed partial class LogisticsWorld
 
         // 4. Proactive reinforcement for vulnerable teammates on Hard or Defensive bots
         if ((difficulty == BotDifficulty.Hard || personality == BotPersonality.Defensive)
-            && ownArmies.Length < maxArmies - 1 && homeTroops >= 44
+            && fieldCount < maxArmies && ownArmies.Length < 12 && homeTroops >= 44
             && !ownArmies.Any(a => a.Order is "Reinforcing" or "Guarding" && a.SupportedOwnerId is { } s && s != actor))
         {
             var vulnerableAlly = allies.Select(id => Primary(id)!).Where(v =>
@@ -476,7 +525,7 @@ public sealed partial class LogisticsWorld
     {
         var home = Primary(actor); if (home is null) return true;
         var ownArmies = armies.Where(x => x.OwnerId == actor).ToArray();
-        var maxArmies = warTime < protectionUntil ? 4 : difficulty == BotDifficulty.Hard ? 6 : personality == BotPersonality.Aggressive ? 5 : 4;
+        var maxArmies = warTime < protectionUntil ? 3 : difficulty == BotDifficulty.Hard ? 6 : personality == BotPersonality.Aggressive ? 5 : 4;
         var hasAllies = economies.Keys.Any(id => id != actor && CampAllied(actor, id) && Primary(id) is not null);
 
         // 1. Emergency homeland and oasis defense
@@ -530,79 +579,100 @@ public sealed partial class LogisticsWorld
         // 2. Central Castle finale contest
         if (castle.Active)
         {
-            var allyHolding = castle.Controller is { } holder && holder != actor && CampAllied(actor, holder);
-            var champion = ownArmies.Where(a => !Engaged(a) && !a.Routing && a.Order != "Returning")
-                .OrderByDescending(Fighters).FirstOrDefault();
-            if (allyHolding)
+            if (difficulty == BotDifficulty.Hard)
             {
-                if (champion is not null && Fighters(champion) >= 10)
+                if (HandleHardBotCastleControl(actor, home, ownArmies, commands))
+                    return true;
+            }
+            else
+            {
+                var allyHolding = castle.Controller is { } holder && holder != actor && CampAllied(actor, holder);
+                var selfHolding = castle.Controller == actor;
+                var champion = ownArmies.Where(a => !Engaged(a) && !a.Routing && a.Order != "Returning")
+                    .OrderByDescending(Fighters).FirstOrDefault();
+                if (allyHolding)
                 {
-                    var challenger = armies.FirstOrDefault(a => !CampAllied(actor, a.OwnerId) && !a.Routing && Fighters(a) > 0
-                        && CanAttackIntoActiveBattle(actor, a)
-                        && (Distance(a.Position, castle.Position) < 60
-                            || (difficulty == BotDifficulty.Hard && (a.TargetId == castle.Id || Distance(a.Position, castle.Position) < 220))));
-                    if (challenger is not null)
+                    if (champion is not null && Fighters(champion) >= 10)
                     {
-                        commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, champion.Id, DestinationId: challenger.Id));
+                        var challenger = armies.FirstOrDefault(a => !CampAllied(actor, a.OwnerId) && !a.Routing && Fighters(a) > 0
+                            && CanAttackIntoActiveBattle(actor, a)
+                            && Distance(a.Position, castle.Position) < 60);
+                        if (challenger is not null)
+                        {
+                            commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, champion.Id, DestinationId: challenger.Id));
+                            return true;
+                        }
+                    }
+                }
+                if (!allyHolding && (!selfHolding || castle.Contested) && champion is not null && Fighters(champion) >= 12)
+                {
+                    if (champion.Order != "Capturing" && Distance(champion.Position, castle.Position) > 35)
+                        commands.Execute(actor, new(Guid.NewGuid(), CommandKind.CaptureCastle, champion.Id));
+                    return true;
+                }
+                var nonGuardField = ActiveFieldArmyCount(ownArmies);
+                if (!allyHolding && (!selfHolding || castle.Contested) && nonGuardField < 3 && ownArmies.Count(a => a.Order != "Guarding") < 10 && HomeCombatTroops(home) >= 18)
+                {
+                    var castleCap = Math.Max(75, (int)(HomeCombatTroops(home) * 0.6));
+                    var castleForce = BuildBotFormation(home, castle.Position, castleCap, false, false, 4, difficulty);
+                    if (castleForce is not null)
+                    {
+                        commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
+                            castleForce.Values.Sum(), true, castle.Position.X, castle.Position.Y, UnitId(home, UnitRole.Infantry), 0, 2, Formation: castleForce));
                         return true;
                     }
                 }
-                if (!castle.Contested)
-                    return false;
-            }
-            if (!allyHolding && champion is not null && Fighters(champion) >= 12)
-            {
-                if (champion.Order != "Capturing" && Distance(champion.Position, castle.Position) > 35)
-                    commands.Execute(actor, new(Guid.NewGuid(), CommandKind.CaptureCastle, champion.Id));
-                return true;
-            }
-            if (!allyHolding && ownArmies.Length < 3 && HomeCombatTroops(home) >= 18)
-            {
-                var castleForce = BuildBotFormation(home, castle.Position, 75, false, false, 4, difficulty);
-                if (castleForce is not null)
-                {
-                    commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
-                        castleForce.Values.Sum(), true, castle.Position.X, castle.Position.Y, UnitId(home, UnitRole.Infantry), 0, 2, Formation: castleForce));
+                if (!allyHolding && (!selfHolding || castle.Contested) && ownArmies.Any(a => a.Order is "Battle" or "Capturing"))
                     return true;
-                }
             }
-            return ownArmies.Any(a => a.Order is "Battle" or "Capturing" or "Returning");
         }
 
         if (warTime < protectionUntil) return false;
 
-        // 3. Coordinated team focus target, field interception, tactical regroup, convoy raids, and settlement sieges
+        // 3. Coordinated team focus target, kiting/ambush, convoy/cavalry interception, and multi-front sieges
         var focus = ResolveTeamFocusTarget(actor, home);
         var focusEnemyId = focus?.EnemyId;
         var focusCity = focus?.City;
 
+        if (difficulty == BotDifficulty.Hard && TryHardBotKitingAndAmbush(actor, home, ownArmies, commands))
+            return true;
+
         var strikeArmy = ownArmies.Where(a => IsReassignableArmy(actor, a, personality))
             .OrderByDescending(Fighters).FirstOrDefault();
 
-        if (strikeArmy is null)
+        var fieldArmies = ActiveFieldArmyCount(ownArmies);
+        var activeSiegeArmies = ownArmies.Count(a => a.Order is "Approaching" or "Sieging");
+        var maxFieldArmies = difficulty == BotDifficulty.Hard ? 6 : personality == BotPersonality.Aggressive ? 3 : 2;
+        var minHomeDispatchThreshold = difficulty == BotDifficulty.Hard ? (activeSiegeArmies == 0 ? 42 : 85) : 34;
+        if (strikeArmy is null || (difficulty == BotDifficulty.Hard && activeSiegeArmies < 2 && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 12 && HomeCombatTroops(home) >= minHomeDispatchThreshold))
         {
-            var maxFieldArmies = difficulty == BotDifficulty.Hard ? 3 : personality == BotPersonality.Aggressive ? 3 : 2;
             var targetCity = focusCity;
             var alliedPushingFocus = targetCity is not null && armies.Any(a => a.OwnerId != actor && CampAllied(actor, a.OwnerId)
                 && a.Order is "Approaching" or "Sieging" && a.TargetId == targetCity.Village.Id);
-            // If focus city already has allied siege pressure and Hard bot has surplus capacity, open a second front against a vulnerable undefended enemy city.
-            if (difficulty == BotDifficulty.Hard && alliedPushingFocus && ownArmies.Length < maxFieldArmies && HomeCombatTroops(home) >= 34)
+            var ownPushingFocus = difficulty == BotDifficulty.Hard && targetCity is not null && ownArmies.Any(a => a.Order is "Approaching" or "Sieging" && a.TargetId == targetCity.Village.Id);
+            // If focus city already has siege pressure (allied or our first front) and Hard bot has capacity, open 2nd front against another enemy/human village with a real force.
+            if (difficulty == BotDifficulty.Hard && (alliedPushingFocus || ownPushingFocus) && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 12 && HomeCombatTroops(home) >= 40)
             {
                 var altCity = villages.Values
-                    .Where(v => !v.Ruined && v.Village.OwnerId != actor && !CampAllied(actor, v.Village.OwnerId)
-                        && (targetCity is null || v.Village.OwnerId != targetCity.Village.OwnerId)
-                        && !sieges.Any(s => s.City == v && s.Status == "Active"))
-                    .OrderBy(v => EffectiveCityThreatDefense(v) * 4 + Distance(v.Village.Position, home.Village.Position))
+                    .Where(v => !v.Ruined && v != targetCity && v.Village.OwnerId != actor && !CampAllied(actor, v.Village.OwnerId)
+                        && !sieges.Any(s => s.City == v && s.Status == "Active")
+                        && !armies.Any(a => CampAllied(actor, a.OwnerId) && a.Order is "Approaching" or "Sieging" && a.TargetId == v.Village.Id))
+                    .OrderBy(v => (humanOwners.Contains(v.Village.OwnerId) ? -1400 : 0) + EffectiveCityThreatDefense(v) * 4 + Distance(v.Village.Position, home.Village.Position))
                     .FirstOrDefault();
-                if (altCity is not null && EffectiveCityThreatDefense(altCity) <= HomeCombatTroops(home) * 0.85)
+                if (altCity is not null && EffectiveCityThreatDefense(altCity) <= HomeCombatTroops(home) * 0.95)
                 {
                     targetCity = altCity;
                     alliedPushingFocus = false;
                 }
             }
-            var minHomeToDispatch = alliedPushingFocus ? 24 : difficulty == BotDifficulty.Hard ? 30 : 34;
+            var hasFocusOasisToHit = difficulty == BotDifficulty.Hard && !ownArmies.Any(a => a.Order == "Occupying")
+                && oases.Any(o => o.OwnerId is { } oid && oid != actor && !CampAllied(actor, oid) && o.BurnedUntil <= warTime
+                    && (oid == focusEnemyId || Distance(o.Position, home.Village.Position) <= 1800));
+            var minHomeToDispatch = difficulty == BotDifficulty.Hard
+                ? (activeSiegeArmies == 0 ? (hasFocusOasisToHit && HomeCombatTroops(home) < 75 ? 75 : 40) : (hasFocusOasisToHit ? 120 : 85))
+                : alliedPushingFocus ? 24 : 34;
             var canLaunchFromHome = personality == BotPersonality.Aggressive || difficulty == BotDifficulty.Hard || alliedPushingFocus;
-            if (canLaunchFromHome && targetCity is not null && ownArmies.Length < maxFieldArmies && HomeCombatTroops(home) >= minHomeToDispatch)
+            if (canLaunchFromHome && targetCity is not null && (difficulty != BotDifficulty.Hard || activeSiegeArmies < 2) && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 12 && HomeCombatTroops(home) >= minHomeToDispatch)
             {
                 var activeFocusSiege = sieges.FirstOrDefault(s => s.City == targetCity && s.Status == "Active");
                 if (activeFocusSiege is null || CampAllied(actor, activeFocusSiege.Attacker.OwnerId))
@@ -613,7 +683,8 @@ public sealed partial class LogisticsWorld
                         || armies.Any(a => a.OwnerId == targetCity.Village.OwnerId) || targetCity.Village.Level > 12;
                     var wantsRaze = hasCatapult && (difficulty == BotDifficulty.Hard || (isContender && (personality == BotPersonality.Aggressive || hasAllies)))
                         && (alliedSiege is null || alliedSiege.Objective is AttackObjective.Raze or AttackObjective.Blockade);
-                    var siegeForce = BuildBotFormation(home, targetCity.Village.Position, 75, true, !wantsRaze, 6, difficulty);
+                    var siegeCap = difficulty == BotDifficulty.Hard ? Math.Max(120, (int)(HomeCombatTroops(home) * 0.85)) : Math.Max(75, (int)(HomeCombatTroops(home) * 0.65));
+                    var siegeForce = BuildBotFormation(home, targetCity.Village.Position, siegeCap, true, !wantsRaze, 6, difficulty);
                     if (siegeForce is not null)
                     {
                         var cats = TryUnitId(home, UnitRole.Catapult) is { } cId ? siegeForce.GetValueOrDefault(cId) : 0;
@@ -622,7 +693,8 @@ public sealed partial class LogisticsWorld
                         var alliedCommitted = armies.Where(a => CampAllied(actor, a.OwnerId) && a.Order is "Approaching" or "Sieging" && a.TargetId == targetCity.Village.Id).Sum(Fighters);
                         var cityDefense = targetCity.Garrison().Sum(t => t.Count) + targetCity.BuildingLevel(BuildingType.Wall) * 5 + Guards(targetCity.Village.Id, actor).Sum(Fighters);
                         var obj = ChooseCityObjective(actor, targetCity, alliedSiege, fighters, cats, govs, personality, difficulty, hasAllies);
-                        if (obj is { } chosenObj && (fighters + alliedCommitted >= Math.Max(18, cityDefense * (difficulty == BotDifficulty.Hard || personality == BotPersonality.Aggressive ? .75 : .95))
+                        var minSiegeCutoff = difficulty == BotDifficulty.Hard ? 32 : 18;
+                        if (obj is { } chosenObj && (fighters + alliedCommitted >= Math.Max(minSiegeCutoff, cityDefense * (difficulty == BotDifficulty.Hard ? .75 : personality == BotPersonality.Aggressive ? .75 : .95))
                             || chosenObj == AttackObjective.Blockade))
                         {
                             commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
@@ -633,8 +705,21 @@ public sealed partial class LogisticsWorld
                     }
                 }
             }
+        }
+
+        if (difficulty == BotDifficulty.Hard && !ownArmies.Any(a => a.Order == "Occupying") && strikeArmy is null
+            && HomeCombatTroops(home) is >= 32 and < 75
+            && oases.Any(o => o.OwnerId is { } oid && oid != actor && !CampAllied(actor, oid) && o.BurnedUntil <= warTime
+                && (oid == focusEnemyId || Distance(o.Position, home.Village.Position) <= 1800)))
+            return false;
+
+        if (difficulty == BotDifficulty.Hard && TryHardBotIntercept(actor, home, ownArmies, focusEnemyId, commands))
+            return true;
+
+        if (strikeArmy is null)
+        {
             return ownArmies.Any(a => a.Order is "Attacking" or "Approaching" or "Capturing" or "Battle" or "Sieging")
-                && !(focusEnemyId is { } fe && oases.Any(o => o.OwnerId == fe && o.BurnedUntil <= warTime) && ownArmies.Length < maxArmies && HomeCombatTroops(home) >= 18);
+                && !(focusEnemyId is { } fe && oases.Any(o => o.OwnerId == fe && o.BurnedUntil <= warTime) && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 12 && HomeCombatTroops(home) >= (difficulty == BotDifficulty.Hard ? 36 : 18));
         }
 
         // Tactical regroup / retreat if a much stronger hostile field force closes in on this isolated army
@@ -660,8 +745,8 @@ public sealed partial class LogisticsWorld
             }
         }
 
-        var scanRange = (personality == BotPersonality.Aggressive ? 260 : personality == BotPersonality.Defensive ? 145 : 120) + (difficulty == BotDifficulty.Hard ? 80 : 0);
-        var powerRatio = personality == BotPersonality.Aggressive ? .82 : difficulty == BotDifficulty.Hard ? .92 : 1.05;
+        var scanRange = (personality == BotPersonality.Aggressive ? 260 : personality == BotPersonality.Defensive ? 145 : 120) + (difficulty == BotDifficulty.Hard ? 120 : 0);
+        var powerRatio = personality == BotPersonality.Aggressive ? .82 : difficulty == BotDifficulty.Hard ? .88 : 1.05;
 
         // Clear threatening hostile camps near homeland or allied cities
         var hostileCamp = armies.Where(x => x.OwnerId != actor && !CampAllied(actor, x.OwnerId) && x.CampRadius is not null && CanAttackIntoActiveBattle(actor, x) && !x.Routing
@@ -675,9 +760,9 @@ public sealed partial class LogisticsWorld
         }
 
         var enemy = armies.Where(x => x.OwnerId != actor && !CampAllied(actor, x.OwnerId) && CanAttackIntoActiveBattle(actor, x) && !x.Routing
-                && (Distance(x.Position, strikeArmy.Position) < scanRange || (focusEnemyId == x.OwnerId && Distance(x.Position, strikeArmy.Position) < scanRange + 150))
+                && (Distance(x.Position, strikeArmy.Position) < scanRange || (focusEnemyId == x.OwnerId && Distance(x.Position, strikeArmy.Position) < scanRange + 200))
                 && Fighters(strikeArmy) >= Math.Max(10, Fighters(x) * powerRatio))
-            .OrderBy(x => (x.OwnerId == focusEnemyId ? -150 : 0) + Distance(x.Position, strikeArmy.Position)).FirstOrDefault();
+            .OrderBy(x => (humanOwners.Contains(x.OwnerId) ? -300 : 0) + (x.OwnerId == focusEnemyId ? -150 : 0) + Distance(x.Position, strikeArmy.Position)).FirstOrDefault();
         if (enemy is not null)
         {
             commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, strikeArmy.Id, DestinationId: enemy.Id));
@@ -686,11 +771,11 @@ public sealed partial class LogisticsWorld
 
         if (personality != BotPersonality.Defensive || difficulty == BotDifficulty.Hard)
         {
-            var convoyRange = difficulty == BotDifficulty.Hard ? 290 : 170;
+            var convoyRange = difficulty == BotDifficulty.Hard ? 450 : 170;
             var convoy = convoys.Where(c => c.OwnerId != actor && !CampAllied(actor, c.OwnerId) && !c.InBattle
                     && Distance(c.Position, strikeArmy.Position) < convoyRange
                     && Fighters(strikeArmy) > c.Troops.Where(t => t.Unit is not SupplyWagon).Sum(t => t.Count) + 4)
-                .OrderBy(c => (c.OwnerId == focusEnemyId ? -130 : 0) + Distance(c.Position, strikeArmy.Position)).FirstOrDefault();
+                .OrderBy(c => (humanOwners.Contains(c.OwnerId) ? -250 : 0) + (c.OwnerId == focusEnemyId ? -130 : 0) + Distance(c.Position, strikeArmy.Position)).FirstOrDefault();
             if (convoy is not null)
             {
                 commands.Execute(actor, new(Guid.NewGuid(), CommandKind.InterceptConvoy, strikeArmy.Id, DestinationId: convoy.Id));
@@ -698,7 +783,7 @@ public sealed partial class LogisticsWorld
             }
         }
 
-        var minSiegeSoldiers = difficulty == BotDifficulty.Hard ? 20 : personality == BotPersonality.Aggressive ? 24 : personality == BotPersonality.Defensive ? 36 : 40;
+        var minSiegeSoldiers = difficulty == BotDifficulty.Hard ? 32 : personality == BotPersonality.Aggressive ? 24 : personality == BotPersonality.Defensive ? 36 : 40;
         if (Fighters(strikeArmy) >= minSiegeSoldiers)
         {
             var strikeFighters = Fighters(strikeArmy);
@@ -717,8 +802,8 @@ public sealed partial class LogisticsWorld
                     return (City: x, Defense: defense, AlliedCommitted: alliedCommitted, Objective: obj);
                 })
                 .Where(x => x.Objective is not null && (x.Objective == AttackObjective.Blockade
-                    || strikeFighters + x.AlliedCommitted >= Math.Max(18, x.Defense * (personality == BotPersonality.Aggressive || difficulty == BotDifficulty.Hard ? .8 : 1.0))))
-                .OrderBy(x => (x.City.Village.OwnerId == focusEnemyId ? -1000 : 0) + (x.AlliedCommitted > 0 ? -350 : 0) + Distance(x.City.Village.Position, strikeArmy.Position) + x.Defense * 3)
+                    || strikeFighters + x.AlliedCommitted >= Math.Max(difficulty == BotDifficulty.Hard ? 32 : 18, x.Defense * (personality == BotPersonality.Aggressive || difficulty == BotDifficulty.Hard ? .8 : 1.0))))
+                .OrderBy(x => (humanOwners.Contains(x.City.Village.OwnerId) ? -1400 : 0) + (x.City.Village.OwnerId == focusEnemyId ? -1000 : 0) + (x.AlliedCommitted > 0 ? -350 : 0) + Distance(x.City.Village.Position, strikeArmy.Position) + x.Defense * 3)
                 .FirstOrDefault();
 
             if (candidateCities.City is not null && candidateCities.Objective is { } objective)
@@ -729,5 +814,239 @@ public sealed partial class LogisticsWorld
         }
 
         return strikeArmy.Order is "Attacking" or "Approaching" or "Capturing";
+    }
+
+    private bool HandleHardBotCastleControl(Guid actor, VillageEconomy home, Army[] ownArmies, IGameCommands commands)
+    {
+        var fieldCount = ActiveFieldArmyCount(ownArmies);
+        var allyHolding = castle.Controller is { } holder && holder != actor && CampAllied(actor, holder);
+        var selfHolding = castle.Controller == actor;
+        var capturingCount = ownArmies.Count(a => a.Order == "Capturing");
+
+        // 1. Intercept any hostile (prioritizing human) army closing within 350 units of the Castle or already targeting it.
+        var challenger = armies
+            .Where(a => a.OwnerId != actor && !CampAllied(actor, a.OwnerId) && !a.Routing && Fighters(a) > 0
+                && CanAttackIntoActiveBattle(actor, a)
+                && (Distance(a.Position, castle.Position) <= 350 || (a.TargetId == castle.Id && Distance(a.Position, castle.Position) <= 500)))
+            .OrderBy(a => (humanOwners.Contains(a.OwnerId) ? -400 : 0) + Distance(a.Position, castle.Position))
+            .FirstOrDefault();
+        if (challenger is not null)
+        {
+            var interceptor = ownArmies
+                .Where(a => !Engaged(a) && !a.Routing && !IsScoutOnly(a)
+                    && a.Order is not ("Returning" or "Merging" or "Guarding" or "Camping")
+                    && (a.Order != "Capturing" || allyHolding || (selfHolding && !castle.Contested) || capturingCount > 1)
+                    && Fighters(a) >= Math.Max(10, (int)Math.Ceiling(Fighters(challenger) * 0.75)))
+                .OrderBy(a => (a.TargetId == challenger.Id ? -200 : 0) + Distance(a.Position, challenger.Position))
+                .FirstOrDefault();
+            if (interceptor is not null)
+            {
+                if (interceptor.Order != "Attacking" || interceptor.TargetId != challenger.Id)
+                {
+                    commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, interceptor.Id, DestinationId: challenger.Id));
+                    return true;
+                }
+            }
+            else if (fieldCount < 5 && ownArmies.Count(a => a.Order != "Guarding") < 12 && HomeCombatTroops(home) >= 34)
+            {
+                var waveCap = Math.Max(85, (int)(HomeCombatTroops(home) * 0.55));
+                var cavFloor = warTime >= protectionUntil ? 28 : 8;
+                var interceptWave = BuildFastCavalryFormation(home, challenger.Position, waveCap, 4, cavFloor)
+                    ?? BuildBotFormation(home, challenger.Position, waveCap, false, false, 4, BotDifficulty.Hard);
+                if (interceptWave is not null && commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
+                        interceptWave.Values.Sum(), true, challenger.Position.X, challenger.Position.Y, UnitId(home, UnitRole.Infantry), 0, 2, Formation: interceptWave)).Accepted)
+                {
+                    var spawned = armies.LastOrDefault(a => a.OwnerId == actor && a.Order == "Marching");
+                    if (spawned is not null)
+                        commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, spawned.Id, DestinationId: challenger.Id));
+                    return true;
+                }
+            }
+        }
+
+        // 2. Capture Castle with any free field army (never pull stationary oasis guards) if unheld or contested.
+        var minFreeCapture = HomeCombatTroops(home) >= 120 ? 60 : 24;
+        if (!allyHolding && (!selfHolding || castle.Contested))
+        {
+            var freeArmy = ownArmies.Where(a => !Engaged(a) && !a.Routing && !IsScoutOnly(a)
+                    && a.Order is "Idle" or "Marching" or "Approaching" && Fighters(a) >= minFreeCapture)
+                .OrderByDescending(Fighters).FirstOrDefault();
+            if (freeArmy is not null && Distance(freeArmy.Position, castle.Position) > 35)
+            {
+                commands.Execute(actor, new(Guid.NewGuid(), CommandKind.CaptureCastle, freeArmy.Id));
+                return true;
+            }
+        }
+
+        // 3. Send consolidated Castle capture waves when unheld/contested, or station perimeter guard armies around the Castle.
+        var desiredCastleWaves = castle.Contested || castle.Controller is not null || challenger is not null ? 2 : 1;
+        var castleCommitted = ownArmies.Count(a => !IsScoutOnly(a) && a.Order != "Guarding" && (a.Order == "Capturing" || Distance(a.Position, castle.Position) <= 280));
+        if (!allyHolding && (!selfHolding || castle.Contested) && castleCommitted < desiredCastleWaves && fieldCount < 7 && ownArmies.Count(a => a.Order != "Guarding") < 12 && HomeCombatTroops(home) >= 36)
+        {
+            var castleCap = Math.Max(120, (int)(HomeCombatTroops(home) * 0.65));
+            var castleWave = BuildBotFormation(home, castle.Position, castleCap, false, false, 4, BotDifficulty.Hard);
+            if (castleWave is not null && commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
+                    castleWave.Values.Sum(), true, castle.Position.X, castle.Position.Y, UnitId(home, UnitRole.Infantry), 0, 2, Formation: castleWave)).Accepted)
+            {
+                var spawned = armies.LastOrDefault(a => a.OwnerId == actor && a.Order == "Marching");
+                if (spawned is not null)
+                    commands.Execute(actor, new(Guid.NewGuid(), CommandKind.CaptureCastle, spawned.Id));
+                return true;
+            }
+        }
+
+        var guardCount = ownArmies.Count(a => a.Order is "Idle" or "Marching" && Distance(a.Position, castle.Position) is > 60 and <= 260);
+        if ((allyHolding || selfHolding) && !castle.Contested && guardCount < 1 && fieldCount < 4 && ownArmies.Count(a => a.Order != "Guarding") < 12 && HomeCombatTroops(home) >= 36 && HomeCombatTroops(home) < 160)
+        {
+            var baseAngle = (Math.Abs(actor.GetHashCode()) % 360 + guardCount * 120) * Math.PI / 180.0;
+            var guardPos = new Position(
+                Math.Clamp(castle.Position.X + Math.Cos(baseAngle) * 165, MapMinimum + 100, MapMaximum - 100),
+                Math.Clamp(castle.Position.Y + Math.Sin(baseAngle) * 165, MapMinimum + 100, MapMaximum - 100));
+            var guardWave = BuildBotFormation(home, guardPos, 90, false, false, 4, BotDifficulty.Hard);
+            if (guardWave is not null && commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
+                    guardWave.Values.Sum(), true, guardPos.X, guardPos.Y, UnitId(home, UnitRole.Infantry), 0, 2, Formation: guardWave)).Accepted)
+            {
+                return true;
+            }
+        }
+
+        // Only pause enemy village attacks while still fighting/marching to secure the Castle; once held cleanly, keep attacking enemies!
+        return !allyHolding && (!selfHolding || castle.Contested) && ownArmies.Any(a => a.Order is "Battle" or "Capturing" or "Attacking");
+    }
+
+    private bool TryHardBotKitingAndAmbush(Guid actor, VillageEconomy home, Army[] ownArmies, IGameCommands commands)
+    {
+        foreach (var army in ownArmies.OrderByDescending(Fighters))
+        {
+            var totalSoldiers = army.Troops.Sum(t => t.Count);
+            if (Engaged(army) || army.Routing || army.Order is "Returning" or "Merging" or "Camping" || Fighters(army) < 4
+                || RoleCount(army, UnitRole.Scout) >= totalSoldiers)
+                continue;
+
+            var threat = armies
+                .Where(e => e.OwnerId != actor && !CampAllied(actor, e.OwnerId) && !e.Routing
+                    && Fighters(e) > Fighters(army) * 1.15
+                    && (Distance(e.Position, army.Position) < 260 || (e.TargetId == army.Id && Distance(e.Position, army.Position) < 420)))
+                .OrderBy(e => (humanOwners.Contains(e.OwnerId) ? -250 : 0) + Distance(e.Position, army.Position))
+                .FirstOrDefault();
+            if (threat is null) continue;
+
+            // Spring ambush immediately if combined friendly forces already nearby outweigh the pursuer.
+            var nearbySupport = armies
+                .Where(f => f.Id != army.Id && CampAllied(actor, f.OwnerId) && !f.Routing && Distance(f.Position, army.Position) <= 180)
+                .Sum(Fighters);
+            if (Fighters(army) + nearbySupport >= Fighters(threat) * 1.15 && CanAttackIntoActiveBattle(actor, threat))
+            {
+                if (army.Order != "Attacking" || army.TargetId != threat.Id)
+                {
+                    commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, army.Id, DestinationId: threat.Id));
+                    return true;
+                }
+                continue;
+            }
+
+            // Merge with a nearby own army to turn the tide.
+            var mergePartner = ownArmies.FirstOrDefault(o => o.Id != army.Id && !Engaged(o) && !o.Routing
+                && o.Order is not ("Returning" or "Battle" or "Sieging" or "Merging")
+                && Distance(o.Position, army.Position) <= 650
+                && Fighters(o) + Fighters(army) >= Fighters(threat) * 0.95);
+            if (mergePartner is not null)
+            {
+                commands.Execute(actor, new(Guid.NewGuid(), CommandKind.MergeArmies, army.Id, TargetIds: [army.Id, mergePartner.Id]));
+                return true;
+            }
+
+            // Otherwise lure the pursuing army toward a strong allied ambush cluster, or recall safely home.
+            var ambushAnchor = armies
+                .Where(f => f.Id != army.Id && CampAllied(actor, f.OwnerId) && f.OwnerId != actor && !f.Routing && !Engaged(f)
+                    && Distance(f.Position, army.Position) is > 120 and <= 950)
+                .Select(f => new
+                {
+                    Army = f,
+                    ClusterPower = armies.Where(g => CampAllied(actor, g.OwnerId) && !g.Routing && Distance(g.Position, f.Position) <= 220).Sum(Fighters)
+                })
+                .Where(x => x.ClusterPower + Fighters(army) >= Fighters(threat) * 1.05)
+                .OrderBy(x => Distance(x.Army.Position, army.Position))
+                .FirstOrDefault();
+            if (ambushAnchor is not null)
+            {
+                if (army.Order != "Marching" || Distance(army.Position, ambushAnchor.Army.Position) > 130)
+                {
+                    commands.Execute(actor, new(Guid.NewGuid(), CommandKind.MoveArmy, army.Id, X: ambushAnchor.Army.Position.X, Y: ambushAnchor.Army.Position.Y));
+                    return true;
+                }
+                continue;
+            }
+
+            if (Distance(army.Position, home.Village.Position) > 120)
+            {
+                commands.Execute(actor, new(Guid.NewGuid(), CommandKind.RecallArmy, army.Id));
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryHardBotIntercept(Guid actor, VillageEconomy home, Army[] ownArmies, Guid? focusEnemyId, IGameCommands commands)
+    {
+        var fieldCount = ActiveFieldArmyCount(ownArmies);
+        if (ownArmies.Count(a => a.Order is "Intercepting" or "Attacking") >= 2)
+            return false;
+        // Intercept vulnerable convoys first with fast reassignable forces or a newly dispatched cavalry wing.
+        var targetConvoy = convoys
+            .Where(c => c.OwnerId != actor && !CampAllied(actor, c.OwnerId) && !c.InBattle)
+            .OrderBy(c => (humanOwners.Contains(c.OwnerId) ? -500 : 0) + (c.OwnerId == focusEnemyId ? -150 : 0) + Distance(c.Position, home.Village.Position))
+            .FirstOrDefault();
+        if (targetConvoy is not null)
+        {
+            var escortFighters = targetConvoy.Troops.Where(t => t.Unit is not SupplyWagon).Sum(t => t.Count);
+            var chaser = ownArmies
+                .Where(a => !Engaged(a) && !a.Routing && a.Order is "Idle" or "Marching" && Distance(a.Position, targetConvoy.Position) < 550
+                    && Fighters(a) > escortFighters + 4 && RoleCount(a, UnitRole.Catapult) == 0)
+                .OrderBy(a => Distance(a.Position, targetConvoy.Position))
+                .FirstOrDefault();
+            if (chaser is not null && commands.Execute(actor, new(Guid.NewGuid(), CommandKind.InterceptConvoy, chaser.Id, DestinationId: targetConvoy.Id)).Accepted)
+                return true;
+
+            if (fieldCount < 5 && ownArmies.Count(a => a.Order != "Guarding") < 12 && Distance(targetConvoy.Position, home.Village.Position) < 850 && HomeCombatTroops(home) >= Math.Max(16, escortFighters + 10))
+            {
+                var cavRaid = BuildFastCavalryFormation(home, targetConvoy.Position, Math.Clamp(escortFighters + 24, 16, 56), 4, 8);
+                if (cavRaid is not null && commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
+                        cavRaid.Values.Sum(), true, targetConvoy.Position.X, targetConvoy.Position.Y, UnitId(home, UnitRole.Infantry), 0, 2, Formation: cavRaid)).Accepted)
+                {
+                    var spawned = armies.LastOrDefault(a => a.OwnerId == actor && a.Order == "Marching");
+                    if (spawned is not null)
+                        commands.Execute(actor, new(Guid.NewGuid(), CommandKind.InterceptConvoy, spawned.Id, DestinationId: targetConvoy.Id));
+                    return true;
+                }
+            }
+        }
+
+        // Dispatch consolidated fast cavalry from home to hunt exposed hostile field armies without spamming tiny squads.
+        if (fieldCount < 5 && ownArmies.Count(a => a.Order != "Guarding") < 12 && ownArmies.Count(a => a.Order is "Intercepting" or "Attacking") == 0 && HomeCombatTroops(home) >= 40)
+        {
+            var vulnerableArmy = armies
+                .Where(a => a.OwnerId != actor && !CampAllied(actor, a.OwnerId) && !a.Routing && Fighters(a) is >= 10 and <= 30
+                    && CanAttackIntoActiveBattle(actor, a)
+                    && Distance(a.Position, home.Village.Position) < 650
+                    && !ownArmies.Any(o => o.Order == "Attacking" && o.TargetId == a.Id))
+                .OrderBy(a => (humanOwners.Contains(a.OwnerId) ? -450 : 0) + (a.OwnerId == focusEnemyId ? -150 : 0) + Distance(a.Position, home.Village.Position))
+                .FirstOrDefault();
+            if (vulnerableArmy is not null && HomeCombatTroops(home) >= Math.Max(32, (int)Math.Ceiling(Fighters(vulnerableArmy) * 1.4) + 6))
+            {
+                var hunterSquad = BuildFastCavalryFormation(home, vulnerableArmy.Position, Math.Clamp(Fighters(vulnerableArmy) * 2 + 12, 28, 65), 4, warTime >= protectionUntil ? 28 : 8);
+                if (hunterSquad is not null && commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
+                        hunterSquad.Values.Sum(), true, vulnerableArmy.Position.X, vulnerableArmy.Position.Y, UnitId(home, UnitRole.Infantry), 0, 2, Formation: hunterSquad)).Accepted)
+                {
+                    var spawned = armies.LastOrDefault(a => a.OwnerId == actor && a.Order == "Marching");
+                    if (spawned is not null)
+                        commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, spawned.Id, DestinationId: vulnerableArmy.Id));
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

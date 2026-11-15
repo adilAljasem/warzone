@@ -84,6 +84,65 @@ internal static class SocialChecks
             "Every viewer receives the same authoritative player flag colors");
         Check(hostPlayers.Select(player => player.FlagColor).Distinct().Count() == hostPlayers.Length
             && hostPlayers.All(player => player.FlagColor.StartsWith('#')), "Every room participant has a unique valid flag color");
+
+        var cHost = Guid.NewGuid();
+        var cGuest = Guid.NewGuid();
+        var lobby = new GameRoom(cHost, "ColorHost", TribeType.Romans, "CustomLobby", new(Capacity: 8, BotCount: 6), DateTimeOffset.UtcNow);
+        lobby.Join(cGuest, "ColorGuest", TribeType.Greeks);
+        var botPlayer = lobby.Snapshot(cHost, _ => true).Players.First(p => p.IsBot);
+        var botColor = botPlayer.FlagColor;
+        lobby.ChangeColor(cHost, cHost, botColor);
+        var afterColor = lobby.Snapshot(cHost, _ => true).Players;
+        Check(afterColor.Single(p => p.Id == cHost).FlagColor == botColor
+            && afterColor.Select(p => p.FlagColor).Distinct().Count() == afterColor.Length,
+            "Player can pick any color including swapping with a bot while keeping colors unique");
+        Reject(() => lobby.ChangeColor(cGuest, cGuest, botColor), "color");
+
+        lobby.ChangeSpawnSlot(cHost, cHost, 2);
+        Reject(() => lobby.ChangeSpawnSlot(cGuest, cGuest, 2), "spawn_slot");
+        lobby.ChangeSpawnSlot(cHost, botPlayer.Id, 4);
+        lobby.ChangeSpawnSlot(cGuest, cGuest, 4);
+        Check(lobby.Snapshot(cHost, _ => true).Players.Single(p => p.Id == cGuest).SpawnSlot == 4
+            && lobby.Snapshot(cHost, _ => true).Players.Single(p => p.Id == botPlayer.Id).SpawnSlot is null,
+            "Human selecting a bot spawn slot swaps the bot back to auto placement");
+        lobby.ChangeSpawnSlot(cGuest, cGuest, 6);
+        var preStartSnap = lobby.Snapshot(cHost, _ => true);
+        Check(preStartSnap.Players.All(p => p.Position is not null && p.EffectiveSpawnSlot is not null),
+            "Lobby snapshots expose resolved positions and effective spawn slots for all players and bots before match start");
+        var botAutoSlot = preStartSnap.Players.First(p => p.IsBot).EffectiveSpawnSlot!.Value;
+        var botAutoId = preStartSnap.Players.First(p => p.EffectiveSpawnSlot == botAutoSlot).Id;
+        lobby.ChangeSpawnSlot(cGuest, cGuest, botAutoSlot);
+        var afterTakeBotSnap = lobby.Snapshot(cHost, _ => true);
+        Check(afterTakeBotSnap.Players.Single(p => p.Id == cGuest).EffectiveSpawnSlot == botAutoSlot
+            && afterTakeBotSnap.Players.Single(p => p.Id == botAutoId).EffectiveSpawnSlot != botAutoSlot,
+            "Human selecting an auto-placed bot slot moves into it while the bot shifts to another empty slot");
+        var guestEffective = afterTakeBotSnap.Players.Single(p => p.Id == cGuest).EffectiveSpawnSlot!.Value;
+        Reject(() => lobby.ChangeSpawnSlot(cHost, cHost, guestEffective), "spawn_slot");
+        lobby.ChangeSpawnSlot(cGuest, cGuest, 6);
+
+        var tcHost = Guid.NewGuid();
+        var teamLobby = new GameRoom(tcHost, "B", TribeType.Romans, "Cluster", new(Capacity: 8, BotCount: 3), DateTimeOffset.UtcNow);
+        var teamBots = teamLobby.Snapshot(tcHost, _ => true).Players.Where(p => p.IsBot).ToList();
+        foreach (var tb in teamBots) teamLobby.ChangeTeam(tcHost, tb.Id, 2);
+        var botSlots = teamLobby.Snapshot(tcHost, _ => true).Players.Where(p => p.IsBot).Select(p => p.EffectiveSpawnSlot!.Value).OrderBy(s => s).ToList();
+        var botWrapGaps = new[] { botSlots[1] - botSlots[0], botSlots[2] - botSlots[1], 8 - botSlots[2] + botSlots[0] };
+        Check(botSlots.Count == 3 && botWrapGaps.Count(g => g == 1) == 2,
+            "Same-team bots automatically occupy contiguous adjacent lobby slots");
+
+        lobby.SetReady(cHost, true);
+        lobby.SetReady(cGuest, true);
+        lobby.Start(cHost, _ => true);
+        var settlements = lobby.Snapshot(cHost, _ => true).World!.Warfare!.Settlements;
+        var hostVillage = settlements.Single(s => s.OwnerId == cHost);
+        var guestVillage = settlements.Single(s => s.OwnerId == cGuest);
+        var hostAngle = 2 * Math.Tau / 8;
+        var guestAngle = 6 * Math.Tau / 8;
+        Check(Math.Abs(hostVillage.Position.X - (2250 + 1750 * Math.Cos(hostAngle))) < 1
+            && Math.Abs(hostVillage.Position.Y - (2250 + 1750 * Math.Sin(hostAngle))) < 1
+            && Math.Abs(guestVillage.Position.X - (2250 + 1750 * Math.Cos(guestAngle))) < 1
+            && Math.Abs(guestVillage.Position.Y - (2250 + 1750 * Math.Sin(guestAngle))) < 1,
+            "Players who choose lobby spawn slots start at the corresponding map angles");
+
         return checks;
     }
 }

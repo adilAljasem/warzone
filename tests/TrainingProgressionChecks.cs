@@ -66,7 +66,7 @@ internal static class TrainingProgressionChecks
             "Upgrading preserves the paid batch's start and completion times");
         running.Advance(8,18,0);
         Check(running.Available(infantry.Unit.UnitId)==22,"Existing paid batch completes exactly once");
-        Upgrade(running,barracks);
+        while(barracks.Level<9)Upgrade(running,barracks);
         var swordsman=running.Training.Single(t=>t.Unit.Role==UnitRole.Swordsman);
         running.Apply(new(Guid.NewGuid(),CommandKind.SetAutoQueue,swordsman.QueueId),18);
         running.DamageBuilding(BuildingType.Barracks);

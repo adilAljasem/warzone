@@ -1,0 +1,264 @@
+.debug-overlay {
+    position: fixed;
+    top: 84px;
+    left: 16px;
+    z-index: 85;
+    width: 404px;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 108px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 11px;
+    background: rgba(8, 12, 17, 0.84);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(173, 198, 184, 0.2);
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    color: #e6edf3;
+    font: 600 11.5px/1.35 "DM Sans", "Cairo", system-ui, sans-serif;
+    overflow: hidden;
+    zoom: var(--ui-scale, 1);
+}
+
+.debug-overlay[hidden] {
+    display: none;
+}
+
+.debug-overlay.is-collapsed {
+    width: auto;
+    min-width: 248px;
+}
+
+.debug-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    background: rgba(18, 26, 34, 0.9);
+    border-bottom: 1px solid rgba(173, 198, 184, 0.14);
+    cursor: grab;
+    touch-action: none;
+}
+
+.debug-header:active {
+    cursor: grabbing;
+}
+
+.debug-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.debug-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #64748b;
+    box-shadow: 0 0 8px currentColor;
+}
+
+.debug-dot.good { color: #4ade80; background: #4ade80; }
+.debug-dot.warn { color: #fbbf24; background: #fbbf24; }
+.debug-dot.bad { color: #f87171; background: #f87171; }
+
+.debug-title strong {
+    font-size: 11.5px;
+    color: #f3e4b8;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.debug-title kbd {
+    font: 700 9.5px/1 ui-monospace, "Cascadia Code", Consolas, monospace;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #cbd5e1;
+}
+
+.debug-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.debug-actions button {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    color: #cbd5e1;
+    font-size: 12px;
+    line-height: 1;
+    display: grid;
+    place-items: center;
+}
+
+.debug-actions button:hover {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(227, 193, 122, 0.6);
+    color: #fff;
+}
+
+.debug-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 10px;
+    background: rgba(12, 18, 24, 0.72);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    font: 700 11px/1.2 ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    direction: ltr;
+}
+
+.debug-overlay.is-collapsed .debug-strip {
+    border-bottom: 0;
+}
+
+.debug-strip > span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.debug-strip label {
+    display: inline;
+    margin: 0;
+    font-size: 9.5px;
+    color: #8b9bb0;
+    text-transform: uppercase;
+}
+
+.debug-body {
+    padding: 8px 10px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+}
+
+.debug-overlay.is-collapsed .debug-body {
+    display: none;
+}
+
+.debug-section {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 7px;
+    padding: 6px 8px;
+}
+
+.debug-section h4 {
+    margin: 0 0 5px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #e3c17a;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.debug-section h4 span {
+    color: #94a3b8;
+    font-weight: 600;
+    font-size: 9.5px;
+    direction: ltr;
+}
+
+.debug-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px 14px;
+}
+
+.debug-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 10.5px;
+}
+
+.debug-row > span:first-child {
+    color: #9aa9bc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.debug-val {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: #e6edf3;
+    direction: ltr;
+    unicode-bidi: isolate;
+    white-space: nowrap;
+}
+
+.debug-val.good { color: #4ade80; }
+.debug-val.warn { color: #fbbf24; }
+.debug-val.bad { color: #f87171; }
+.debug-val.muted { color: #94a3b8; }
+
+.debug-entities-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 5px;
+}
+
+.debug-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 10px;
+    color: #b8c6d6;
+}
+
+.debug-chip b {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    color: #f8fafc;
+}
+
+#toggle-debug {
+    display: grid;
+    place-items: center;
+}
+
+#toggle-debug svg {
+    width: 17px;
+    height: 17px;
+}
+
+#toggle-debug[aria-pressed="true"] {
+    border-color: rgba(227, 193, 122, 0.85);
+    color: #e3c17a;
+    background: rgba(28, 54, 45, 0.92);
+}
+
+@media (max-width: 700px) {
+    .debug-overlay {
+        top: 68px;
+        left: 8px;
+        width: min(320px, calc(100vw - 16px));
+        font-size: 10.5px;
+    }
+}

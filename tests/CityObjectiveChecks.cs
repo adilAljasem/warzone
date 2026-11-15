@@ -101,8 +101,9 @@ internal static class CityObjectiveChecks
         var trade=new Realm();
         trade.World.Apply(trade.B.Village.OwnerId,new(Guid.NewGuid(),CommandKind.PostMarketOffer,trade.B.Village.Id,OfferResource:ResourceType.Wood,OfferAmount:200,AskResource:ResourceType.Iron,AskAmount:120),0,0);
         var offer=trade.View.MarketOffers.Single();
-        trade.World.Apply(trade.C.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AcceptMarketOffer,trade.C.Village.Id,DestinationId:offer.Id),0,0);
         var iron=trade.B.Resources.Iron;var merchantBlocker=trade.Send(AttackObjective.Blockade,troops:30);
+        trade.Tick(4);
+        trade.World.Apply(trade.C.Village.OwnerId,new(Guid.NewGuid(),CommandKind.AcceptMarketOffer,trade.C.Village.Id,DestinationId:offer.Id),trade.Now,0);
         trade.Until(()=>trade.B.Besieged);trade.Tick(45);
         var cargo=trade.World.Snapshot(trade.B.Village.OwnerId).Convoys.Single(c=>c.RecipientId==trade.B.Village.OwnerId);
         Check(trade.B.Resources.Iron==iron&&cargo.Cargo!.Value.Iron==120,"In-transit market goods remain on wagons while the recipient is blockaded");

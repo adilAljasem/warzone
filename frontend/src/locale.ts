@@ -35,5 +35,12 @@ export function localizeNow(root: Node = document.body) {
 export function setLanguage(next:string){language=next==='ar'?'ar':'en';try{localStorage.setItem('warzone.language',language);}catch{/* Keep the current session preference. */}document.documentElement.lang=language;document.documentElement.dir=language==='ar'?'rtl':'ltr';localizeNow();window.dispatchEvent(new Event('languagechange'));}
 document.documentElement.lang=language;document.documentElement.dir=language==='ar'?'rtl':'ltr';
 let pending=false;
-new MutationObserver(()=>{if(!pending){pending=true;queueMicrotask(()=>{pending=false;localizeNow();});}}).observe(document.body,{childList:true,subtree:true,characterData:true});
+new MutationObserver(records=>{
+    const relevant=records.some(r=>{
+        const el=r.target instanceof Element?r.target:r.target.parentElement;
+        return el&&!el.closest('[data-no-translate]');
+    });
+    if(!relevant)return;
+    if(!pending){pending=true;queueMicrotask(()=>{pending=false;localizeNow();});}
+}).observe(document.body,{childList:true,subtree:true,characterData:true});
 localizeNow();

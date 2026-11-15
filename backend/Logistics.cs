@@ -24,8 +24,9 @@ public sealed partial class LogisticsWorld
     private readonly List<(Guid Owner, WorldNotice Notice)> importantAlerts = [];
     private long noticeId;
     private readonly BiomeRegion[] regions;
-    public LogisticsWorld(IEnumerable<VillageEconomy> villages, int? terrainSeed = null)
+    public LogisticsWorld(IEnumerable<VillageEconomy> villages, int? terrainSeed = null, double castleUnlockSeconds = 1800)
     {
+        this.castleUnlockSeconds = Math.Max(0, castleUnlockSeconds);
         economies = villages.ToDictionary(x => x.Village.OwnerId);
         this.villages = economies.Values.ToDictionary(x => x.Village.Id);
         regions = terrainSeed is { } seed ? Biomes.Generate(seed) : [];
@@ -69,14 +70,14 @@ public sealed partial class LogisticsWorld
     private Army Detach(Army army, IReadOnlyDictionary<string, int>? formation, double now)
     {
         if (formation is null) return army;
-        if (Engaged(army) || army.Order is "Battle" or "Sieging") throw new GameRuleException("engaged", "Finish the engagement or retreat before splitting this army.");
-        if (army.Routing) throw new GameRuleException("routing", "A broken army cannot be split.");
         var available = army.Troops.ToDictionary(t => t.Unit.UnitId, t => t.Count);
         if (formation.Count == 0 || formation.Any(x => x.Value <= 0 || x.Value > available.GetValueOrDefault(x.Key)))
             throw new GameRuleException("troops", "Choose units from this army; the remainder keeps its current orders.");
         var selected = army.Troops.Select(t => (t.Unit, Count: formation.GetValueOrDefault(t.Unit.UnitId))).Where(t => t.Count > 0).Select(t => new TroopStack(t.Unit, t.Count)).ToArray();
         var remainder = army.Troops.Select(t => (t.Unit, Count: t.Count - formation.GetValueOrDefault(t.Unit.UnitId))).Where(t => t.Count > 0).Select(t => new TroopStack(t.Unit, t.Count)).ToArray();
         if (remainder.Length == 0) return army;
+        if (Engaged(army) || army.Order is "Battle" or "Sieging") throw new GameRuleException("engaged", "Finish the engagement or retreat before splitting this army.");
+        if (army.Routing) throw new GameRuleException("routing", "A broken army cannot be split.");
         if (armies.Count(x => x.OwnerId == army.OwnerId) >= 16) throw new GameRuleException("army_limit", "Recall an army before splitting this force. Limit: sixteen.");
         var selCap = selected.Sum(t => (double)t.Count * t.Unit.CarryCapacity);
         var remCap = remainder.Sum(t => (double)t.Count * t.Unit.CarryCapacity);
@@ -100,6 +101,11 @@ public sealed partial class LogisticsWorld
         };
         leftBehind.SetSupply(army.AutoSupplyEnabled);
         armies.Add(leftBehind);
+        foreach (var os in oasisSieges.Where(s => s.Status == "Active"))
+        {
+            var idx = os.Attackers.IndexOf(army);
+            if (idx >= 0) os.Attackers[idx] = leftBehind;
+        }
         army.Troops = Array.AsReadOnly(selected); army.Wheat = wheat; army.Loot = loot; army.CampRadius = null;
         army.DefendingSiteId = null; army.SupportedOwnerId = null; army.TargetId = null; army.ActionSeconds = 0; army.AttackOrderedAt = 0;
         army.NextSupplyAt = now;
@@ -208,20 +214,26 @@ public sealed partial class LogisticsWorld
         }
         var selected = Owned(actor, command.TargetId);
         home = villages[selected.HomeVillageId];
-        if (selected.Order is "Battle" or "Sieging" && command.Kind is not (CommandKind.ConfigureSupply or CommandKind.RecallArmy))
+        if ((selected.Order == "Battle" || InActiveBattle(selected)) && command.Kind is not (CommandKind.ConfigureSupply or CommandKind.RecallArmy))
+            throw new GameRuleException("engaged", "This army is in combat. Recall it or send another formation.");
+        if (selected.Order == "Sieging" && command.Kind is not (CommandKind.ConfigureSupply or CommandKind.RecallArmy or CommandKind.MoveArmy or CommandKind.CampArmy or CommandKind.Reinforce or CommandKind.CaptureOasis or CommandKind.BesiegeOasis or CommandKind.BurnOasis))
             throw new GameRuleException("engaged", "This army is in combat. Recall it or send another formation.");
         if (selected.Routing && command.Kind is not CommandKind.ConfigureSupply)
             throw new GameRuleException("routing", "This army has broken and is returning home.");
+        var prevTargetId = selected.TargetId;
+        var prevOrder = selected.Order;
         switch (command.Kind)
         {
             case CommandKind.Reinforce:
                 OrderReinforcement(selected, command.DestinationId ?? Guid.Empty, now, command.Formation);
+                WithdrawFromSieges(selected, now, prevTargetId, prevOrder);
                 break;
             case CommandKind.MoveArmy:
                 var destination = Point(command.X, command.Y);
                 selected = Detach(selected, command.Formation, now);
                 selected.Destination = destination; selected.DefendingSiteId = null; selected.SupportedOwnerId = null; selected.CampRadius = null;
                 selected.Order = Distance(selected.Position, destination) < .01 ? "Idle" : "Marching"; selected.TargetId = null; selected.ActionSeconds = 0; selected.AttackOrderedAt = 0;
+                WithdrawFromSieges(selected, now, prevTargetId, prevOrder);
                 break;
             case CommandKind.CampArmy:
                 var campSite = Point(command.X, command.Y);
@@ -231,6 +243,7 @@ public sealed partial class LogisticsWorld
                 selected.Order = "Camping"; selected.TargetId = null; selected.ActionSeconds = 0; selected.AttackOrderedAt = 0;
                 selected.CampLoadedOnly = command.LoadedOnly;
                 selected.AfterAttack = command.AfterAttack;
+                WithdrawFromSieges(selected, now, prevTargetId, prevOrder);
                 break;
             case CommandKind.RecallArmy:
                 ApplyRetreatLoss(selected, now);
@@ -257,6 +270,11 @@ public sealed partial class LogisticsWorld
                 selected.TargetId = oasis.Id; selected.DefendingSiteId = null; selected.SupportedOwnerId = null; selected.Destination = oasis.Position; selected.Order = "Occupying"; selected.ActionSeconds = 0; selected.CampRadius = null;
                 selected.AttackOrderedAt = now;
                 selected.AfterAttack = command.AfterAttack;
+                if (prevTargetId != oasis.Id)
+                    WithdrawFromSieges(selected, now, prevTargetId, prevOrder);
+                else if (prevOrder == "Burning" && selected.OasisMode != OasisMode.Burn
+                    && !armies.Any(a => a != selected && !a.Routing && a.Order == "Burning" && a.TargetId == oasis.Id))
+                    oasis.BurningSeconds = 0;
                 WarnOasisAttack(selected, oasis, now);
                 break;
             case CommandKind.InterceptConvoy:
@@ -268,6 +286,7 @@ public sealed partial class LogisticsWorld
                 selected.TargetId = convoy.Id; selected.DefendingSiteId = null; selected.SupportedOwnerId = null; selected.Order = "Intercepting"; selected.ActionSeconds = 0; selected.CampRadius = null;
                 selected.AttackOrderedAt = now;
                 selected.AfterAttack = command.AfterAttack;
+                WithdrawFromSieges(selected, now, prevTargetId, prevOrder);
                 Note(convoy.OwnerId, now, "An enemy army is approaching your caravan.", "convoy-attack", targetId: convoy.Id);
                 break;
             default: throw new GameRuleException("command", "Unknown map command.");
@@ -484,45 +503,26 @@ public sealed partial class LogisticsWorld
         ResourceType.Wood => r.Wood, ResourceType.Iron => r.Iron,
         ResourceType.Stone => r.Stone, ResourceType.Wheat => r.Wheat, _ => 0
     };
-    private Dictionary<string, int>? BuildBotFormation(VillageEconomy home, Position destination, int maxSoldiers, bool includeSiege, bool includeGovernor, int reserveAtHome = 0, BotDifficulty difficulty = BotDifficulty.Normal)
+    private static readonly UnitRole[] BotCavalryRoles =
+    [
+        UnitRole.HeavyCavalry, UnitRole.Cavalry, UnitRole.LightCavalry
+    ];
+    private static int ActiveFieldArmyCount(Army[] ownArmies) =>
+        ownArmies.Count(a => !IsScoutOnly(a) && a.Order != "Guarding");
+
+    private Dictionary<string, int>? FinalizeBotFormation(VillageEconomy home, Position destination, Dictionary<string, int> formation)
     {
-        var availableTotal = HomeCombatTroops(home);
-        var budget = Math.Min(maxSoldiers, Math.Max(0, availableTotal - reserveAtHome));
-        if (budget < 8) return null;
-        var formation = new Dictionary<string, int>();
-        var remaining = budget;
-        foreach (var role in BotCombatRoles)
-        {
-            if (TryUnitId(home, role) is not { } id) continue;
-            var count = Math.Min(remaining, home.Available(id));
-            if (count > 0) { formation[id] = count; remaining -= count; }
-            if (remaining <= 0) break;
-        }
-        if (formation.Values.Sum() < 8) return null;
-        if (includeSiege)
-        {
-            var maxEngines = difficulty == BotDifficulty.Hard ? 4 : 3;
-            foreach (var role in new[] { UnitRole.Ram, UnitRole.Catapult })
-            {
-                if (TryUnitId(home, role) is not { } id) continue;
-                if (home.Available(id) > 0) formation[id] = Math.Min(maxEngines, home.Available(id));
-            }
-        }
-        if (includeGovernor)
-        {
-            var govId = UnitId(home, UnitRole.Governor);
-            if (home.Available(govId) > 0) formation[govId] = 1;
-        }
         var wagonId = UnitId(home, UnitRole.Wagon);
         var availWagons = home.Available(wagonId);
+        var maxWagons = Math.Min(availWagons, formation.Values.Sum() > 150 ? 14 : 8);
         if (availWagons > 0)
-            formation[wagonId] = Math.Clamp((formation.Values.Sum() + 19) / 20, 1, Math.Min(5, availWagons));
+            formation[wagonId] = Math.Clamp((formation.Values.Sum() + 19) / 20, 1, Math.Min(5, maxWagons));
         var upkeep = formation.Sum(x => x.Value * GameCatalog.Units[x.Key].Stats.WheatUpkeep) / 60;
         var slowest = formation.Min(x => GameCatalog.Units[x.Key].Stats.Speed);
         var carry = formation.Sum(x => (double)x.Value * GameCatalog.Units[x.Key].Stats.CarryCapacity);
         var trip = Distance(home.Village.Position, destination) / Math.Max(.1, slowest * .8);
         var required = (long)Math.Ceiling(upkeep * (trip * 2 + 180));
-        while (required > carry && availWagons > 0 && formation.GetValueOrDefault(wagonId) < availWagons && formation.GetValueOrDefault(wagonId) < 8)
+        while (required > carry && availWagons > 0 && formation.GetValueOrDefault(wagonId) < maxWagons)
         {
             formation[wagonId] = formation.GetValueOrDefault(wagonId) + 1;
             upkeep = formation.Sum(x => x.Value * GameCatalog.Units[x.Key].Stats.WheatUpkeep) / 60;
@@ -530,6 +530,62 @@ public sealed partial class LogisticsWorld
             required = (long)Math.Ceiling(upkeep * (trip * 2 + 180));
         }
         return required <= carry && home.Resources.Wheat >= required ? formation : null;
+    }
+    private Dictionary<string, int>? BuildFastCavalryFormation(VillageEconomy home, Position destination, int maxSoldiers, int reserveAtHome = 4, int minSoldiers = 8)
+    {
+        var availableCav = BotCavalryRoles.Sum(role => TryUnitId(home, role) is { } id ? home.Available(id) : 0);
+        var budget = Math.Min(maxSoldiers, Math.Max(0, availableCav - reserveAtHome));
+        if (budget < minSoldiers) return null;
+        var formation = new Dictionary<string, int>();
+        var remaining = budget;
+        foreach (var role in BotCavalryRoles)
+        {
+            if (TryUnitId(home, role) is not { } id) continue;
+            var count = Math.Min(remaining, home.Available(id));
+            if (count > 0) { formation[id] = count; remaining -= count; }
+            if (remaining <= 0) break;
+        }
+        return formation.Values.Sum() >= minSoldiers ? FinalizeBotFormation(home, destination, formation) : null;
+    }
+    private Dictionary<string, int>? BuildBotFormation(VillageEconomy home, Position destination, int maxSoldiers, bool includeSiege, bool includeGovernor, int reserveAtHome = 0, BotDifficulty difficulty = BotDifficulty.Normal)
+    {
+        var availableTotal = HomeCombatTroops(home);
+        var budget = Math.Min(maxSoldiers, Math.Max(0, availableTotal - reserveAtHome));
+        var floor = difficulty == BotDifficulty.Hard && warTime >= protectionUntil && maxSoldiers >= 28 ? 28 : 8;
+        if (budget < floor) return null;
+        var minFallback = budget >= 24 ? Math.Max(24, floor) : floor;
+        while (budget >= minFallback)
+        {
+            var formation = new Dictionary<string, int>();
+            var remaining = budget;
+            foreach (var role in BotCombatRoles)
+            {
+                if (TryUnitId(home, role) is not { } id) continue;
+                var count = Math.Min(remaining, home.Available(id));
+                if (count > 0) { formation[id] = count; remaining -= count; }
+                if (remaining <= 0) break;
+            }
+            if (formation.Values.Sum() < 8) return null;
+            if (includeSiege)
+            {
+                var maxEngines = difficulty == BotDifficulty.Hard ? 10 : 3;
+                foreach (var role in new[] { UnitRole.Ram, UnitRole.Catapult })
+                {
+                    if (TryUnitId(home, role) is not { } id) continue;
+                    if (home.Available(id) > 0) formation[id] = Math.Min(maxEngines, home.Available(id));
+                }
+            }
+            if (includeGovernor)
+            {
+                var govId = UnitId(home, UnitRole.Governor);
+                if (home.Available(govId) > 0) formation[govId] = 1;
+            }
+            var finalized = FinalizeBotFormation(home, destination, formation);
+            if (finalized is not null) return finalized;
+            if (budget <= minFallback) break;
+            budget = Math.Min(budget - 1, Math.Max(minFallback, (int)(budget * 0.72)));
+        }
+        return null;
     }
 
     private ResourceOasis? BestOasisForBot(Guid actor, VillageEconomy home, Position from, int armyFighters,
@@ -552,18 +608,21 @@ public sealed partial class LogisticsWorld
             .Where(o => o.BurnedUntil <= warTime)
             .Where(o => o.OwnerId is null
                 || armyFighters >= Math.Max(10, Guards(o.Id, actor).Sum(Fighters) + o.WallLevel * 6 + 4)
-                || (difficulty == BotDifficulty.Hard && focusEnemyId == o.OwnerId && armyFighters >= 10 && !Guards(o.Id, actor).Any()))
+                || (difficulty == BotDifficulty.Hard && armyFighters >= 10
+                    && ((o.OwnerId is { } oid && humanOwners.Contains(oid))
+                        || (focusEnemyId == o.OwnerId && !Guards(o.Id, actor).Any()))))
             .OrderBy(o =>
             {
                 var dist = Distance(from, o.Position);
-                var unclaimedBonus = o.OwnerId is null ? -600 : 0;
+                var unclaimedBonus = o.OwnerId is null ? (difficulty == BotDifficulty.Hard && warTime < protectionUntil ? -1200 : -600) : 0;
                 var levelBonus = o.Level * -120;
                 var wheatBonus = wheatLow && o.Resource == ResourceType.Wheat ? -220 : 0;
+                var humanBonus = difficulty == BotDifficulty.Hard && o.OwnerId is { } hId && humanOwners.Contains(hId) ? -1400 : 0;
                 var focusBonus = focusEnemyId is { } fe && o.OwnerId == fe ? (difficulty == BotDifficulty.Hard ? -950 : -600) : 0;
                 var nearFocusBonus = o.OwnerId is not null && focusCity is not null && Distance(o.Position, focusCity.Village.Position) < 1200
                     ? (difficulty == BotDifficulty.Hard ? -450 : -250) : 0;
                 var defensePenalty = o.OwnerId is null ? 0 : (Guards(o.Id, actor).Sum(Fighters) + o.WallLevel * 6) * 8;
-                return dist + unclaimedBonus + levelBonus + wheatBonus + focusBonus + nearFocusBonus + defensePenalty;
+                return dist + unclaimedBonus + levelBonus + wheatBonus + humanBonus + focusBonus + nearFocusBonus + defensePenalty;
             })
             .FirstOrDefault();
     }
@@ -703,7 +762,7 @@ public sealed partial class LogisticsWorld
         if (home.Besieged || SiteUnderThreat(home.Village.Id)
             || sieges.Any(s => s.Status == "Active" && CampAllied(actor, s.DefenderOwner)))
             return false;
-        var maxRange = difficulty == BotDifficulty.Hard ? 1100.0 : difficulty == BotDifficulty.Normal ? 550.0 : 250.0;
+        var maxRange = difficulty == BotDifficulty.Hard ? 1350.0 : difficulty == BotDifficulty.Normal ? 550.0 : 250.0;
         var idles = ownArmies
             .Where(a => a.Order == "Idle" && !Engaged(a) && !a.Routing && !IsScoutOnly(a) && Fighters(a) > 0)
             .ToArray();
@@ -722,7 +781,7 @@ public sealed partial class LogisticsWorld
                 if (dist > maxRange) continue;
                 var shouldCombine = Fighters(a) < 26 || Fighters(b) < 26
                     || ownArmies.Length >= maxArmies - 1
-                    || (difficulty == BotDifficulty.Hard && Fighters(a) + Fighters(b) >= 28 && Math.Min(Fighters(a), Fighters(b)) < 32);
+                    || (difficulty == BotDifficulty.Hard && Math.Min(Fighters(a), Fighters(b)) < 36);
                 if (shouldCombine && dist < bestDist)
                 {
                     bestDist = dist;
@@ -739,24 +798,32 @@ public sealed partial class LogisticsWorld
 
     private void TryBotScout(Guid actor, VillageEconomy home, Army[] ownArmies, IGameCommands commands, BotDifficulty difficulty)
     {
-        if (difficulty == BotDifficulty.Easy || warTime < protectionUntil * 0.4) return;
+        if (difficulty == BotDifficulty.Easy || (difficulty != BotDifficulty.Hard && warTime < protectionUntil * 0.4)) return;
         if (warTime < botNextScoutAt.GetValueOrDefault(actor)) return;
         if (ownArmies.Any(a => a.Order == "Scouting")) return;
 
         var existingScoutArmy = ownArmies.FirstOrDefault(a => a.Order == "Idle" && !Engaged(a) && !a.Routing && IsScoutOnly(a) && Fighters(a) >= 1);
         Guid? scoutTargetId = null;
 
+        var maxScoutDist = difficulty == BotDifficulty.Hard ? double.MaxValue : 800.0;
         var nearbyUnscoutedEnemy = armies
             .Where(a => a.OwnerId != actor && !CampAllied(actor, a.OwnerId) && !a.Routing && !IsScoutOnly(a)
-                && Distance(a.Position, home.Village.Position) <= (difficulty == BotDifficulty.Hard ? 1200 : 800)
+                && (difficulty == BotDifficulty.Hard || Distance(a.Position, home.Village.Position) <= maxScoutDist)
                 && !IsScoutedBy(actor, a.Id))
-            .OrderBy(a => Distance(a.Position, home.Village.Position))
+            .OrderByDescending(a => difficulty == BotDifficulty.Hard && humanOwners.Contains(a.OwnerId) ? 1 : 0)
+            .ThenBy(a => Distance(a.Position, home.Village.Position))
             .FirstOrDefault();
         if (nearbyUnscoutedEnemy is not null)
         {
             scoutTargetId = nearbyUnscoutedEnemy.Id;
         }
-        else
+        else if (difficulty == BotDifficulty.Hard && convoys.FirstOrDefault(c => c.OwnerId != actor && !CampAllied(actor, c.OwnerId) && humanOwners.Contains(c.OwnerId)) is { } humanConvoy)
+        {
+            var convoyOwnerCity = villages.Values.FirstOrDefault(v => !v.Ruined && v.Village.OwnerId == humanConvoy.OwnerId);
+            if (convoyOwnerCity is not null && !IsScoutedBy(actor, convoyOwnerCity.Village.Id))
+                scoutTargetId = convoyOwnerCity.Village.Id;
+        }
+        if (scoutTargetId is null)
         {
             var focus = ResolveTeamFocusTarget(actor, home);
             if (focus?.City is { } fc && !IsScoutedBy(actor, fc.Village.Id))
@@ -764,16 +831,18 @@ public sealed partial class LogisticsWorld
         }
         if (scoutTargetId is not { } targetId) return;
 
+        var scoutInterval = difficulty == BotDifficulty.Hard ? 40 : 60;
         if (existingScoutArmy is not null)
         {
             if (commands.Execute(actor, new(Guid.NewGuid(), CommandKind.Scout, existingScoutArmy.Id, DestinationId: targetId)).Accepted)
-                botNextScoutAt[actor] = warTime + (difficulty == BotDifficulty.Hard ? 40 : 60);
+                botNextScoutAt[actor] = warTime + scoutInterval;
             return;
         }
 
-        if (ownArmies.Length >= 12 || TryUnitId(home, UnitRole.Scout) is not { } scoutId) return;
+        if (ownArmies.Count(a => a.Order != "Guarding") >= 12 || TryUnitId(home, UnitRole.Scout) is not { } scoutId) return;
         var sendCount = Math.Min(3, home.Available(scoutId));
-        if (sendCount < 2 || home.Resources.Wheat < 300) return;
+        var minScouts = difficulty == BotDifficulty.Hard ? 1 : 2;
+        if (sendCount < minScouts || home.Resources.Wheat < 200) return;
 
         var formation = new Dictionary<string, int> { [scoutId] = sendCount };
         if (commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
@@ -781,7 +850,7 @@ public sealed partial class LogisticsWorld
         {
             var spawned = armies.LastOrDefault(a => a.OwnerId == actor && a.Order == "Idle" && IsScoutOnly(a));
             if (spawned is not null && commands.Execute(actor, new(Guid.NewGuid(), CommandKind.Scout, spawned.Id, DestinationId: targetId)).Accepted)
-                botNextScoutAt[actor] = warTime + (difficulty == BotDifficulty.Hard ? 40 : 60);
+                botNextScoutAt[actor] = warTime + scoutInterval;
         }
     }
 
@@ -791,7 +860,7 @@ public sealed partial class LogisticsWorld
         if (home is null) return;
         foreach (var extra in villages.Values.Where(v => !v.Ruined && v.Village.OwnerId == actor && v != home))
         {
-            BotController.ActEconomy(commands, actor, extra.Snapshot(), personality, difficulty);
+            BotController.ActEconomy(commands, actor, extra.Snapshot(), personality, difficulty, () => extra.Snapshot());
             // Project surplus resources and troops from secondary conquered settlements toward capital/front
             if (difficulty != BotDifficulty.Easy && !extra.Besieged && extra.Resources.Total > extra.Capacity * 0.58
                 && extra.Available(UnitId(extra, UnitRole.Wagon)) >= 2 && convoys.Count(c => c.OwnerId == actor && c.Kind is ConvoyKind.Trade or ConvoyKind.Shipment) < 3)
@@ -801,10 +870,10 @@ public sealed partial class LogisticsWorld
                 if (ship.Total >= 1200 && home.Resources.Total + ship.Total <= home.Capacity * 1.1)
                     commands.Execute(actor, new(Guid.NewGuid(), CommandKind.SendResources, extra.Village.Id, DestinationId: home.Village.Id, Shipment: ship));
             }
-            if (difficulty != BotDifficulty.Easy && warTime >= protectionUntil && HomeCombatTroops(extra) >= 20
-                && armies.Count(x => x.OwnerId == actor) < 12)
+            if (difficulty != BotDifficulty.Easy && warTime >= protectionUntil && HomeCombatTroops(extra) >= (difficulty == BotDifficulty.Hard ? 36 : 20)
+                && armies.Count(x => x.OwnerId == actor && !IsScoutOnly(x) && x.Order != "Guarding") < (difficulty == BotDifficulty.Hard ? 5 : 8))
             {
-                var reinforcement = BuildBotFormation(extra, home.Village.Position, 35, false, false, 8, difficulty);
+                var reinforcement = BuildBotFormation(extra, home.Village.Position, difficulty == BotDifficulty.Hard ? Math.Max(55, (int)(HomeCombatTroops(extra) * 0.7)) : 35, false, false, 8, difficulty);
                 if (reinforcement is not null)
                     commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, extra.Village.Id,
                         reinforcement.Values.Sum(), true, home.Village.Position.X, home.Village.Position.Y,
@@ -814,49 +883,92 @@ public sealed partial class LogisticsWorld
         var economy = home.Snapshot();
         var homeTroops = HomeCombatTroops(home);
         var ownArmies = armies.Where(x => x.OwnerId == actor).ToArray();
-        var desiredWagons = Math.Clamp(3 + home.OwnedOases * 2 + ownArmies.Length, 3, 9);
-        UnitRole? neededRole = null;
-        var batch = 1;
-        var maxSiegeEngines = difficulty == BotDifficulty.Hard ? 5 : personality == BotPersonality.Aggressive ? 3 : 2;
-        if (home.Available(UnitId(home, UnitRole.Wagon)) + home.ReservedTradeWagons < desiredWagons && !economy.Jobs.Any(x => x.Lane == "Stable"))
-        { neededRole = UnitRole.Wagon; batch = 2; }
-        else if (warTime > protectionUntil * .5 && homeTroops >= 18 && !economy.Jobs.Any(x => x.Lane == "SiegeWorkshop"))
-        {
-            if (home.BuildingLevel(BuildingType.SiegeWorkshop) >= 3 && home.Available(UnitId(home, UnitRole.Catapult)) < maxSiegeEngines)
-                neededRole = UnitId(home, UnitRole.Catapult) is not null ? UnitRole.Catapult : null;
-            else if (home.Available(UnitId(home, UnitRole.Ram)) < maxSiegeEngines)
-                neededRole = UnitRole.Ram;
-        }
-        else if (personality != BotPersonality.Defensive && warTime > protectionUntil * .7 && home.Available(UnitId(home, UnitRole.Governor)) == 0
-            && homeTroops >= 35 && !economy.Jobs.Any(x => x.Lane == "MainHall"))
-            neededRole = UnitRole.Governor;
-        else if (difficulty >= BotDifficulty.Normal && warTime > protectionUntil * .25 && homeTroops >= 10
-            && TryUnitId(home, UnitRole.Scout) is { } scoutUnitId
-            && home.Available(scoutUnitId) < (difficulty == BotDifficulty.Hard ? 3 : 2)
-            && economy.Targets.FirstOrDefault(x => x.UnitId == scoutUnitId && x.Unlocked) is { } scoutTarget
-            && !economy.Jobs.Any(x => x.Lane == scoutTarget.TrainingBuilding))
-        { neededRole = UnitRole.Scout; batch = 1; }
+        var desiredWagons = difficulty == BotDifficulty.Hard
+            ? Math.Clamp(4 + home.OwnedOases * 2 + ownArmies.Length, 4, 14)
+            : Math.Clamp(3 + home.OwnedOases * 2 + ownArmies.Length, 3, 9);
+        var maxSiegeEngines = difficulty == BotDifficulty.Hard ? 8 : personality == BotPersonality.Aggressive ? 3 : 2;
+        bool LaneHasRoom(string lane) => difficulty == BotDifficulty.Hard
+            ? economy.Jobs.Count(x => x.Lane == lane) < 4
+            : !economy.Jobs.Any(x => x.Lane == lane);
 
-        if (neededRole is { } needed)
+        void QueueSpecial(UnitRole role, int count)
         {
-            var target = economy.Targets.FirstOrDefault(x => x.UnitId == UnitId(home, needed) && x.Unlocked);
-            if (target?.TrainingCost is { } unitCost && economy.Resources.Covers(new(unitCost.Wood * batch, unitCost.Iron * batch, unitCost.Stone * batch, unitCost.Wheat * batch)))
-                commands.Execute(actor, new(Guid.NewGuid(), CommandKind.Train, target.Id, Quantity: batch));
+            if (TryUnitId(home, role) is not { } unitId) return;
+            var target = economy.Targets.FirstOrDefault(x => x.UnitId == unitId && x.Unlocked);
+            var wheatBuffer = difficulty == BotDifficulty.Hard ? (homeTroops >= 140 ? Math.Max(120L, Math.Min(3500L, homeTroops * 3L)) : 120L) : 0L;
+            if (target?.TrainingCost is { } unitCost
+                && economy.Resources.Covers(new(unitCost.Wood * count, unitCost.Iron * count, unitCost.Stone * count, unitCost.Wheat * count))
+                && economy.Resources.Wheat >= unitCost.Wheat * count + wheatBuffer)
+            {
+                if (commands.Execute(actor, new(Guid.NewGuid(), CommandKind.Train, target.Id, Quantity: count)).Accepted)
+                    economy = home.Snapshot();
+            }
         }
 
-        if (!home.Besieged && home.Resources.Wood > 800 && home.Resources.Stone > 800 && home.Resources.Iron > 600 && home.Resources.Wheat > 600)
+        if (difficulty == BotDifficulty.Hard)
+        {
+            if ((warTime > protectionUntil * .2 || homeTroops >= 14) && LaneHasRoom("SiegeWorkshop"))
+            {
+                if (home.BuildingLevel(BuildingType.SiegeWorkshop) >= 3 && home.Available(UnitId(home, UnitRole.Catapult)) < maxSiegeEngines)
+                    QueueSpecial(UnitRole.Catapult, 1);
+                else if (home.Available(UnitId(home, UnitRole.Ram)) < 2)
+                    QueueSpecial(UnitRole.Ram, 1);
+            }
+            if (home.BuildingLevel(BuildingType.MainHall) >= 5 && home.Available(UnitId(home, UnitRole.Governor)) < 2
+                && homeTroops >= 20 && LaneHasRoom("MainHall"))
+                QueueSpecial(UnitRole.Governor, 1);
+            if (home.Available(UnitId(home, UnitRole.Wagon)) + home.ReservedTradeWagons < desiredWagons && LaneHasRoom("Stable"))
+                QueueSpecial(UnitRole.Wagon, 2);
+            if (homeTroops >= 6 && TryUnitId(home, UnitRole.Scout) is { } scoutUnitId
+                && home.Available(scoutUnitId) < 5
+                && economy.Targets.FirstOrDefault(x => x.UnitId == scoutUnitId && x.Unlocked) is { } scoutTarget
+                && scoutTarget.TrainingBuilding is { } scoutLane && LaneHasRoom(scoutLane))
+                QueueSpecial(UnitRole.Scout, 2);
+        }
+        else
+        {
+            UnitRole? neededRole = null;
+            var batch = 1;
+            if (home.Available(UnitId(home, UnitRole.Wagon)) + home.ReservedTradeWagons < desiredWagons && LaneHasRoom("Stable"))
+            { neededRole = UnitRole.Wagon; batch = 2; }
+            else if (warTime > protectionUntil * .5 && homeTroops >= 14 && LaneHasRoom("SiegeWorkshop"))
+            {
+                if (home.BuildingLevel(BuildingType.SiegeWorkshop) >= 3 && home.Available(UnitId(home, UnitRole.Catapult)) < maxSiegeEngines)
+                    neededRole = UnitId(home, UnitRole.Catapult) is not null ? UnitRole.Catapult : null;
+                else if (home.Available(UnitId(home, UnitRole.Ram)) < maxSiegeEngines)
+                    neededRole = UnitRole.Ram;
+            }
+            else if (personality != BotPersonality.Defensive && warTime > protectionUntil * .5
+                && home.Available(UnitId(home, UnitRole.Governor)) == 0 && homeTroops >= 35 && LaneHasRoom("MainHall"))
+                neededRole = UnitRole.Governor;
+            else if (difficulty >= BotDifficulty.Normal && warTime > protectionUntil * .25 && homeTroops >= 6
+                && TryUnitId(home, UnitRole.Scout) is { } scoutUnitId
+                && home.Available(scoutUnitId) < 2
+                && economy.Targets.FirstOrDefault(x => x.UnitId == scoutUnitId && x.Unlocked) is { } scoutTarget
+                && scoutTarget.TrainingBuilding is { } scoutLane
+                && LaneHasRoom(scoutLane))
+            { neededRole = UnitRole.Scout; batch = 1; }
+
+            if (neededRole is { } needed)
+                QueueSpecial(needed, batch);
+        }
+
+        var oasisWheatFloor = difficulty == BotDifficulty.Hard && homeTroops >= 140 ? Math.Max(600L, Math.Min(4000L, homeTroops * 3L)) : 600L;
+        if (!home.Besieged && home.Resources.Wood > 800 && home.Resources.Stone > 800 && home.Resources.Iron > 600 && home.Resources.Wheat > oasisWheatFloor)
         {
             var maxLvl = difficulty == BotDifficulty.Hard ? 5 : personality == BotPersonality.Economic ? 4 : 3;
             var upgradeTarget = oases.FirstOrDefault(o => o.OwnerId == actor && o.VillageId == home.Village.Id && !OasisUnderAttack(o)
-                && o.BurnedUntil <= warTime && o.Level < maxLvl && o.LevelUpgradeCost is { } lc && home.Resources.Covers(lc));
+                && o.BurnedUntil <= warTime && o.Level < maxLvl && o.LevelUpgradeCost is { } lc && home.Resources.Covers(lc)
+                && home.Resources.Wheat >= lc.Wheat + (difficulty == BotDifficulty.Hard && homeTroops >= 140 ? oasisWheatFloor - 600L : 0L));
             if (upgradeTarget is not null)
                 commands.Execute(actor, new(Guid.NewGuid(), CommandKind.UpgradeOasisLevel, upgradeTarget.Id));
         }
-        if (!home.Besieged && home.Resources.Wood > 1100 && home.Resources.Stone > 1100 && home.Resources.Iron > 800)
+        if (!home.Besieged && home.Resources.Wood > 1100 && home.Resources.Stone > 1100 && home.Resources.Iron > 800 && home.Resources.Wheat >= (difficulty == BotDifficulty.Hard && homeTroops >= 140 ? oasisWheatFloor : 0L))
         {
-            var maxWall = personality == BotPersonality.Defensive ? 4 : personality == BotPersonality.Economic ? 3 : 2;
+            var maxWall = difficulty == BotDifficulty.Hard ? 4 : personality == BotPersonality.Defensive ? 4 : personality == BotPersonality.Economic ? 3 : 2;
             var fortify = oases.FirstOrDefault(o => o.OwnerId == actor && o.VillageId == home.Village.Id && !OasisUnderAttack(o)
-                && o.WallLevel < maxWall && o.WallUpgradeCost is { } c && home.Resources.Covers(c));
+                && o.WallLevel < maxWall && o.WallUpgradeCost is { } c && home.Resources.Covers(c)
+                && home.Resources.Wheat >= c.Wheat + (difficulty == BotDifficulty.Hard && homeTroops >= 140 ? oasisWheatFloor - 600L : 0L));
             if (fortify is not null)
                 commands.Execute(actor, new(Guid.NewGuid(), CommandKind.UpgradeOasisWall, fortify.Id));
         }
@@ -864,13 +976,15 @@ public sealed partial class LogisticsWorld
         BotManageTradeAndAid(actor, home, ownArmies, commands, difficulty);
         TryBotScout(actor, home, ownArmies, commands, difficulty);
 
-        var maxArmies = warTime < protectionUntil ? 4 : difficulty == BotDifficulty.Hard ? 6 : personality == BotPersonality.Aggressive ? 5 : 4;
+        var fieldCount = ActiveFieldArmyCount(ownArmies);
+        var maxArmies = difficulty == BotDifficulty.Hard ? (warTime < protectionUntil ? 3 : 6) : warTime < protectionUntil ? 4 : personality == BotPersonality.Aggressive ? 5 : 4;
         if (TryBotMergeArmies(actor, home, ownArmies, commands, difficulty, maxArmies)) return;
 
         if (WarBotAct(actor, commands, personality, difficulty)) return;
 
-        var weakArmy = ownArmies.FirstOrDefault(a => a.Order is "Idle" or "Guarding" && !Engaged(a) && !a.Routing && !SiteUnderThreat(a.DefendingSiteId)
-            && warTime > protectionUntil && Fighters(a) < 16 && homeTroops >= 24);
+        var weakCutoff = difficulty == BotDifficulty.Hard && fieldCount >= 2 ? 28 : 16;
+        var weakArmy = ownArmies.FirstOrDefault(a => (a.Order == "Idle" || (difficulty != BotDifficulty.Hard && a.Order == "Guarding")) && !Engaged(a) && !a.Routing && !SiteUnderThreat(a.DefendingSiteId)
+            && warTime > protectionUntil && Fighters(a) < weakCutoff && homeTroops >= 24);
         if (weakArmy is not null)
         { commands.Execute(actor, new(Guid.NewGuid(), CommandKind.RecallArmy, weakArmy.Id)); return; }
 
@@ -909,24 +1023,31 @@ public sealed partial class LogisticsWorld
                             || (v.Village.OwnerId != actor && CampAllied(actor, v.Village.OwnerId) && Distance(oasis.Position, v.Village.Position) < 1400)));
                 var enemyCity = villages.Values.FirstOrDefault(v => !v.Ruined && v.Village.OwnerId == oasis.OwnerId);
                 var inEnemyTerritory = enemyCity is null || distFromHome > Distance(oasis.Position, enemyCity.Village.Position) + 250;
-                var canBurnHere = veryFarFromFriendly && inEnemyTerritory;
+                var isHumanOasis = oasis.OwnerId is { } oOwner && humanOwners.Contains(oOwner);
+                var canBurnHere = (isHumanOasis || veryFarFromFriendly || (difficulty == BotDifficulty.Hard && distFromHome >= 550
+                    && !villages.Values.Any(v => !v.Ruined && CampAllied(actor, v.Village.OwnerId) && Distance(oasis.Position, v.Village.Position) < 550))) && (isHumanOasis || inEnemyTerritory);
                 var shouldBurn = canBurnHere
                     && (difficulty == BotDifficulty.Hard
                         || (personality == BotPersonality.Aggressive && (belongsToFocus || nearFocus || oasis.Level >= 1))
                         || (belongsToFocus && home.OwnedOases >= 2));
                 oasisMode = !canBreak && difficulty == BotDifficulty.Hard ? OasisMode.Blockade : shouldBurn ? OasisMode.Burn : OasisMode.Capture;
             }
-            if (availableArmy is not null && (oasis.OwnerId is null || Fighters(availableArmy) >= (oasisMode == OasisMode.Blockade ? 10 : 16)))
+            var minExistingOasisFighters = oasis.OwnerId is null ? 1 : oasisMode == OasisMode.Blockade ? 10 : 16;
+            if (availableArmy is not null && Fighters(availableArmy) >= minExistingOasisFighters)
             {
                 var cmdKind = oasisMode == OasisMode.Burn ? CommandKind.BurnOasis : oasisMode == OasisMode.Blockade ? CommandKind.BesiegeOasis : CommandKind.CaptureOasis;
                 commands.Execute(actor, new(Guid.NewGuid(), cmdKind, availableArmy.Id, DestinationId: oasis.Id));
                 return;
             }
-            var minTroops = oasis.OwnerId is null ? (warTime < protectionUntil ? 8 : 10) : (warTime < protectionUntil ? 12 : oasisMode == OasisMode.Blockade ? 12 : 18);
-            if (ownArmies.Length < maxArmies && homeTroops >= minTroops)
+            var reserve = warTime < protectionUntil ? 0 : personality == BotPersonality.Defensive ? 10 : 4;
+            var minTroops = oasis.OwnerId is null
+                ? (warTime < protectionUntil ? 8 : difficulty == BotDifficulty.Hard ? 28 + reserve : 10)
+                : (warTime < protectionUntil ? 12 : difficulty == BotDifficulty.Hard ? 28 + reserve : oasisMode == OasisMode.Blockade ? 12 : 18);
+            if (fieldCount < maxArmies && ownArmies.Count(a => a.Order != "Guarding") < 12 && homeTroops >= minTroops)
             {
-                var reserve = warTime < protectionUntil ? 0 : personality == BotPersonality.Defensive ? 10 : 4;
-                var maxDispatch = oasis.OwnerId is null ? 16 : warTime < protectionUntil ? 20 : 60;
+                var maxDispatch = oasis.OwnerId is null
+                    ? (warTime < protectionUntil ? 16 : difficulty == BotDifficulty.Hard ? Math.Clamp((int)(homeTroops * 0.4), 34, 90) : 16)
+                    : (warTime < protectionUntil ? 20 : difficulty == BotDifficulty.Hard ? Math.Max(75, (int)(homeTroops * 0.55)) : 60);
                 var formation = BuildBotFormation(home, oasis.Position, maxDispatch, warTime >= protectionUntil, oasisMode == OasisMode.Capture && personality == BotPersonality.Aggressive && warTime >= protectionUntil, reserve, difficulty);
                 if (formation is not null)
                 {
@@ -939,40 +1060,62 @@ public sealed partial class LogisticsWorld
         }
 
         // Bot establishing a strategic forward camp near target enemy supply roads
-        if (warTime >= protectionUntil && !ownArmies.Any(a => a.CampRadius is not null))
-        {
-            var rivalCity = focus?.City ?? villages.Values.Where(v => v.Village.OwnerId != actor && !CampAllied(actor, v.Village.OwnerId) && !v.Ruined)
-                .OrderBy(v => Distance(v.Village.Position, home.Village.Position)).FirstOrDefault();
-            if (rivalCity is not null)
-            {
-                var enemyOasis = oases.Where(o => o.OwnerId == rivalCity.Village.OwnerId && o.BurnedUntil <= warTime)
-                    .OrderBy(o => Distance(o.Position, rivalCity.Village.Position)).FirstOrDefault();
-                var anchor = enemyOasis?.Position ?? home.Village.Position;
-                var gap = Math.Max(1, Distance(rivalCity.Village.Position, anchor));
-                var offset = Math.Min(160, gap * 0.45);
-                var campX = rivalCity.Village.Position.X + (anchor.X - rivalCity.Village.Position.X) * offset / gap;
-                var campY = rivalCity.Village.Position.Y + (anchor.Y - rivalCity.Village.Position.Y) * offset / gap;
-                var campPos = new Position(Math.Clamp(campX, MapMinimum + 100, MapMaximum - 100), Math.Clamp(campY, MapMinimum + 100, MapMaximum - 100));
-                if (villages.Values.Any(v => !v.Ruined && CampAllied(actor, v.Village.OwnerId) && Distance(v.Village.Position, campPos) < 130))
-                    return;
+        TryBotSupplyCamps(actor, home, ownArmies, availableArmy, focus?.City, commands, personality, difficulty, maxArmies);
+    }
 
-                if (availableArmy is not null && availableArmy.Order == "Idle" && Fighters(availableArmy) >= 16)
-                {
-                    commands.Execute(actor, new(Guid.NewGuid(), CommandKind.CampArmy, availableArmy.Id, X: campPos.X, Y: campPos.Y, LoadedOnly: true));
-                    return;
-                }
-                if (ownArmies.Length < maxArmies && homeTroops >= (personality == BotPersonality.Aggressive || difficulty == BotDifficulty.Hard ? 22 : 30) && home.Available(UnitId(home, UnitRole.Wagon)) >= 1)
-                {
-                    var campFormation = BuildBotFormation(home, campPos, personality == BotPersonality.Aggressive || difficulty == BotDifficulty.Hard ? 24 : 18, false, false, 8, difficulty);
-                    if (campFormation is not null)
-                    {
-                        commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
-                            campFormation.Values.Sum(), true, campPos.X, campPos.Y, UnitId(home, UnitRole.Infantry), 0, 2,
-                            Camp: true, LoadedOnly: true, Formation: campFormation));
-                    }
-                }
+    private bool TryBotSupplyCamps(Guid actor, VillageEconomy home, Army[] ownArmies, Army? availableArmy,
+        VillageEconomy? focusCity, IGameCommands commands, BotPersonality personality, BotDifficulty difficulty, int maxArmies)
+    {
+        if (warTime < protectionUntil) return false;
+        var maxCamps = difficulty == BotDifficulty.Hard ? 2 : 1;
+        var existingCamps = ownArmies.Count(a => a.CampRadius is not null || a.Order == "Camping");
+        if (existingCamps >= maxCamps) return false;
+
+        var rivalCity = focusCity
+            ?? villages.Values.Where(v => v.Village.OwnerId != actor && !CampAllied(actor, v.Village.OwnerId) && !v.Ruined)
+                .OrderByDescending(v => difficulty == BotDifficulty.Hard && humanOwners.Contains(v.Village.OwnerId) ? 1 : 0)
+                .ThenBy(v => Distance(v.Village.Position, home.Village.Position))
+                .FirstOrDefault();
+        if (rivalCity is null) return false;
+
+        var enemyOasis = oases.Where(o => o.OwnerId == rivalCity.Village.OwnerId && o.BurnedUntil <= warTime)
+            .OrderBy(o => Distance(o.Position, rivalCity.Village.Position))
+            .Skip(existingCamps)
+            .FirstOrDefault();
+        var enemyFieldArmy = armies.FirstOrDefault(a => a.OwnerId == rivalCity.Village.OwnerId && !a.Routing && !IsScoutOnly(a)
+            && Distance(a.Position, rivalCity.Village.Position) > 150);
+        var anchor = existingCamps == 0
+            ? (enemyOasis?.Position ?? enemyFieldArmy?.Position ?? home.Village.Position)
+            : (enemyFieldArmy?.Position ?? enemyOasis?.Position ?? new Position(MapCenter, MapCenter));
+        var gap = Math.Max(1, Distance(rivalCity.Village.Position, anchor));
+        var offset = Math.Clamp(gap * 0.42, 130, 190);
+        var campX = rivalCity.Village.Position.X + (anchor.X - rivalCity.Village.Position.X) * offset / gap;
+        var campY = rivalCity.Village.Position.Y + (anchor.Y - rivalCity.Village.Position.Y) * offset / gap;
+        var campPos = new Position(Math.Clamp(campX, MapMinimum + 100, MapMaximum - 100), Math.Clamp(campY, MapMinimum + 100, MapMaximum - 100));
+        if (villages.Values.Any(v => !v.Ruined && CampAllied(actor, v.Village.OwnerId) && Distance(v.Village.Position, campPos) < 130))
+            return false;
+        if (difficulty == BotDifficulty.Hard && armies.Any(a => CampAllied(actor, a.OwnerId) && (a.CampRadius is not null || a.Order == "Camping") && Distance(a.Position, campPos) < 150))
+            return false;
+
+        var loadedOnly = difficulty != BotDifficulty.Hard;
+        var minIdleForCamp = difficulty == BotDifficulty.Hard ? 28 : 16;
+        if (availableArmy is not null && availableArmy.Order == "Idle" && Fighters(availableArmy) >= minIdleForCamp)
+        {
+            return commands.Execute(actor, new(Guid.NewGuid(), CommandKind.CampArmy, availableArmy.Id, X: campPos.X, Y: campPos.Y, LoadedOnly: loadedOnly)).Accepted;
+        }
+        var homeTroops = HomeCombatTroops(home);
+        var minHomeForCamp = difficulty == BotDifficulty.Hard ? 42 : personality == BotPersonality.Aggressive ? 22 : 30;
+        if (ActiveFieldArmyCount(ownArmies) < maxArmies && ownArmies.Count(a => a.Order != "Guarding") < 12 && homeTroops >= minHomeForCamp && home.Available(UnitId(home, UnitRole.Wagon)) >= 1)
+        {
+            var campFormation = BuildBotFormation(home, campPos, difficulty == BotDifficulty.Hard ? 48 : personality == BotPersonality.Aggressive ? 24 : 18, false, false, 8, difficulty);
+            if (campFormation is not null)
+            {
+                return commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
+                    campFormation.Values.Sum(), true, campPos.X, campPos.Y, UnitId(home, UnitRole.Infantry), 0, 2,
+                    Camp: true, LoadedOnly: loadedOnly, Formation: campFormation)).Accepted;
             }
         }
+        return false;
     }
     private static bool IsScoutOnly(Army army) =>
         army.Order == "Scouting" || (army.Troops.Any(t => t.Unit.Definition.Role == UnitRole.Scout)
@@ -980,36 +1123,36 @@ public sealed partial class LogisticsWorld
 
     private bool CanInspect(Guid viewer, Guid ownerId) => ownerId == viewer || CampAllied(viewer, ownerId);
 
-    public WorldSnapshot Snapshot(Guid viewer) => new(
-        armies.Where(x => !(x.Order == "Guarding" && x.DefendingSiteId is { } siteId && (oases.Any(o => o.Id == siteId) || villages.ContainsKey(siteId)) && x.OwnerId != viewer && x.SupportedOwnerId != viewer)
-                && (CanInspect(viewer, x.OwnerId) || !IsScoutOnly(x)))
+    public WorldSnapshot Snapshot(Guid viewer, bool omniscient = false) => new(
+        armies.Where(x => (omniscient || !(x.Order == "Guarding" && x.DefendingSiteId is { } siteId && (oases.Any(o => o.Id == siteId) || villages.ContainsKey(siteId)) && x.OwnerId != viewer && x.SupportedOwnerId != viewer))
+                && (omniscient || CanInspect(viewer, x.OwnerId) || !IsScoutOnly(x)))
             .Select(x => {
-                var allied = CanInspect(viewer, x.OwnerId);
+                var allied = omniscient || CanInspect(viewer, x.OwnerId);
                 return new ArmySnapshot(x.Id, x.OwnerId, x.HomeVillageId, x.Position, x.Destination, x.Order,
                 x.Troops.Where(t => t.Unit is not SupplyWagon && (allied || t.Unit.Definition.Role != UnitRole.Scout)).Sum(t => t.Count), WagonCount(x.Troops), x.Speed,
                 allied ? x.Wheat : null, x.Capacity,
                 x.AutoSupplyEnabled, allied ? x.SupplyWagons : 0, allied ? x.Escorts : 0,
                 allied ? x.SupplyStatus : null, x.TargetId, x.ActionSeconds, x.SupplyVillageId,
-                allied ? x.Loot : null, allied || IsScoutedBy(viewer, x.Id) ? x.Troops.ToDictionary(t => t.Unit.UnitId, t => t.Count) : null, x.AfterAttack, villages[x.HomeVillageId].Village.Tribe, x.DefendingSiteId, x.SupportedOwnerId,
+                allied ? x.Loot : null, allied || x.SupportedOwnerId == viewer || IsScoutedBy(viewer, x.Id) ? x.Troops.ToDictionary(t => t.Unit.UnitId, t => t.Count) : null, x.AfterAttack, villages[x.HomeVillageId].Village.Tribe, x.DefendingSiteId, x.SupportedOwnerId,
                 x.Troops.Where(t => t.Count > 0 && (allied || t.Unit.Definition.Role != UnitRole.Scout)).ToDictionary(t => t.Unit.UnitId, t => (int)Math.Ceiling(t.Count / 10.0)), x.CampRadius,
                 allied ? x.WoundedCount : 0, allied ? x.DeadCount : 0, allied ? x.FledCount : 0,
                 !allied && TryScoutExpiry(viewer, x.Id, out var scoutUntil) ? scoutUntil : null);
             }).ToArray(),
         convoys.Select(x => {
-            var alliedConvoy = CanInspect(viewer, x.OwnerId) || (x.RecipientId is { } rec && CanInspect(viewer, rec));
+            var alliedConvoy = omniscient || CanInspect(viewer, x.OwnerId) || (x.RecipientId is { } rec && CanInspect(viewer, rec));
             return new ConvoySnapshot(x.Id, x.OwnerId, x.TargetArmyId, x.Position,
                 ConvoyDestination(x),
                 x.Returning, WagonCount(x.Troops), x.Troops.Where(t => t.Unit is not SupplyWagon).Sum(t => t.Count),
                 alliedConvoy ? x.WheatCargo : null, x.Speed, x.Kind, x.InBattle, alliedConvoy ? x.Cargo : null, x.RecipientId);
         }).ToArray(),
-        oases.Select(x => OasisView(x, viewer)).ToArray(),
-        notices.Where(x => x.Owner == viewer).Select(x => x.Notice).ToArray(), WarfareSnapshot(viewer),
-        armies.Where(x => x.OwnerId != viewer && (x.Order == "Approaching" && villages.GetValueOrDefault(x.TargetId ?? Guid.Empty)?.Village.OwnerId == viewer
+        oases.Select(x => OasisView(x, viewer, omniscient)).ToArray(),
+        notices.Where(x => omniscient || x.Owner == viewer).Select(x => x.Notice).ToArray(), WarfareSnapshot(viewer),
+        armies.Where(x => !omniscient && x.OwnerId != viewer && (x.Order == "Approaching" && villages.GetValueOrDefault(x.TargetId ?? Guid.Empty)?.Village.OwnerId == viewer
             || x.Order == "Attacking" && armies.Any(a => a.Id == x.TargetId && a.OwnerId == viewer)))
             .Select(x => new IncomingThreat(x.Id, x.OwnerId, x.TargetId!.Value, warTime + Math.Max(0, Distance(x.Position, x.Destination) - (x.Order == "Approaching" ? 2 : 16))
                 / Math.Max(.1, x.Speed))).ToArray(), Muster(viewer),
-        reports.Where(r => r.Attacker == viewer || r.Defender == viewer || r.Forces.Any(f=>f.Army.OwnerId==viewer)).OrderByDescending(r => r.Status=="Active").ThenByDescending(r => r.UpdatedAt).Take(Math.Max(40,reports.Count(r=>r.Status=="Active"))).Select(r => r.Snapshot(viewer)).ToArray(), regions, MarketSnapshot(), importantAlerts.Where(a => a.Owner == viewer).Select(a => a.Notice).ToArray(), OasisSiegeViews(),
-        villages.Values.Where(v => v.Village.OwnerId == viewer && !v.Ruined).ToDictionary(v => v.Village.Id, v => (IReadOnlyDictionary<string, int>)v.Garrison().ToDictionary(t => t.Unit.UnitId, t => t.Count)));
+        reports.Where(r => omniscient || r.Attacker == viewer || r.Defender == viewer || r.Forces.Any(f => f.Army.OwnerId == viewer)).OrderByDescending(r => r.Status == "Active").ThenByDescending(r => r.UpdatedAt).Take(Math.Max(40, reports.Count(r => r.Status == "Active"))).Select(r => r.Snapshot(omniscient ? null : viewer)).ToArray(), regions, MarketSnapshot(), importantAlerts.Where(a => omniscient || a.Owner == viewer).Select(a => a.Notice).ToArray(), OasisSiegeViews(),
+        villages.Values.Where(v => (omniscient || v.Village.OwnerId == viewer) && !v.Ruined).ToDictionary(v => v.Village.Id, v => (IReadOnlyDictionary<string, int>)v.Garrison().ToDictionary(t => t.Unit.UnitId, t => t.Count)));
     private void CompleteAttack(Army army)
     {
         army.DefendingSiteId = null; army.SupportedOwnerId = null; army.AttackOrderedAt = 0; army.CampRadius = null;

@@ -31,6 +31,13 @@ internal static class OasisChecks
                 Check(sites.All(c => cities.All(v => double.Hypot(v.Village.Position.X-c.Position.X,(v.Village.Position.Y-c.Position.Y)*.65) >= 420)), "Projected village and oasis artwork stays separated");
                 Check(sites.All(c => sites.All(o => o.Id == c.Id || double.Hypot(o.Position.X-c.Position.X,(o.Position.Y-c.Position.Y)*.65) >= 360)), "Projected oasis artwork stays separated");
                 Check(sites.All(c => c.Position.X is >= 180 and <= 4320 && c.Position.Y is >= 180 and <= 4320), "All oases are inside playable bounds");
+                var center = new Position(LogisticsWorld.MapCenter, LogisticsWorld.MapCenter);
+                var innerCount = sites.Count(c => LogisticsWorld.Distance(c.Position, center) < LogisticsWorld.SettlementRadius);
+                var outerCount = sites.Count(c => LogisticsWorld.Distance(c.Position, center) >= LogisticsWorld.SettlementRadius + 80);
+                Check(outerCount >= sites.Length / 2 && innerCount + outerCount == sites.Length,
+                    "At least half of the oases sit behind players' villages on the ordered outer perimeter and the rest sit in the middle");
+                Check(sites.All(a => sites.All(b => a.Id == b.Id || a.Resource != b.Resource || LogisticsWorld.Distance(a.Position, b.Position) >= 700)),
+                    "Adjacent oases never share the same resource type");
                 Check(sites.All(c=>c.OwnerId is null && c.VillageId is null && c.Defenders==0), "Oases begin neutral and unguarded");
                 var repeated = new LogisticsWorld(cities, seed).Snapshot(cities[0].Village.OwnerId).Oases;
                 Check(sites.Select(c => (c.Position, c.Resource)).SequenceEqual(repeated.Select(c => (c.Position, c.Resource))), "Terrain seed reproduces oasis positions and types");

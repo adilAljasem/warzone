@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /game
+
+Sitemap: https://warzonee.com/sitemap.xml
+Host: https://warzonee.com

@@ -1,0 +1,471 @@
+.admin-overlay {
+    position: fixed;
+    top: 84px;
+    right: 16px;
+    z-index: 90;
+    width: 410px;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 108px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    background: rgba(11, 17, 23, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(231, 198, 115, 0.35);
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    color: #f1f5f9;
+    font: 500 12.5px/1.4 "Cairo", "DM Sans", system-ui, sans-serif;
+    overflow: hidden;
+    zoom: var(--ui-scale, 1);
+}
+
+.admin-overlay[hidden] {
+    display: none;
+}
+
+.admin-overlay.is-collapsed {
+    width: auto;
+    min-width: 240px;
+}
+
+.admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    background: linear-gradient(90deg, rgba(44, 34, 14, 0.9), rgba(20, 29, 36, 0.92));
+    border-bottom: 1px solid rgba(231, 198, 115, 0.25);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.admin-header:active {
+    cursor: grabbing;
+}
+
+.admin-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 700;
+    color: #f7df9d;
+}
+
+.admin-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(234, 179, 8, 0.2);
+    border: 1px solid rgba(234, 179, 8, 0.45);
+    color: #fde68a;
+}
+
+.admin-controls {
+    display: flex;
+    gap: 5px;
+}
+
+.admin-controls button {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.06);
+    color: #e2e8f0;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.admin-controls button:hover {
+    background: rgba(231, 198, 115, 0.22);
+    border-color: rgba(231, 198, 115, 0.48);
+}
+
+.admin-body {
+    padding: 10px 12px 12px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.admin-section {
+    padding: 9px 10px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.admin-section-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #f7df9d;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.admin-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.admin-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.admin-grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+}
+
+.admin-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+    color: #cbd5e1;
+}
+
+.admin-overlay input,
+.admin-overlay select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 7px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(8, 13, 18, 0.88);
+    color: #f8fafc;
+    font: inherit;
+    font-size: 12px;
+}
+
+.admin-btn {
+    padding: 6px 10px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.08);
+    color: #f1f5f9;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    transition: background 0.14s, border-color 0.14s;
+}
+
+.admin-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.admin-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.admin-btn.active,
+.admin-btn.primary {
+    background: linear-gradient(135deg, #b8892c, #d4a644);
+    border-color: #f3d27a;
+    color: #111827;
+    font-weight: 700;
+}
+
+.admin-btn.danger {
+    background: rgba(185, 28, 28, 0.28);
+    border-color: rgba(248, 113, 113, 0.45);
+    color: #fecaca;
+}
+
+.admin-btn.danger:hover:not(:disabled) {
+    background: rgba(220, 38, 38, 0.42);
+}
+
+.admin-speed-bar {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 5px;
+}
+
+.admin-bot-rooms {
+    max-height: 120px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.admin-bot-room-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 4px 7px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    font-size: 11.5px;
+}
+
+.admin-muted {
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+.world-chat.menu-chat {
+    z-index: 65;
+    bottom: 16px;
+}
+
+.spectator-bar {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 12px;
+    max-width: calc(100vw - 32px);
+}
+
+.spectator-bar[hidden] {
+    display: none;
+}
+
+.spectator-pill {
+    font-size: 12px;
+    font-weight: 700;
+    color: #f7df9d;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.spectator-follow-list {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    max-width: 52vw;
+}
+
+.spectator-follow-btn {
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.07);
+    color: #e2e8f0;
+    cursor: pointer;
+    font-size: 11.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.spectator-follow-btn:hover {
+    background: rgba(231, 198, 115, 0.2);
+    border-color: rgba(231, 198, 115, 0.45);
+}
+
+.hud-btn-admin {
+    border-color: rgba(234, 179, 8, 0.45) !important;
+    color: #fde68a !important;
+}
+
+.welcome-admin-btn {
+    margin-top: 8px;
+    border-color: rgba(234, 179, 8, 0.5) !important;
+    color: #fde68a !important;
+}
+
+@media (max-width: 720px) {
+    .has-drawer .world-chat.menu-chat {
+        display: block;
+    }
+}
+
+#drawer[data-panel="rooms"] {
+    width: min(520px, calc(100vw - 32px));
+}
+
+.rooms-browser {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.rooms-create-card {
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(10, 22, 18, 0.72);
+    border: 1px solid rgba(218, 187, 114, 0.22);
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+
+.rooms-create-grid {
+    display: grid;
+    grid-template-columns: 1fr 126px;
+    gap: 8px;
+    align-items: end;
+}
+
+.rooms-create-grid label {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11.5px;
+    color: #cbd5e1;
+}
+
+.rooms-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 2px;
+}
+
+.rooms-list-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #f3d27a;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.rooms-count-badge {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: rgba(231, 198, 115, 0.16);
+    border: 1px solid rgba(231, 198, 115, 0.34);
+    color: #f7df9d;
+}
+
+.rooms-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.room-card {
+    padding: 11px 12px;
+    border-radius: 10px;
+    background: linear-gradient(155deg, rgba(16, 36, 30, 0.85), rgba(11, 24, 20, 0.9));
+    border: 1px solid rgba(182, 204, 174, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.room-card:hover {
+    border-color: rgba(231, 198, 115, 0.42);
+}
+
+.room-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.room-card-name {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #f8fafc;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.room-card-badges {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.room-pill {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.room-pill.lobby {
+    background: rgba(16, 185, 129, 0.18);
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    color: #6ee7b7;
+}
+
+.room-pill.live {
+    background: rgba(234, 179, 8, 0.18);
+    border: 1px solid rgba(250, 204, 21, 0.45);
+    color: #fde047;
+}
+
+.room-pill.speed {
+    background: rgba(59, 130, 246, 0.18);
+    border: 1px solid rgba(96, 165, 250, 0.4);
+    color: #93c5fd;
+}
+
+.room-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    font-size: 11.5px;
+    color: #cbd5e1;
+}
+
+.room-card-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.room-card-actions button {
+    flex: 1 1 0;
+    min-height: 33px;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.rooms-empty {
+    padding: 20px 12px;
+    text-align: center;
+    border-radius: 10px;
+    border: 1px dashed rgba(182, 204, 174, 0.25);
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+@media (max-width: 560px) {
+    .rooms-create-grid {
+        grid-template-columns: 1fr;
+    }
+}

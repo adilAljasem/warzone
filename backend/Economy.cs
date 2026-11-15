@@ -135,6 +135,17 @@ public sealed class VillageEconomy
     private int awayTroops;
     private readonly List<WoundedBatch> wounded = [];
     private double healingProgress;
+    internal double BotResourceMultiplier { get; private set; } = 1.0;
+    internal double BotTrainingSpeedMultiplier { get; private set; } = 1.0;
+    internal double BotBuildCostMultiplier { get; private set; } = 1.0;
+    internal long BotCapacityMultiplier { get; private set; } = 1L;
+    internal void SetHardBotBonuses(bool enabled)
+    {
+        BotResourceMultiplier = enabled ? 2.0 : 1.0;
+        BotTrainingSpeedMultiplier = 1.0;
+        BotBuildCostMultiplier = enabled ? 0.55 : 1.0;
+        BotCapacityMultiplier = enabled ? 2L : 1L;
+    }
     public BiomeType Biome { get; internal set; }
     public bool Besieged { get; internal set; }
     public bool Ruined { get; private set; }
@@ -143,7 +154,7 @@ public sealed class VillageEconomy
     public int Population => garrison.Values.Sum() + awayTroops + wounded.Sum(x => x.Count) + jobs.Sum(x => x.Quantity);
     public Village Village { get; }
     public IReadOnlyList<UnitTraining> Training { get; }
-    public long Capacity => 2000L + BuildingLevel(BuildingType.Warehouse) * 2000L;
+    public long Capacity => (2000L + BuildingLevel(BuildingType.Warehouse) * 2000L) * BotCapacityMultiplier;
     public double[] OasisBonuses { get; } = new double[4];
     public int OwnedOases { get; internal set; }
     public int ReservedTradeWagons { get; internal set; }
@@ -209,10 +220,13 @@ public sealed class VillageEconomy
         (long)Math.Ceiling(value.Wood * multiplier), (long)Math.Ceiling(value.Iron * multiplier),
         (long)Math.Ceiling(value.Stone * multiplier), (long)Math.Ceiling(value.Wheat * multiplier));
     private Resources TrainingCost(UnitTraining target, int count) => Scale(target.Unit.TrainingCost, bonuses.TrainingCostMultiplier * count);
+    private Resources? EffectiveUpgradeCost(UpgradeableTarget target) => target.NextUpgrade is { } step
+        ? (BotBuildCostMultiplier < 1.0 ? Scale(step.Cost, BotBuildCostMultiplier) : step.Cost)
+        : null;
     private double TrainingSeconds(UnitTraining target, int count) => Math.Max(.25,
         target.Unit.TrainingDuration.TotalSeconds * count * bonuses.TrainingTimeMultiplier
         / ((1 + TrainingRules.SpeedBonusPercent(Facility(target), BuildingLevel(Facility(target))) / 100)
-            * (1 + .05 * (target.Level - 1))));
+            * (1 + .05 * (target.Level - 1)) * BotTrainingSpeedMultiplier));
     internal void Pay(Resources cost)
     {
         if (!Resources.Covers(cost)) throw new GameRuleException("resources", "Not enough resources.");
@@ -247,10 +261,10 @@ public sealed class VillageEconomy
     private void StartUpgrade(UpgradeableTarget target, double now)
     {
         if (target is UnitTraining training) RequireUnlocked(training);
-        var step = target.NextUpgrade ?? throw new GameRuleException("max_level", "Maximum level reached.");
+        var cost = EffectiveUpgradeCost(target) ?? throw new GameRuleException("max_level", "Maximum level reached.");
         if (target is Building building && building.Type != BuildingType.MainHall && building.Level >= BuildingLevel(BuildingType.MainHall))
             throw new GameRuleException("main_hall", "Upgrade the Main Hall first. Other buildings cannot exceed the Main Hall level.");
-        Pay(step.Cost);
+        Pay(cost);
         target.CompleteUpgrade(target.Level);
         OnEvent?.Invoke("build", $"{TargetName(target)} reached level {target.Level}.", now, null);
     }
@@ -365,7 +379,7 @@ public sealed class VillageEconomy
         for (var i = 0; i < stock.Length; i++)
         {
             var resource = (ResourceType)i;
-            var rate = BaseProductionPerMinute(resource) / 60d * resourceSpeed * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, resource) * (1 + OasisBonuses[i]) * (Besieged && resource == ResourceType.Wheat ? .5 : 1) - (resource == ResourceType.Wheat ? upkeep : 0);
+            var rate = BaseProductionPerMinute(resource) / 60d * resourceSpeed * BotResourceMultiplier * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, resource) * (1 + OasisBonuses[i]) * (Besieged && resource == ResourceType.Wheat ? .5 : 1) - (resource == ResourceType.Wheat ? upkeep : 0);
             stock[i] = Math.Clamp(stock[i] + (decimal)(rate * seconds), 0, Math.Max(Capacity, stock[i]));
         }
         FoodShortage = stock[3] == 0 && upkeep > 0;
@@ -397,7 +411,7 @@ public sealed class VillageEconomy
     public ProductionSnapshot[] Production(double resourceSpeed = 1) => Enum.GetValues<ResourceType>().Select(resource =>
     {
         var normal = BaseProductionPerMinute(resource);
-        var gross = Ruined ? 0 : normal * resourceSpeed * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, resource) * (1 + OasisBonuses[(int)resource]) * (Besieged && resource == ResourceType.Wheat ? .5 : 1);
+        var gross = Ruined ? 0 : normal * resourceSpeed * BotResourceMultiplier * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, resource) * (1 + OasisBonuses[(int)resource]) * (Besieged && resource == ResourceType.Wheat ? .5 : 1);
         var upkeep = resource == ResourceType.Wheat && !Ruined ? HomeUpkeep : 0;
         var net = gross - upkeep;
         return new ProductionSnapshot(resource.ToString(), gross, upkeep, net, net / normal * 100, Besieged && resource == ResourceType.Wheat, stock[(int)resource] >= Capacity);
@@ -409,7 +423,7 @@ public sealed class VillageEconomy
             var training = target as UnitTraining;
             var name = target switch { Building b => b.Type.ToString(), UnitTraining t => t.Unit.DisplayName, _ => "Unknown" };
             return new TargetSnapshot(target.QueueId, name, target is Building ? "Building" : "Training",
-                target.Level, target.MaxLevel, training?.AutoQueueEnabled ?? false, target.NextUpgrade?.Cost,
+                target.Level, target.MaxLevel, training?.AutoQueueEnabled ?? false, EffectiveUpgradeCost(target),
                 training is null ? null : TrainingCost(training, 1), training is null ? null : TrainingSeconds(training, 1), training?.BatchSize ?? 0, training?.Unit.IconUrl,
                 training?.Unit.UnitId, training is null ? null : Facility(training).ToString(), training?.Unit.RequiredBuildingLevel ?? 1,
                 training is null || Unlocked(training),

@@ -181,6 +181,52 @@
   border-radius: 7px;
   padding: 6px 8px;
 }
+.army-count-banner {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, rgba(25, 55, 43, 0.88), rgba(14, 34, 28, 0.92));
+  border: 1px solid rgba(214, 189, 120, 0.42);
+}
+.army-count-banner.hostile {
+  background: linear-gradient(135deg, rgba(64, 27, 24, 0.85), rgba(32, 16, 16, 0.9));
+  border-color: rgba(235, 118, 102, 0.45);
+}
+.army-count-banner .acb-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.army-count-banner .acb-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #e4dec6;
+}
+.army-count-banner .acb-label svg {
+  width: 15px;
+  height: 15px;
+  color: #e7c673;
+}
+.army-count-banner.hostile .acb-label svg {
+  color: #fca5a5;
+}
+.army-count-banner .acb-total {
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #ffe6a5;
+}
+.army-count-banner.hostile .acb-total {
+  color: #fecaca;
+}
+.army-count-banner .acb-sub {
+  font-size: 10.5px;
+  color: #bfd0b8;
+}
 
 /* Hover Cursor Target Badge */
 .map-cursor-badge {
@@ -267,7 +313,8 @@
   gap: 3px;
   background: transparent;
   border: 0;
-  padding: 0;
+  padding: 8px;
+  margin: -8px;
   pointer-events: auto;
   cursor: pointer;
 }

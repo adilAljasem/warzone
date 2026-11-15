@@ -91,7 +91,7 @@ internal static class BotCooperationChecks
             var observedFocusConvergence = false;
             var attackedAlly = false;
 
-            for (var step = 0; step < 4800; step++) // 20 minutes
+            for (var step = 0; step < 6800; step++) // ~28 minutes of the 30-minute match
             {
                 room.Advance(.25);
                 if (room.Status != RoomStatus.Running) break;
@@ -610,6 +610,228 @@ internal static class BotCooperationChecks
             var cmdSummary = string.Join(",", e3Cmds.Commands.Select(c => $"{c.Kind}:{c.DestinationId}:{c.Objective}"));
             Check(e3SiegeTarget == allyB.Village.Id,
                 $"Third enemy bot spreads pressure onto unpressured teammate instead of dogpiling oversaturated player (target={e3SiegeTarget}, allyA={allyA.Village.Id}, allyB={allyB.Village.Id}, cmds={cmdSummary})");
+        }
+
+        // 9. Nightmare Hard bot protocol: 0.5s micro, 2x economy/capacity, FFA bot alliance vs human rejection, Human Hunter, multi-front siege, kiting/merge, Castle 350-unit perimeter intercept
+        {
+            // 9a. 0.5s micro, immediate t=0 expansion & multi-upgrade, 2x capacity/production, and FFA bot auto-alliance + human rejection
+            var host = Guid.NewGuid();
+            var nightRoom = new GameRoom(host, "Human", TribeType.Romans, "NightmareFFA",
+                new(Capacity: 8, DurationMinutes: 30, ShieldMinutes: 5, ResourceSpeed: 2, BotCount: 2, BotDifficulty: BotDifficulty.Hard),
+                DateTimeOffset.UtcNow);
+            nightRoom.SetReady(host, true);
+            nightRoom.Start(host, _ => true);
+
+            var ffaBots = nightRoom.Snapshot(host, _ => true).Players.Where(p => p.IsBot).ToArray();
+            Check(ffaBots.Length == 2, "Two Hard bots spawned in Nightmare FFA");
+            Check(nightRoom.Execute(host, new(Guid.NewGuid(), CommandKind.ProposeAlliance, ffaBots[0].Id)).Accepted, "Human alliance proposal accepted into queue");
+
+            for (var i = 0; i < 8; i++) nightRoom.Advance(.25); // only 2.0 seconds (< 8s)
+
+            var hostSnap = nightRoom.Snapshot(host, _ => true);
+            var bot0Snap = nightRoom.Snapshot(ffaBots[0].Id, _ => true);
+            var hostCap = hostSnap.Economy!.Capacity;
+            var botCap = bot0Snap.Economy!.Capacity;
+            var baseEconomies = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var baseCap = baseEconomies.Capacity;
+            var baseWoodProd = baseEconomies.Snapshot().Production.Single(p => p.Resource == "Wood").NetPerMinute;
+            baseEconomies.SetHardBotBonuses(true);
+            var hardWoodProd = baseEconomies.Snapshot().Production.Single(p => p.Resource == "Wood").NetPerMinute;
+            Check(baseEconomies.Capacity == baseCap * 2, $"Hard bot doubles village storage capacity ({baseEconomies.Capacity} == 2 * {baseCap})");
+            Check(hardWoodProd == baseWoodProd * 2, $"Hard bot receives exact 2x resource production bonus ({hardWoodProd} == 2 * {baseWoodProd})");
+            Check(botCap >= hostCap * 2, $"Hard bot maintains at least 2x storage capacity in match ({botCap} >= 2 * {hostCap})");
+            var hostProdSum = hostSnap.Economy.Production.Where(p => p.Resource != "Wheat").Sum(p => p.NetPerMinute);
+            var botProdSum = bot0Snap.Economy.Production.Where(p => p.Resource != "Wheat").Sum(p => p.NetPerMinute);
+            Check(botProdSum >= hostProdSum * 1.5, $"Hard bot matches ~2x resource rate in match (bot={botProdSum:0} vs human={hostProdSum:0})");
+
+            Check(nightRoom.IsAllied(ffaBots[0].Id, ffaBots[1].Id), "Hard FFA bots immediately forge mutual alliance within 2 seconds");
+            Check(!nightRoom.IsAllied(host, ffaBots[0].Id), "Hard FFA bot rejects human alliance request");
+            Check(bot0Snap.World!.Armies.Any(a => a.OwnerId == ffaBots[0].Id), "Hard bot dispatches armies immediately within 2 seconds (no 8s delay)");
+            Check(bot0Snap.Economy.Targets.Count(t => t.Kind == "Building" && t.Level > 1) >= 2,
+                "Hard bot executes multiple building upgrades in rapid 0.5s micro cycles");
+
+            // 9b. Human Hunter targeting, multi-front Raze on human secondary village, convoy intercept, kiting/merge, and Castle 350u interception
+            var human = Guid.NewGuid();
+            var humanAltTempId = Guid.NewGuid();
+            var humanCap = new VillageEconomy(human, TribeType.Romans, new(600, 600));
+            var humanAlt = new VillageEconomy(humanAltTempId, TribeType.Romans, new(650, 1250));
+            var rivalBot = new VillageEconomy(Guid.NewGuid(), TribeType.Germans, new(650, 900));
+            var hardA = new VillageEconomy(Guid.NewGuid(), TribeType.Persians, new(1500, 600));
+            var hardB = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(1500, 1150));
+
+            var nmWorld = new LogisticsWorld([humanCap, humanAlt, rivalBot, hardA, hardB], 99);
+            humanAlt.Village.TransferTo(human);
+            nmWorld.ConfigureBotContext(BotDifficulty.Hard, [rivalBot.Village.OwnerId, hardA.Village.OwnerId, hardB.Village.OwnerId], [human]);
+            nmWorld.SetAlliances([new(hardA.Village.OwnerId, hardB.Village.OwnerId, 0)]);
+            foreach (var v in new[] { humanCap, rivalBot, hardA, hardB })
+            {
+                var pfx = v.Village.Tribe.ToString().ToLowerInvariant();
+                var cavUnit = GameCatalog.Units.Values.First(u => u.TribeType == v.Village.Tribe && u.Role is UnitRole.HeavyCavalry or UnitRole.Cavalry or UnitRole.LightCavalry);
+                v.AddResources(new(15000, 15000, 15000, 25000));
+                v.ReceiveGift([
+                    new(BaseUnit.Create(GameCatalog.Units[pfx + "-infantry"]), v == hardB ? 75 : 45),
+                    new(BaseUnit.Create(cavUnit), 20),
+                    new(BaseUnit.Create(GameCatalog.Units[pfx + "-catapult"]), 4),
+                    new(BaseUnit.Create(GameCatalog.Units[pfx + "-wagon"]), 6)
+                ]);
+            }
+            humanAlt.AddResources(new(5000, 5000, 5000, 8000));
+            humanAlt.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 15)]);
+
+            // HardA already pushes humanCap -> HardB must focus human and open a 2nd front on humanAlt with Raze
+            nmWorld.Apply(hardA.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, hardA.Village.Id,
+                Formation: new Dictionary<string, int> { ["persians-infantry"] = 30 }, X: humanCap.Village.Position.X, Y: humanCap.Village.Position.Y,
+                Wagons: 1, DestinationId: humanCap.Village.Id, Objective: AttackObjective.Raid), 1, 0);
+            var hardBCmds = new RecordingCommands(nmWorld, () => 2);
+            nmWorld.BotAct(hardB.Village.OwnerId, hardBCmds, BotPersonality.Aggressive, BotDifficulty.Hard);
+            Check(hardBCmds.Commands.Any(c => c.Kind == CommandKind.DispatchArmy && c.DestinationId == humanAlt.Village.Id && c.Objective == AttackObjective.Raze),
+                "Hard bot opens second Raze front against human secondary village when capital is already pressured");
+
+            // Convoy interception by fast cavalry
+            var cHuman = new VillageEconomy(human, TribeType.Romans, new(600, 600));
+            var cHuman2 = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(1100, 600));
+            var cBot = new VillageEconomy(Guid.NewGuid(), TribeType.Mongols, new(900, 900));
+            var cWorld = new LogisticsWorld([cHuman, cHuman2, cBot], 100);
+            cHuman2.Village.TransferTo(human);
+            cWorld.ConfigureBotContext(BotDifficulty.Hard, [cBot.Village.OwnerId], [human]);
+            cHuman.AddResources(new(5000, 5000, 5000, 5000));
+            cHuman.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 3), new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 2)]);
+            cBot.AddResources(new(8000, 8000, 8000, 12000));
+            var mongolCav = GameCatalog.Units.Values.First(u => u.TribeType == TribeType.Mongols && u.Role is UnitRole.HeavyCavalry or UnitRole.Cavalry or UnitRole.LightCavalry);
+            cBot.ReplaceGarrison([new(BaseUnit.Create(mongolCav), 20), new(BaseUnit.Create(GameCatalog.Units["mongols-wagon"]), 2)]);
+            cWorld.Apply(human, new(Guid.NewGuid(), CommandKind.SendResources, cHuman.Village.Id, DestinationId: cHuman2.Village.Id,
+                Shipment: new(200, 0, 0, 200), Escorts: 0), 1, 0);
+            var cCmds = new RecordingCommands(cWorld, () => 2);
+            cWorld.BotAct(cBot.Village.OwnerId, cCmds, BotPersonality.Aggressive, BotDifficulty.Hard);
+            Check(cCmds.Commands.Any(c => c.Kind == CommandKind.InterceptConvoy),
+                "Hard bot dispatches fast cavalry to intercept nearby human supply convoy");
+
+            // Kiting & MergeArmies against stronger approaching force
+            var kiteBot = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(500, 500));
+            var kiteEnemy = new VillageEconomy(human, TribeType.Germans, new(1400, 900));
+            var kWorld = new LogisticsWorld([kiteBot, kiteEnemy], 101);
+            kWorld.ConfigureBotContext(BotDifficulty.Hard, [kiteBot.Village.OwnerId], [human]);
+            kiteBot.AddResources(new(5000, 5000, 5000, 8000));
+            kiteEnemy.AddResources(new(5000, 5000, 5000, 8000));
+            kiteBot.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]), 45)]);
+            kiteEnemy.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]), 45)]);
+            kWorld.Apply(kiteBot.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, kiteBot.Village.Id,
+                Formation: new Dictionary<string, int> { ["greeks-infantry"] = 18 }, X: 950, Y: 900, Wagons: 0, Enabled: false), 1, 0);
+            kWorld.Apply(kiteBot.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, kiteBot.Village.Id,
+                Formation: new Dictionary<string, int> { ["greeks-infantry"] = 22 }, X: 700, Y: 900, Wagons: 0, Enabled: false), 1, 0);
+            kWorld.Apply(human, new(Guid.NewGuid(), CommandKind.DispatchArmy, kiteEnemy.Village.Id,
+                Formation: new Dictionary<string, int> { ["germans-infantry"] = 41 }, X: 1150, Y: 900, Wagons: 0, Enabled: false), 1, 0);
+            double kNow = 1;
+            for (var i = 0; i < 240 && kWorld.Snapshot(kiteBot.Village.OwnerId).Armies.Any(a => a.Order != "Idle"); i++)
+            { kNow += .25; kWorld.Advance(.25, kNow, 0, 3600); }
+            var kCmds = new RecordingCommands(kWorld, () => kNow);
+            kWorld.BotAct(kiteBot.Village.OwnerId, kCmds, BotPersonality.Aggressive, BotDifficulty.Hard);
+            Check(kCmds.Commands.Any(c => c.Kind is CommandKind.MergeArmies or CommandKind.RecallArmy or CommandKind.MoveArmy),
+                "Hard bot kites/merges/regroups when threatened by stronger hostile army");
+
+            // Central Castle 350-unit perimeter interception
+            var castleBot = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(1850, 2200));
+            var castleAlly = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(1850, 2400));
+            var castleHuman = new VillageEconomy(human, TribeType.Germans, new(2850, 2200));
+            var casWorld = new LogisticsWorld([castleBot, castleAlly, castleHuman], 102);
+            casWorld.ConfigureBotContext(BotDifficulty.Hard, [castleBot.Village.OwnerId, castleAlly.Village.OwnerId], [human]);
+            casWorld.SetAlliances([new(castleBot.Village.OwnerId, castleAlly.Village.OwnerId, 0)]);
+            castleBot.AddResources(new(5000, 5000, 5000, 8000));
+            castleAlly.AddResources(new(5000, 5000, 5000, 8000));
+            castleHuman.AddResources(new(5000, 5000, 5000, 8000));
+            castleBot.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 40)]);
+            castleAlly.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]), 40)]);
+            castleHuman.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]), 20)]);
+            var castleCenter = casWorld.Snapshot(human).Warfare.Castle.Position;
+            casWorld.Apply(castleAlly.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, castleAlly.Village.Id,
+                Formation: new Dictionary<string, int> { ["greeks-infantry"] = 30 }, X: castleCenter.X, Y: castleCenter.Y, Wagons: 0, Enabled: false), 1, 0);
+            casWorld.Apply(castleBot.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, castleBot.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 30 }, X: castleCenter.X - 100, Y: castleCenter.Y, Wagons: 0, Enabled: false), 1, 0);
+            casWorld.Apply(human, new(Guid.NewGuid(), CommandKind.DispatchArmy, castleHuman.Village.Id,
+                Formation: new Dictionary<string, int> { ["germans-infantry"] = 18 }, X: castleCenter.X + 310, Y: castleCenter.Y, Wagons: 0, Enabled: false), 1, 0);
+            double casNow = 1;
+            // Advance until armies arrive at Castle perimeter, then advance at 1800s+ so Crown Keep Castle activates
+            for (var i = 0; i < 160; i++) { casNow += .25; casWorld.Advance(.25, casNow, 0, 3600); }
+            casNow = 1805;
+            casWorld.Advance(.25, casNow, 0, 3600);
+            var casCmds = new RecordingCommands(casWorld, () => casNow);
+            casWorld.BotAct(castleBot.Village.OwnerId, casCmds, BotPersonality.Aggressive, BotDifficulty.Hard);
+            Check(casCmds.Commands.Any(c => c.Kind == CommandKind.AttackArmy),
+                "Hard bot guarding active Castle intercepts human army approaching within 350 units");
+
+            // Hard bot trains units at normal 1.0x speed (no hidden training speed cheat)
+            var normalEcon = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var hardBotEcon = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            hardBotEcon.SetHardBotBonuses(true);
+            var normalTrain = normalEcon.Snapshot().Targets.First(t => t.Kind == "Training").TrainingSeconds!.Value;
+            var hardBotTrain = hardBotEcon.Snapshot().Targets.First(t => t.Kind == "Training").TrainingSeconds!.Value;
+            Check(Math.Abs(hardBotTrain - normalTrain) < 1e-9,
+                "Hard bot trains units at normal 1.0x speed without hidden training speed bonus");
+
+            // Hard bot avoids sending weak sub-28 combat waves against enemies after protection, saving up for strong cohesive armies
+            var sizeHuman = new VillageEconomy(human, TribeType.Romans, new(600, 600));
+            var sizeBot = new VillageEconomy(Guid.NewGuid(), TribeType.Germans, new(1150, 600));
+            var sizeWorld = new LogisticsWorld([sizeHuman, sizeBot], 103);
+            sizeWorld.ConfigureBotContext(BotDifficulty.Hard, [sizeBot.Village.OwnerId], [human]);
+            sizeBot.AddResources(new(5000, 5000, 5000, 8000));
+            sizeBot.ReplaceGarrison([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]), 22), new(BaseUnit.Create(GameCatalog.Units["germans-wagon"]), 2)]);
+            sizeWorld.Advance(.25, 400, 300, 3600);
+            var sizeCmds = new RecordingCommands(sizeWorld, () => 400);
+            sizeWorld.BotAct(sizeBot.Village.OwnerId, sizeCmds, BotPersonality.Aggressive, BotDifficulty.Hard);
+            Check(!sizeCmds.Commands.Any(c => c.Kind == CommandKind.DispatchArmy),
+                "Hard bot holds back tiny 22-fighter dispatches after protection instead of spawning weak squads");
+            sizeBot.ReplaceGarrison([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]), 45), new(BaseUnit.Create(GameCatalog.Units["germans-wagon"]), 3)]);
+            sizeCmds.Commands.Clear();
+            sizeWorld.BotAct(sizeBot.Village.OwnerId, sizeCmds, BotPersonality.Aggressive, BotDifficulty.Hard);
+            var launched = sizeCmds.Commands.FirstOrDefault(c => c.Kind == CommandKind.DispatchArmy);
+            Check(launched is not null && (launched.Formation?.GetValueOrDefault("germans-infantry", 0) ?? 0) >= 24,
+                "Hard bot dispatches a strong consolidated squad once enough fighters are ready");
+
+            // Late-game 1500-troop Hard bot with 5 oasis guards must still attack active Crown Keep and enemy cities with large waves
+            var lgHuman = new VillageEconomy(human, TribeType.Romans, new(600, 600));
+            var lgBot = new VillageEconomy(Guid.NewGuid(), TribeType.Persians, new(1500, 600));
+            var lgWorld = new LogisticsWorld([lgHuman, lgBot], 104);
+            lgWorld.ConfigureBotContext(BotDifficulty.Hard, [lgBot.Village.OwnerId], [human]);
+            lgHuman.ReceiveCargo(new(15000, 15000, 15000, 25000));
+            lgHuman.ReplaceGarrison([new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 220)]);
+            lgBot.ReceiveCargo(new(25000, 25000, 25000, 45000));
+            lgBot.ReplaceGarrison([
+                new(BaseUnit.Create(GameCatalog.Units["persians-infantry"]), 1500),
+                new(BaseUnit.Create(GameCatalog.Units["persians-catapult"]), 8),
+                new(BaseUnit.Create(GameCatalog.Units["persians-wagon"]), 16)
+            ]);
+            // Claim & guard 5 nearest oases first to prove oasis guards do not exhaust army slots
+            var fiveOases = lgWorld.Snapshot(lgBot.Village.OwnerId).Oases
+                .OrderBy(o => Math.Pow(o.Position.X - lgBot.Village.Position.X, 2) + Math.Pow(o.Position.Y - lgBot.Village.Position.Y, 2))
+                .Take(5).ToArray();
+            double lgNow = 10;
+            foreach (var o in fiveOases)
+            {
+                lgBot.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["persians-infantry"]), 20)]);
+                lgWorld.Apply(lgBot.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, lgBot.Village.Id,
+                    Formation: new Dictionary<string, int> { ["persians-infantry"] = 20 },
+                    X: o.Position.X, Y: o.Position.Y, Wagons: 0, DestinationId: o.Id, OasisMode: OasisMode.Capture), lgNow, 0);
+            }
+            for (var i = 0; i < 2000 && lgWorld.Snapshot(lgBot.Village.OwnerId).Armies.Any(a => a.Order != "Guarding"); i++)
+            { lgNow += .25; lgWorld.Advance(.25, lgNow, 300, 3600); }
+            lgNow = 1810; // Activate Crown Keep (duration 3600 -> castle unlocks at 1800)
+            lgWorld.Advance(.25, lgNow, 300, 3600);
+
+            var lgCmds = new RecordingCommands(lgWorld, () => lgNow);
+            lgWorld.BotAct(lgBot.Village.OwnerId, lgCmds, BotPersonality.Aggressive, BotDifficulty.Hard);
+            lgWorld.BotAct(lgBot.Village.OwnerId, lgCmds, BotPersonality.Aggressive, BotDifficulty.Hard);
+            var castleAttack = lgCmds.Commands.FirstOrDefault(c => c.Kind == CommandKind.DispatchArmy);
+            Check(castleAttack is not null && (castleAttack.Formation?.GetValueOrDefault("persians-infantry", 0) ?? 0) >= 200,
+                "Late-game 1500-troop Hard bot with 5 oasis guards launches a massive wave to Crown Keep");
+
+            // Advance so Crown Keep becomes held by lgBot (uncontested), then confirm surplus troops attack fortified 220-defender human village
+            for (var i = 0; i < 600 && lgWorld.Snapshot(lgBot.Village.OwnerId).Warfare.Castle.ControllerId != lgBot.Village.OwnerId; i++)
+            { lgNow += .5; lgWorld.Advance(.5, lgNow, 300, 3600); }
+            lgCmds.Commands.Clear();
+            lgWorld.BotAct(lgBot.Village.OwnerId, lgCmds, BotPersonality.Aggressive, BotDifficulty.Hard);
+            var cityAttack = lgCmds.Commands.FirstOrDefault(c => c.Kind == CommandKind.DispatchArmy && c.DestinationId == lgHuman.Village.Id);
+            Check(cityAttack is not null && (cityAttack.Formation?.GetValueOrDefault("persians-infantry", 0) ?? 0) >= 200,
+                "Late-game Hard bot holding uncontested Crown Keep still attacks fortified human village with massive force");
         }
 
         return checks;

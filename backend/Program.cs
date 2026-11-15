@@ -3,11 +3,19 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
 using Warzone;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<GameServer>();
 builder.Services.AddHostedService<GameLoop>();
@@ -38,6 +46,7 @@ builder.Services.AddRateLimiter(options =>
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 var app = builder.Build();
+app.UseForwardedHeaders();
 
 GameCatalog.Validate();
 // Same-origin requests only, including WebSocket handshakes. No wildcard CORS.
@@ -87,7 +96,25 @@ var clientPath = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, 
 if (Directory.Exists(clientPath))
 {
     var files = new PhysicalFileProvider(clientPath);
+    var contentTypes = new FileExtensionContentTypeProvider();
+    contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
-    app.UseStaticFiles(new StaticFileOptions { FileProvider = files });
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = files,
+        ContentTypeProvider = contentTypes,
+        OnPrepareResponse = ctx =>
+        {
+            var path = ctx.Context.Request.Path.Value ?? "";
+            if (path.Equals("/", StringComparison.Ordinal) || path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".webmanifest", StringComparison.OrdinalIgnoreCase))
+                ctx.Context.Response.Headers.CacheControl = "no-cache";
+            else if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase))
+                ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            else
+                ctx.Context.Response.Headers.CacheControl = "public, max-age=604800";
+        }
+    });
 }
 app.Run();

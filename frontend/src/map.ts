@@ -14,7 +14,7 @@ import { loadUnitArt, unitSprite } from './unit-art';
 import { loadArt, oasisSprite } from "./art";
 
 export interface Point { x: number; y: number }
-export interface MapPlayer { tribe?: string; id: string; name: string; villageId: string | null; position: Point | null; level: number | null; ruined?: boolean; flagColor?: string }
+export interface MapPlayer { tribe?: string; id: string; name: string; villageId: string | null; position: Point | null; level: number | null; ruined?: boolean; flagColor?: string; isBot?: boolean; team?: number; spawnSlot?: number | null; effectiveSpawnSlot?: number | null }
 export interface ArmyView { id: string; ownerId: string; homeVillageId: string; position: Point; destination: Point; order: string; soldiers: number; wagons: number; speed: number; wheat: number | null; capacity: number; autoSupply: boolean; supplyWagons: number; escorts: number; supplyStatus: string | null; targetId: string | null; actionSeconds: number }
 export interface ConvoyView { id: string; ownerId: string; targetArmyId: string | null; position: Point; destination: Point; returning: boolean; wagons: number; escorts: number; wheat: number | null; speed: number; cargo: Cargo | null; recipientId: string | null }
 export interface OasisView { id: string; name: string; position: Point; resource: string; ownerId: string | null; villageId: string | null; defenders: number; stock: Cargo | null; capacity: number; productionPerMinute: Cargo; autoTransport: boolean | null; transportStatus: string | null; convoyId: string | null; wallLevel: number; wallHealth: number; wallMaximum: number; wallUpgradeCost: Cargo | null; underAttack: boolean; blockaded:boolean; siegeReportId:string|null; wheatUpkeepPerMinute:number|null; garrison?: Record<string, number> | null; level: number; levelUpgradeCost: Cargo | null; burnedRemainingSeconds: number; burningProgress: number }
@@ -30,7 +30,7 @@ export interface ImportantAlert { id: number; at: number; text: string; kind: st
 export interface OasisSiegeView { id:string; armyId:string; oasisId:string; attackerOwner:string; defenderOwner:string; position:Point; elapsed:number; mode:string; wall:number; wallMaximum:number; round:number; armyIds:string[];attackerOwners:string[] }
 export interface WorldView { oasisSieges?: OasisSiegeView[]; alerts?: ImportantAlert[]; marketOffers?: MarketOffer[]; regions?: BiomeRegion[];  muster?: Muster; reports?: Report[]; armies: ArmyView[]; convoys: ConvoyView[]; oases: OasisView[]; notices: { id: number; at: number; text: string; kind: string; endsAt: number | null }[]; warfare?: WarfareView; threats?: { armyId: string; ownerId: string; targetId: string; arrivesAt: number }[]; villageGarrisons?: Record<string, Record<string, number>> }
 export interface MapSelection { id: string; kind: "village" | "army" | "convoy" | "oasis" | "ground" | "castle" | "battle"; name: string; position: Point; ownerId?: string | null }
-const colors = [0xe11d48, 0x2563eb, 0xfacc15, 0x16a34a, 0xf97316, 0x06b6d4, 0xc026d3, 0x84cc16, 0x4f46e5, 0xf9a8d4, 0x78350f, 0x7f1d1d, 0x1e3a8a, 0x115e59, 0xf8fafc, 0x1e293b];
+const colors = [0xe11d48, 0x2563eb, 0xfacc15, 0x9333ea, 0x06b6d4, 0xf97316, 0xf8fafc, 0x18181b, 0xec4899, 0x10b981, 0x78350f, 0x84cc16, 0x1e3a8a, 0x0f766e, 0xf43f5e, 0xd97706];
 const parseColor = (value: string) => /^#[0-9a-f]{6}$/i.test(value) ? Number.parseInt(value.slice(1), 16) : null;
 export const project = (point: Point) => ({ x: point.x, y: point.y * .65 });
 const label = (text: string, size = 12, color = 0xfff0cc) => new Text({ text: t(text), style: { fontFamily: "Tahoma, sans-serif", fontSize: size, fontWeight: "bold", fill: color, stroke: { color: 0x243f30, width: 3 }, align: "center" } });
@@ -55,7 +55,7 @@ function resourceBadge(resource: string): Container {
   root.addChild(g); return root;
 }
 
-interface MovingNode { root: Container; from: Point; to: Point; at: number; label: Text; kind: "army" | "convoy"; artworkKey?: string; party?: Container; partyY?: number; dust?: Graphics; flag?: Graphics; marching?: boolean; figures?:{sprite:Sprite;y:number}[]; lastSoldiers?: number; lastEscorts?: number; wasFighting?: boolean; }
+interface MovingNode { root: Container; from: Point; to: Point; dest?: Point; at: number; duration: number; label: Text; kind: "army" | "convoy"; artworkKey?: string; party?: Container; partyY?: number; dust?: Graphics; flag?: Graphics; marching?: boolean; figures?:{sprite:Sprite;y:number}[]; lastSoldiers?: number; lastEscorts?: number; wasFighting?: boolean; }
 interface LossIndicator { root: Container; caption: Text; at: number; duration: number; startX: number; startY: number; jitterX: number; targetArmyId?: string; }
 export class WorldMap {
   private armyLayout=new ArmyLayout();
@@ -96,9 +96,13 @@ export class WorldMap {
   private picks: MapSelection[] = [];
   private players: MapPlayer[] = [];
   private viewer = "preview";
+  private isLobby = false;
   private alliedOwners = new Set<string>();
   private signature = "";
   private terrainSignature = "";
+  private lastRegionsRef: BiomeRegion[] | undefined;
+  private lastSnapshotAt = 0;
+  private snapshotIntervalMs = 1000;
   private scale = 1;
   private viewportCenterY = 650;
   private zoomFactor = 1;
@@ -108,12 +112,13 @@ export class WorldMap {
   private selected: MapSelection | null = null;
   private selectedArmyIds = new Set<string>();
   private selectedHomeVillageIds = new Set<string>();
+  private tutorialBeacon: { id?: string; position?: Point } | null = null;
   private hoverHandler?: (target: MapSelection | null, client: Point | null) => void;
   private rightClickHandler?: (target: MapSelection, client: Point) => void;
   private cameraMoveHandler?: () => void;
   private pendingFocus: { point: Point; zoom: number } | null = null;
-  private last: { world: WorldView | null; players: MapPlayer[]; viewer: string } | null = null;
-  private dragging: { x: number; y: number; panX: number; panY: number; moved: boolean } | null = null;
+  private last: { world: WorldView | null; players: MapPlayer[]; viewer: string; lobbyCapacity?: number } | null = null;
+  private dragging: { x: number; y: number; panX: number; panY: number; moved: boolean; pointerId: number } | null = null;
   constructor(private host: HTMLElement, private onSelect: (selection: MapSelection, modifiers: { ctrl: boolean; shift: boolean }) => void) {}
 
   async init() {
@@ -168,7 +173,7 @@ export class WorldMap {
       this.sky.addChild(cloud); this.clouds.push(cloud);
     }
   }
-  refreshLanguage() { this.signature = ""; this.terrainSignature = ""; const view = this.last; if(view)this.update(view.world,view.players,view.viewer); }
+  refreshLanguage() { this.signature = ""; this.terrainSignature = ""; const view = this.last; if(view)this.update(view.world,view.players,view.viewer,view.lobbyCapacity); }
   zoom(delta: number) { this.zoomFactor = Math.max(.7, Math.min(8, this.zoomFactor + delta)); this.fit(); this.cameraMoveHandler?.(); }
   home() { this.zoomFactor = 1; this.pan = { x: 0, y: 0 }; this.fit(); this.cameraMoveHandler?.(); }
   focus(point: Point, zoom = 3.2) {
@@ -181,6 +186,7 @@ export class WorldMap {
   }
   select(selection: MapSelection | null) { this.selected = selection; this.updateDetail(); }
   setSelectedArmies(armyIds: string[], villageIds: string[]) { this.selectedArmyIds = new Set(armyIds); this.selectedHomeVillageIds = new Set(villageIds); }
+  setTutorialBeacon(target: { id?: string; position?: Point } | null) { this.tutorialBeacon = target; }
   setInteractionHandlers(handlers: { onHover?: (target: MapSelection | null, client: Point | null) => void; onRightClick?: (target: MapSelection, client: Point) => void; onCameraMove?: () => void }) {
     this.hoverHandler = handlers.onHover; this.rightClickHandler = handlers.onRightClick; this.cameraMoveHandler = handlers.onCameraMove;
   }
@@ -201,7 +207,7 @@ export class WorldMap {
   toggleBoundaries() { this.showBoundaries = !this.showBoundaries; this.landscape?.setBoundaries(this.showBoundaries); return this.showBoundaries; }
   private updateDetail() {
     this.landscape?.setDetail(this.scale);
-    this.secondaryLabels.forEach(text => { text.visible = this.scale >= .55; });
+    this.secondaryLabels.forEach(text => { text.visible = this.isLobby || this.scale >= .55; });
     for (const [id, marker] of this.oasisMarkers) {
       const selected = this.selected?.id === id, hovered = this.hovered?.id === id;
       marker.plate.visible = this.scale >= .58 || selected || hovered;
@@ -215,17 +221,41 @@ export class WorldMap {
     let hash=0;for(let i=0;i<ownerId.length;i++)hash=(hash*31+ownerId.charCodeAt(i))>>>0;
     return colors[hash%colors.length]!;
   }
+  private drawFlagAccent(g: Graphics, color: number, big: boolean) {
+    const idx = colors.indexOf(color);
+    if (idx < 8) return;
+    const pattern = idx - 8;
+    const horiz = big ? [0, 8.5, 39, 11, 36, 15, 39, 19.5, 0, 16.5] : [0, 3.3, -18.5, 4.8, -16, 6.5, -18.5, 8.5, 0, 7.3];
+    const vert = big ? [12, 1.1, 20, 1.9, 20, 25.4, 12, 24.8] : [-6, 0.7, -11, 1.3, -11, 11.3, -6, 10.9];
+    const diamond = big ? [19, 6.5, 27, 13.5, 19, 20.5, 11, 13.5] : [-9.5, 2.8, -14, 6.2, -9.5, 9.6, -5, 6.2];
+    const bottomHalf = big ? [0, 12, 37.8, 13.5, 36, 15, 43, 27, 0, 24] : [0, 5.2, -17.5, 6, -16, 6.5, -21, 12, 0, 10.5];
+    const topBand = big ? [0, 3.5, 41, 7, 40, 10, 0, 7] : [0, 1.5, -19.5, 3.5, -18.5, 5, 0, 3.2];
+    const bottomBand = big ? [0, 17, 40, 19.5, 41, 23, 0, 20.5] : [0, 7.2, -18.5, 8.5, -19.5, 10, 0, 8.9];
+    const accent = pattern === 2 || pattern === 5 ? 0xfde047 : pattern === 3 ? 0x18181b : 0xffffff;
+    if (pattern === 0 || pattern === 2) g.poly(horiz).fill(accent);
+    else if (pattern === 1) g.poly(vert).fill(accent);
+    else if (pattern === 3 || pattern === 4) g.poly(horiz).fill(accent).poly(vert).fill(accent);
+    else if (pattern === 5) g.poly(diamond).fill(accent);
+    else if (pattern === 6) g.poly(bottomHalf).fill(accent);
+    else g.poly(topBand).fill(accent).poly(bottomBand).fill(accent);
+  }
   private flag(root: Container, color: number, height=0, x=16) {
-    const top=-90-height;
+    const top=-80-height;
     root.addChild(new Graphics()
-      .moveTo(x,-20-height).lineTo(x,top-3).stroke({color:0x203126,width:5})
-      .moveTo(x,-20-height).lineTo(x,top-3).stroke({color:0xd8ba79,width:2.5})
-      .circle(x,top-4,3.5).fill(0xffe2a0).stroke({color:0x354331,width:1}));
-    const flag = new Graphics().poly([0,0,43,4,36,15,43,27,0,24]).fill(0xffffff)
-      .stroke({color:0x17251b,width:2.5})
+      .moveTo(x,-20-height).lineTo(x,top-2).stroke({color:0x203126,width:4})
+      .moveTo(x,-20-height).lineTo(x,top-2).stroke({color:0xd8ba79,width:2})
+      .circle(x,top-3,2.7).fill(0xffe2a0).stroke({color:0x354331,width:.9}));
+    const poly = [0,0,43,4,36,15,43,27,0,24];
+    const flag = new Graphics().poly(poly).fill(color);
+    this.drawFlagAccent(flag, color, true);
+    flag.poly(poly).stroke({color:0x17251b,width:2.5})
       .moveTo(4,4).lineTo(34,7).stroke({color:0xffffff,alpha:.45,width:1.5});
-    flag.tint=color;flag.label='owner-flag';
-    flag.position.set(x,top); root.addChild(flag); this.flags.push(flag);
+    flag.label='owner-flag';
+    const holder = new Container();
+    holder.position.set(x, top);
+    holder.scale.set(0.76);
+    holder.addChild(flag);
+    root.addChild(holder); this.flags.push(flag);
   }
   private unitFlagShaft(root: Container, top = -50, baseY = -10, x = -13) {
     root.addChild(new Graphics()
@@ -237,40 +267,60 @@ export class WorldMap {
       .moveTo(x, top + 11).lineTo(x, top - 1).stroke({ color: 0x203126, width: 2.8 })
       .moveTo(x, top + 11).lineTo(x, top - 1).stroke({ color: 0xd8ba79, width: 1.5 })
       .circle(x, top - 2.5, 2.2).fill(0xffe2a0).stroke({ color: 0x354331, width: .9 }));
-    const flag = new Graphics().poly([0, 0, -21, 2.5, -16, 6.5, -21, 12, 0, 10.5]).fill(0xffffff)
-      .stroke({ color: 0x17251b, width: 1.6 })
+    const poly = [0, 0, -21, 2.5, -16, 6.5, -21, 12, 0, 10.5];
+    const flag = new Graphics().poly(poly).fill(color);
+    this.drawFlagAccent(flag, color, false);
+    flag.poly(poly).stroke({ color: 0x17251b, width: 1.6 })
       .moveTo(-2, 2.2).lineTo(-15, 4).stroke({ color: 0xffffff, alpha: .45, width: 1.1 });
-    flag.tint = color; flag.label = 'owner-flag';
+    flag.label = 'owner-flag';
     flag.position.set(x, top); root.addChild(flag);
     return flag;
   }
-  update(world: WorldView | null, players: MapPlayer[], viewer: string) {
-    this.last = { world, players, viewer };
+  update(world: WorldView | null, players: MapPlayer[], viewer: string, lobbyCapacity?: number) {
+    this.last = { world, players, viewer, lobbyCapacity };
     if (!this.ready) return;
     try {
-      if (!world) {
-      players = Array.from({ length: 8 }, (_, i) => ({ id: `preview-${i}`, villageId: `v-${i}`, tribe: ["Romans","Germans","Greeks","Mongols","Persians"][i % 5], name: ["Your new beginning", "Willowbrook", "Golden Fields", "Rosewood", "Suncove", "Windfall", "Oakridge", "Bluehaven"][i]!, level: i === 0 ? 6 : 1,
-        position: { x: 2250 + Math.cos(i * Math.PI / 4) * 1750, y: 2250 + Math.sin(i * Math.PI / 4) * 1750 } }));
-      viewer = "preview-0";
-      world = { regions:previewRegions, armies: [], convoys: [], oases: [{ id: "preview-oasis", name: "Wood oasis", resource: "Wood", position: { x: 1500, y: 785 }, ownerId: null, villageId: null, defenders: 0, stock:null, capacity:15000, productionPerMinute:{wood:240,iron:120,stone:120,wheat:120}, autoTransport:null, transportStatus:null, convoyId:null, wallLevel:0, wallHealth:0, wallMaximum:0, wallUpgradeCost:null, underAttack:false,blockaded:false,siegeReportId:null,wheatUpkeepPerMinute:null, level: 0, levelUpgradeCost: null, burnedRemainingSeconds: 0, burningProgress: 0 }], notices: [] };
+    const isPreview = !world;
+    const isWelcomePreview = isPreview && players.length === 0;
+    const isLobbyPreview = isPreview && !isWelcomePreview;
+    this.isLobby = isLobbyPreview;
+    if (!world) {
+      this.lastSnapshotAt = 0;
+      this.snapshotIntervalMs = 1000;
+      if (isWelcomePreview) {
+        players = Array.from({ length: 8 }, (_, i) => ({ id: `preview-${i}`, villageId: `v-${i}`, tribe: ["Romans","Germans","Greeks","Mongols","Persians"][i % 5], name: ["Your new beginning", "Willowbrook", "Golden Fields", "Rosewood", "Suncove", "Windfall", "Oakridge", "Bluehaven"][i]!, level: i === 0 ? 6 : 1,
+          position: { x: 2250 + Math.cos(i * Math.PI / 4) * 1750, y: 2250 + Math.sin(i * Math.PI / 4) * 1750 } }));
+        viewer = "preview-0";
+      }
+      world = { regions:previewRegions, armies: [], convoys: [], oases: isWelcomePreview ? [{ id: "preview-oasis", name: "Wood oasis", resource: "Wood", position: { x: 1500, y: 785 }, ownerId: null, villageId: null, defenders: 0, stock:null, capacity:15000, productionPerMinute:{wood:240,iron:120,stone:120,wheat:120}, autoTransport:null, transportStatus:null, convoyId:null, wallLevel:0, wallHealth:0, wallMaximum:0, wallUpgradeCost:null, underAttack:false,blockaded:false,siegeReportId:null,wheatUpkeepPerMinute:null, level: 0, levelUpgradeCost: null, burnedRemainingSeconds: 0, burningProgress: 0 }] : [], notices: [] };
     }
     for(const player of players){const color=player.flagColor?parseColor(player.flagColor):null;if(color!==null)this.ownerColors.set(player.id,color);}
     if (world.warfare) players = world.warfare.settlements.filter(city=>!city.ruined).map(city => ({ id: city.ownerId, villageId: city.id, position: city.position, level: city.level, ruined: city.ruined, tribe: city.tribe, name: players.find(player => player.id === city.ownerId)?.name ?? "Settlement", flagColor: players.find(player => player.id === city.ownerId)?.flagColor }));
-    const terrainKey = JSON.stringify([world.regions,players.map(p=>p.position),world.oases.map(c=>c.position)]);
-    if(world.regions?.length && terrainKey !== this.terrainSignature){
-      this.terrainSignature=terrainKey; this.landscape?.destroy();
+    const nowMs = performance.now();
+    if (!isPreview) {
+      if (this.lastSnapshotAt > 0) {
+        const gap = nowMs - this.lastSnapshotAt;
+        if (gap >= 550 && gap <= 2500) {
+          this.snapshotIntervalMs = this.snapshotIntervalMs * 0.7 + gap * 0.3;
+        }
+      }
+      this.lastSnapshotAt = nowMs;
+    }
+    const terrainKey = `${world.regions?.length ?? 0}|` + players.map(p => `${p.position?.x ?? 0},${p.position?.y ?? 0}`).join(';') + '|' + world.oases.map(c => `${c.position.x},${c.position.y}`).join(';');
+    if(world.regions?.length && (terrainKey !== this.terrainSignature || (this.lastRegionsRef && this.lastRegionsRef.length !== world.regions.length))){
+      this.terrainSignature=terrainKey; this.lastRegionsRef = world.regions; this.landscape?.destroy();
       this.landscape=drawLandscape(this.terrain,world.regions,players.flatMap(p=>p.position?[p.position]:[]),world.oases.map(c=>c.position));
       this.landscape.setBoundaries(this.showBoundaries);
     }
     this.players = players; this.viewer = viewer;
-    const signature = JSON.stringify(players.map(x => [x.id, x.name, x.level, x.position, x.tribe, x.ruined])) + JSON.stringify(world.oases.map(x => [x.id,x.position,x.resource,x.ownerId,x.villageId,x.wallLevel,x.wallHealth>0,x.level,(x.burnedRemainingSeconds??0)>0,(x.burningProgress??0)>0]));
+    const signature = JSON.stringify([isLobbyPreview, lobbyCapacity ?? null, viewer, ...players.map(x => [x.id, x.name, x.level, x.position, x.tribe, x.ruined, x.flagColor, x.isBot, x.team, x.effectiveSpawnSlot])]) + JSON.stringify(world.oases.map(x => [x.id,x.position,x.resource,x.ownerId,x.villageId,x.wallLevel,x.wallHealth>0,x.level,(x.burnedRemainingSeconds??0)>0,(x.burningProgress??0)>0]));
     this.picks = [];
     if (signature !== this.signature) {
       this.signature = signature; this.smoke=[];
       this.settlements.removeChildren().forEach(child => child.destroy({ children: true })); this.nameplates.removeChildren().forEach(child=>child.destroy({children:true})); this.flags = []; this.oasisRipples = [];
       this.oasisMarkers.clear(); this.secondaryLabels = [];
       players.forEach((player,playerIndex) => {
-        if (!player.position || !player.villageId) return;
+        if (!player.position || (!isPreview && !player.villageId)) return;
         const root = new Container(); const p = project(player.position); root.position.set(p.x, p.y); root.scale.set(1.5);
         root.zIndex = p.y;
         const color = this.colorFor(player.id);
@@ -282,14 +332,41 @@ export class WorldMap {
           root.addChild(puff);this.smoke.push({sprite:puff,origin:{x:-12,y:-43},phase:i/3+playerIndex*.17});
         }
         const stage=settlementStage(player.level??1);
+        const plateW = isLobbyPreview ? 140 : 116;
         const plate = new Container(); plate.position.copyFrom(root.position); plate.scale.set(1.36);
-        plate.addChild(new Graphics().roundRect(-58,36,116,31,5).fill({color:0x173529,alpha:.9}).roundRect(-58,36,116,31,5).stroke({color:player.id===viewer?0xe4c27a:0x9dab83,width:1,alpha:.7}));
-        const name = label(player.id === viewer ? `YOUR ${stage.toUpperCase()}` : player.name.slice(0, 15), 12); name.anchor.set(.5, 0); name.position.set(0, 39); plate.addChild(name);
-        const level=label(`${stage} / LEVEL ${player.level}`,9,0xd2d6b2);level.anchor.set(.5,0);level.position.set(0,54);plate.addChild(level);
+        plate.addChild(new Graphics().roundRect(-plateW/2,36,plateW,31,5).fill({color:0x173529,alpha:.9}).roundRect(-plateW/2,36,plateW,31,5).stroke({color:player.id===viewer?0xe4c27a:0x9dab83,width:player.id===viewer&&isLobbyPreview?1.6:1,alpha:.75}));
+        const displayName = (player.id === viewer && !isLobbyPreview) ? `YOUR ${stage.toUpperCase()}` : player.name.slice(0, 15);
+        const name = label(displayName, 12); name.anchor.set(.5, 0); name.position.set(0, 39); plate.addChild(name);
+        const isAr = currentLanguage() === 'ar';
+        const subText = isLobbyPreview
+          ? `${player.isBot ? (isAr ? "بوت" : "Bot") : (player.id === viewer ? (isAr ? "أنت" : "You") : (isAr ? "لاعب" : "Player"))} · ${isAr ? t(player.tribe ?? 'Romans') : (player.tribe ?? 'Romans')}${player.team ? (isAr ? ` · حلف ${player.team}` : ` · T${player.team}`) : ""}`
+          : `${stage} / LEVEL ${player.level}`;
+        const level=label(subText,9,0xd2d6b2);level.anchor.set(.5,0);level.position.set(0,54);plate.addChild(level);
         this.secondaryLabels.push(level);
         this.nameplates.addChild(plate);
         this.settlements.addChild(root);
       });
+      if (isLobbyPreview && lobbyCapacity) {
+        const ringSize = Math.max(2, lobbyCapacity);
+        const occupiedSlots = new Set(players.map(p => p.effectiveSpawnSlot ?? p.spawnSlot).filter((s): s is number => s != null));
+        const isAr = currentLanguage() === 'ar';
+        for (let slot = 0; slot < ringSize; slot++) {
+          if (occupiedSlots.has(slot)) continue;
+          const angle = (slot * Math.PI * 2) / ringSize;
+          const pos = { x: 2250 + Math.cos(angle) * 1750, y: 2250 + Math.sin(angle) * 1750 };
+          const p = project(pos);
+          const root = new Container(); root.position.set(p.x, p.y); root.zIndex = p.y - 5;
+          root.addChild(new Graphics().ellipse(0, 8, 56, 28).fill({ color: 0x1b3428, alpha: .42 }).stroke({ color: 0xd9c393, width: 2, alpha: .65 }));
+          const badgeText = label(`#${slot + 1}`, 15, 0xffe9ab); badgeText.anchor.set(.5, .5); badgeText.position.set(0, 6);
+          root.addChild(badgeText);
+          this.settlements.addChild(root);
+          const plate = new Container(); plate.position.copyFrom(root.position);
+          const captionText = isAr ? `موقع متاح #${slot + 1}` : `Open spot #${slot + 1}`;
+          plate.addChild(new Graphics().roundRect(-60, 34, 120, 22, 5).fill({ color: 0x162b21, alpha: .8 }).stroke({ color: 0xd9c393, width: 1, alpha: .45 }));
+          const cap = label(captionText, 11, 0xe9ddb8); cap.anchor.set(.5, 0); cap.position.set(0, 38); plate.addChild(cap);
+          this.nameplates.addChild(plate);
+        }
+      }
       for (const oasis of world.oases) {
         const root = new Container(); const p = project(oasis.position); root.position.set(p.x, p.y);
         root.zIndex = p.y;
@@ -325,7 +402,18 @@ export class WorldMap {
 
       }
     }
-    for (const player of players) if (player.position && player.villageId) this.picks.push({ id: player.villageId, kind: "village", name: player.name, position: player.position, ownerId: player.id });
+    for (const player of players) if (player.position && (player.villageId || isLobbyPreview)) this.picks.push({ id: player.villageId ?? player.id, kind: "village", name: player.name, position: player.position, ownerId: player.id });
+    if (isLobbyPreview && lobbyCapacity) {
+      const ringSize = Math.max(2, lobbyCapacity);
+      const occupiedSlots = new Set(players.map(p => p.effectiveSpawnSlot ?? p.spawnSlot).filter((s): s is number => s != null));
+      const isAr = currentLanguage() === 'ar';
+      for (let slot = 0; slot < ringSize; slot++) {
+        if (occupiedSlots.has(slot)) continue;
+        const angle = (slot * Math.PI * 2) / ringSize;
+        const pos = { x: 2250 + Math.cos(angle) * 1750, y: 2250 + Math.sin(angle) * 1750 };
+        this.picks.push({ id: `slot:${slot}`, kind: "village", name: isAr ? `موقع متاح #${slot + 1}` : `Open spot #${slot + 1}`, position: pos, ownerId: null });
+      }
+    }
     for (const oasis of world.oases) this.picks.push({ ...oasis, kind: "oasis" });
     const oasisIds = new Set(world.oases.map(o => o.id));
     const villageIds = new Set((world.warfare?.settlements ?? []).map(s => s.id));
@@ -340,14 +428,16 @@ export class WorldMap {
       live.add(entity.id);
       const position = isArmy ? this.armyLayout.position(entity, world) : this.armyLayout.convoyPosition(entity.id, entity.position, world);
       let node = this.moving.get(entity.id);
+      const interpDuration = Math.max(950, Math.min(1450, this.snapshotIntervalMs));
+      const destPoint = entity.destination ? project(entity.destination) : undefined;
       if (!node) {
         const root = new Container();
         root.position.set(position.x, position.y);
         const text = label(isArmy ? `${entity.soldiers} troops` : "Supply", 10); text.anchor.set(.5, 0); text.position.set(0, 26); root.addChild(text);
         root.scale.set(1.25);
-        node = { root, from: position, to: position, at: performance.now(), label: text, kind, lastSoldiers: isArmy ? entity.soldiers : undefined, lastEscorts: !isArmy ? entity.escorts : undefined }; this.moving.set(entity.id, node); this.units.addChild(root);
+        node = { root, from: position, to: position, dest: destPoint, at: nowMs, duration: interpDuration, label: text, kind, lastSoldiers: isArmy ? entity.soldiers : undefined, lastEscorts: !isArmy ? entity.escorts : undefined }; this.moving.set(entity.id, node); this.units.addChild(root);
       }
-      node.from = { x: node.root.x, y: node.root.y }; node.to = position; node.at = performance.now();
+      node.from = { x: node.root.x, y: node.root.y }; node.to = position; node.dest = destPoint; node.at = nowMs; node.duration = interpDuration;
       const tribe=(isArmy ? entity.tribe : players.find(p=>p.id===entity.ownerId)?.tribe ?? 'Romans').toLowerCase();
       const formation=isArmy?armyFigures(entity.soldiers,tribe,entity.formation,entity.mapFigures):[];
       const wagonCount=armyFigureCount(entity.wagons),escortCount=!isArmy?armyFigureCount(entity.escorts):0;
@@ -665,8 +755,27 @@ export class WorldMap {
       const now = performance.now();
       for (const node of this.moving.values()) {
         if (node.root.destroyed) continue;
-        const t = Math.min(1, (now - node.at) / 1000);
-        node.root.position.set(node.from.x + (node.to.x - node.from.x) * t, node.from.y + (node.to.y - node.from.y) * t);
+        const duration = Math.max(250, node.duration);
+        let t = (now - node.at) / duration;
+        if (t > 1) t = 1 + Math.min(0.4, t - 1);
+        let nx = node.from.x + (node.to.x - node.from.x) * t;
+        let ny = node.from.y + (node.to.y - node.from.y) * t;
+        if (t > 1 && node.dest) {
+          const dx = node.to.x - node.from.x, dy = node.to.y - node.from.y;
+          const remainX = node.dest.x - node.to.x, remainY = node.dest.y - node.to.y;
+          if (dx * remainX + dy * remainY <= 0) {
+            nx = node.to.x; ny = node.to.y;
+          } else {
+            const maxOvershoot = Math.hypot(remainX, remainY);
+            const curOvershoot = Math.hypot(nx - node.to.x, ny - node.to.y);
+            if (curOvershoot > maxOvershoot && curOvershoot > 0.001) {
+              const ratio = maxOvershoot / curOvershoot;
+              nx = node.to.x + (nx - node.to.x) * ratio;
+              ny = node.to.y + (ny - node.to.y) * ratio;
+            }
+          }
+        }
+        node.root.position.set(nx, ny);
         node.figures?.forEach(({sprite,y},i)=>{
           if (!sprite.destroyed) {
             sprite.y=y+(node.marching&&!this.reduced&&!document.hidden?Math.sin(now/110+i*1.7)*1.5:0);
@@ -749,6 +858,14 @@ export class WorldMap {
         this.selection.ellipse(pos.x, pos.y + 5, 26, 14).stroke({ color, width });
       };
       for (const armyId of this.selectedArmyIds) drawArmyRing(armyId, 0x56f09b, 3);
+      if (this.isLobby) {
+        const me = this.players.find(pl => pl.id === this.viewer);
+        if (me?.position) {
+          const pt = project(me.position);
+          this.selection.ellipse(pt.x, pt.y + 5, 82, 42).stroke({ color: 0xe7c673, width: 3.5, alpha: 0.9 })
+            .ellipse(pt.x, pt.y + 5, 74, 36).stroke({ color: 0xfff3b0, width: 1.5, alpha: 0.85 });
+        }
+      }
       for (const vid of this.selectedHomeVillageIds) {
         const p = this.players.find(pl => pl.villageId === vid)?.position;
         if (p) {
@@ -773,6 +890,19 @@ export class WorldMap {
             .stroke({ color: 0xfff8d1, width: 3 });
         }
       }
+      if (this.tutorialBeacon) {
+        const moving = this.tutorialBeacon.id ? this.moving.get(this.tutorialBeacon.id) : undefined;
+        const pos = moving && !moving.root.destroyed
+          ? { x: moving.root.x, y: moving.root.y }
+          : this.tutorialBeacon.position ? project(this.tutorialBeacon.position) : null;
+        if (pos) {
+          const wave = ((now / 1100) % 1);
+          const rx = 56 + wave * 34;
+          const ry = 28 + wave * 17;
+          this.selection.ellipse(pos.x, pos.y + 4, 62, 31).stroke({ color: 0xf6d365, width: 3.5, alpha: 0.9 });
+          this.selection.ellipse(pos.x, pos.y + 4, rx, ry).stroke({ color: 0xfff3b0, width: 2.5, alpha: Math.max(0.1, 1 - wave) });
+        }
+      }
     } catch (err) {
       console.error("Map animate error:", err);
     }
@@ -793,11 +923,17 @@ export class WorldMap {
       if (!point) continue;
       const dx = p.x - point.x, dy = p.y - point.y;
       let score = Math.hypot(dx, dy) / 42;
+      if (pick.kind === 'army' || pick.kind === 'convoy') {
+        score = Math.min(score, Math.hypot(dx / 46, (dy - 10) / 48));
+      }
       if(moving?.party && !moving.party.destroyed){
         try {
           const local=moving.party.toLocal(p,this.world),bounds=moving.party.getLocalBounds();
-          score=Math.min(score,Math.max(Math.abs(local.x-bounds.x-bounds.width/2)/(bounds.width/2+7),Math.abs(local.y-bounds.y-bounds.height/2)/(bounds.height/2+7)));
+          score=Math.min(score,Math.max(Math.abs(local.x-bounds.x-bounds.width/2)/(bounds.width/2+9),Math.abs(local.y-bounds.y-bounds.height/2)/(bounds.height/2+9)));
         } catch { /* ignore unmeasurable or destroyed party */ }
+      }
+      if ((pick.kind === 'army' || pick.kind === 'convoy') && score < 1) {
+        score *= 0.85;
       }
       if (pick.kind === 'village') score = Math.min(Math.hypot(dx / 76, (dy + 28) / 88), Math.hypot(dx / 84, (dy - 58) / 26));
       if (pick.kind === 'castle') score = Math.min(Math.hypot(dx / 92, (dy + 35) / 108), Math.hypot(dx / 88, (dy - 74) / 28));
@@ -811,24 +947,24 @@ export class WorldMap {
     }
     return selected;
   }
+  triggerRightClick(clientX: number, clientY: number) {
+    if (!this.rightClickHandler) return;
+    const target = this.resolveAtClient(clientX, clientY);
+    this.rightClickHandler(target, { x: clientX, y: clientY });
+  }
   private bind() {
     const canvas = this.app.canvas;
     canvas.addEventListener("contextmenu", event => {
       event.preventDefault();
       try {
-        if (!this.rightClickHandler) return;
-        const target = this.resolveAtClient(event.clientX, event.clientY);
-        this.rightClickHandler(target, { x: event.clientX, y: event.clientY });
+        this.triggerRightClick(event.clientX, event.clientY);
       } catch (err) {
         console.error("Contextmenu error:", err);
       }
     });
     canvas.addEventListener("pointerdown", event => {
       if (event.button !== 0) return;
-      try {
-        canvas.setPointerCapture(event.pointerId);
-      } catch { /* ignore */ }
-      this.dragging = { x: event.clientX, y: event.clientY, panX: this.pan.x, panY: this.pan.y, moved: false };
+      this.dragging = { x: event.clientX, y: event.clientY, panX: this.pan.x, panY: this.pan.y, moved: false, pointerId: event.pointerId };
     });
     canvas.addEventListener("pointermove", event => {
       try {
@@ -843,7 +979,12 @@ export class WorldMap {
           return;
         }
         const dx = event.clientX - this.dragging.x, dy = event.clientY - this.dragging.y;
-        if (Math.hypot(dx, dy) > 5) this.dragging.moved = true;
+        if (!this.dragging.moved && Math.hypot(dx, dy) > 14) {
+          this.dragging.moved = true;
+          try {
+            canvas.setPointerCapture(this.dragging.pointerId);
+          } catch { /* ignore */ }
+        }
         if (this.dragging.moved) {
           this.hoverHandler?.(null, null);
           this.cameraMoveHandler?.();
@@ -864,9 +1005,10 @@ export class WorldMap {
       } catch (err) {
         console.error("Pointerup error:", err);
       } finally {
+        const dragPointerId = this.dragging?.pointerId ?? event.pointerId;
         this.dragging = null;
         try {
-          if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+          if (canvas.hasPointerCapture(dragPointerId)) canvas.releasePointerCapture(dragPointerId);
         } catch { /* ignore */ }
         canvas.style.cursor = this.hovered ? 'pointer' : 'grab';
       }

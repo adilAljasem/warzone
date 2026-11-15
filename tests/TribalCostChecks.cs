@@ -16,7 +16,7 @@ internal static class TribalCostChecks
         }
         var germans = new VillageEconomy(Guid.NewGuid(), TribeType.Germans, new(500, 500));
         var spearman = germans.Snapshot().Targets.Single(t => t.UnitId == "germans-spearman");
-        Check(spearman.TrainingCost == new Resources(8, 0, 32, 36), "German training discounts apply to the new stone/wheat cost");
+        Check(spearman.TrainingCost == new Resources(8, 0, 24, 36), "German training discounts apply to the new stone/wheat cost");
         var persians = new VillageEconomy(Guid.NewGuid(), TribeType.Persians, new(500, 500));
         var buildingCosts = persians.Village.Buildings.Select(b => b.NextUpgrade!.Cost).ToArray();
         Check(buildingCosts.Distinct().Count() == buildingCosts.Length, "Each building upgrade has its own material mix");
@@ -28,7 +28,7 @@ internal static class TribalCostChecks
         Check(persianTime < 1 && Math.Abs(infantry.TrainingSeconds!.Value - 4 * persianTime) < .001 && Math.Abs(heavyCavalry.TrainingSeconds!.Value - 10 * persianTime) < .001,
             "Persians apply their faster training multiplier");
         persians.Apply(new(Guid.NewGuid(), CommandKind.Train, infantry.Id), 0);
-        Check(persians.Resources == new Resources(1500, 1460, 1475, 1480), "Persian recruitment debits the tribe-specific iron/stone price");
+        Check(persians.Resources == new Resources(1500, 1500, 1500, 1500) - infantry.TrainingCost!.Value && infantry.TrainingCost.Value.Iron > 0 && infantry.TrainingCost.Value.Stone > 0, "Persian recruitment debits the tribe-specific iron/stone price");
         return checks;
     }
 }

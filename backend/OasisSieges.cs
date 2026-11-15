@@ -7,7 +7,7 @@ internal sealed class OasisSiegeState(Army army, ResourceOasis oasis, double now
 {
     public Guid Id { get; } = Guid.NewGuid();
     public List<Army> Attackers { get; } = [army];
-    public Army Attacker => Attackers[0];
+    public Army Attacker => Attackers.FirstOrDefault(a => a.Troops.Count > 0 && !a.Routing && a.Order is "Occupying" or "Blockading" or "Burning" or "Battle" && a.TargetId == Oasis.Id) ?? Attackers[0];
     public OasisMode Mode => Attackers.Any(a=>a.OasisMode==OasisMode.Capture&&a.Order is "Occupying" or "Battle")?OasisMode.Capture:Attackers.Any(a=>a.OasisMode==OasisMode.Burn&&a.Order is "Occupying" or "Burning" or "Battle")?OasisMode.Burn:OasisMode.Blockade;
     public ResourceOasis Oasis { get; } = oasis;
     public Guid Defender { get; } = oasis.OwnerId!.Value;

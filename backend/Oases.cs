@@ -38,18 +38,98 @@ internal sealed class ResourceOasis(Position position, ResourceType resource)
         var result = new List<ResourceOasis>();
         var types = Enum.GetValues<ResourceType>(); random.Shuffle(types);
         var count = Math.Clamp(32 - settlements.Length, 16, 24);
-        for (var attempt = 0; result.Count < count && attempt < 60000; attempt++)
+        var center = new Position(LogisticsWorld.MapCenter, LogisticsWorld.MapCenter);
+        var ringRadius = settlements.Length > 0
+            ? settlements.Average(s => LogisticsWorld.Distance(center, s))
+            : LogisticsWorld.SettlementRadius;
+
+        bool IsValid(Position point)
         {
-            var point = new Position(random.Next(180, 4321), random.Next(180, 4321));
             var py = point.Y * .65;
             var river = 2205 + Math.Sin(py / 480) * 225 + Math.Sin(py / 1012) * 90;
-            if (Math.Abs(point.X - river) < 125 || LogisticsWorld.Distance(point, new(LogisticsWorld.MapCenter, LogisticsWorld.MapCenter)) < 285
-                || settlements.Any(p => LogisticsWorld.Distance(p, point) < 580
-                    || double.Hypot(p.X - point.X, (p.Y - point.Y) * .65) < 420)
-                || result.Any(o => LogisticsWorld.Distance(o.Position, point) < 500
-                    || double.Hypot(o.Position.X - point.X, (o.Position.Y - point.Y) * .65) < 360)) continue;
-            result.Add(new(point, types[result.Count % types.Length]));
+            if (Math.Abs(point.X - river) < 125 || LogisticsWorld.Distance(point, center) < 285) return false;
+            if (settlements.Any(p => LogisticsWorld.Distance(p, point) < 580
+                || double.Hypot(p.X - point.X, (p.Y - point.Y) * .65) < 420)) return false;
+            if (result.Any(o => LogisticsWorld.Distance(o.Position, point) < 500
+                || double.Hypot(o.Position.X - point.X, (o.Position.Y - point.Y) * .65) < 360)) return false;
+            return true;
         }
+
+        // Place outer oases in an ordered perimeter frame behind players' villages,
+        // place remaining oases randomly in the center, and avoid same-type neighbors.
+        var outerTarget = count >= 20 ? 16 : count / 2 + 2;
+        Position PerimeterPoint(double angle, double radiusScale)
+        {
+            var c = Math.Cos(angle);
+            var s = Math.Sin(angle);
+            var boxR = 2040.0 / Math.Max(Math.Abs(c), Math.Abs(s));
+            var r = Math.Min(boxR, Math.Max(ringRadius + 180.0, boxR * radiusScale));
+            return new(Math.Clamp(center.X + c * r, 190.0, 4310.0), Math.Clamp(center.Y + s * r, 190.0, 4310.0));
+        }
+
+        ResourceType PickResource(Position pos, int? preferredSlot = null)
+        {
+            var nearTypes = result
+                .Where(o => LogisticsWorld.Distance(o.Position, pos) < 1100.0)
+                .Select(o => o.Resource)
+                .ToHashSet();
+            var counts = types.ToDictionary(t => t, t => result.Count(o => o.Resource == t));
+            var minCount = counts.Values.Min();
+            if (preferredSlot is { } slot)
+            {
+                var preferred = types[slot % 4];
+                if (!nearTypes.Contains(preferred) && counts[preferred] <= minCount + 1)
+                    return preferred;
+            }
+
+            var candidates = types.Where(t => !nearTypes.Contains(t)).ToArray();
+            if (candidates.Length == 0 && result.Count > 0)
+            {
+                var nearestType = result.MinBy(o => LogisticsWorld.Distance(o.Position, pos))!.Resource;
+                candidates = types.Where(t => t != nearestType).ToArray();
+            }
+
+            var pool = candidates.Length > 0 ? candidates : types;
+            return pool.MinBy(t => counts[t]);
+        }
+
+        for (var i = 0; i < outerTarget; i++)
+        {
+            var baseAngle = (i + 0.5) * Math.Tau / outerTarget;
+            var placed = false;
+            for (var step = 0; step <= 18 && !placed; step++)
+            {
+                ReadOnlySpan<int> signs = step == 0 ? [0] : [1, -1];
+                foreach (var sign in signs)
+                {
+                    if (placed) break;
+                    var angle = baseAngle + step * sign * 0.025;
+                    foreach (var rScale in new[] { 1.0, 0.94, 0.88 })
+                    {
+                        var point = PerimeterPoint(angle, rScale);
+                        if (LogisticsWorld.Distance(point, center) < ringRadius + 80 || !IsValid(point)) continue;
+                        result.Add(new(point, PickResource(point, result.Count)));
+                        placed = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        for (var attempt = 0; result.Count < count && attempt < 40000; attempt++)
+        {
+            var point = new Position(random.Next(180, 4321), random.Next(180, 4321));
+            if (LogisticsWorld.Distance(point, center) >= ringRadius - 100 || !IsValid(point)) continue;
+            result.Add(new(point, PickResource(point)));
+        }
+
+        for (var attempt = 0; result.Count < count && attempt < 20000; attempt++)
+        {
+            var point = new Position(random.Next(180, 4321), random.Next(180, 4321));
+            if (!IsValid(point)) continue;
+            result.Add(new(point, PickResource(point)));
+        }
+
         return result.ToArray();
     }
 }
@@ -58,9 +138,10 @@ public sealed partial class LogisticsWorld
 {
     private bool OasisUnderAttack(ResourceOasis oasis) => armies.Any(a => a.OwnerId != oasis.OwnerId &&
         (a.Order is "Occupying" or "Blockading" && a.TargetId == oasis.Id || a.Order == "Battle" && Distance(a.Position, oasis.Position) < 20));
-    private OasisSnapshot OasisView(ResourceOasis oasis, Guid viewer)
+    private OasisSnapshot OasisView(ResourceOasis oasis, Guid viewer, bool omniscient = false)
     {
         var mine = oasis.OwnerId == viewer;
+        var reveal = mine || omniscient;
         var convoy = convoys.Find(c => c.OasisId == oasis.Id);
         var blockaded = OasisBlockaded(oasis);
         var isBurned = oasis.BurnedUntil > warTime;
@@ -68,19 +149,19 @@ public sealed partial class LogisticsWorld
             : blockaded ? "Oasis blockaded: collection suspended" : convoy is not null ? convoy.InBattle ? "Caravan under attack" : convoy.Returning ? "Resources returning" : "Wagons collecting"
             : !oasis.AutoTransport ? "Automatic transport paused" : oasis.Stock.Total < 2000 ? "Waiting for 2000 resources" : "Waiting for available wagons and provisions";
         var guarding = armies.Where(a => a.DefendingSiteId == oasis.Id || (Distance(a.Position, oasis.Position) <= 35 && a.Order is "Guarding" or "Camped" or "Idle" or "Battle" or "Camping" or "Burning")).ToArray();
-        var visibleArmies = guarding.Where(a => mine || a.OwnerId == viewer || a.SupportedOwnerId == viewer || IsScoutedBy(viewer, a.Id)).ToArray();
+        var visibleArmies = guarding.Where(a => reveal || a.OwnerId == viewer || a.SupportedOwnerId == viewer || IsScoutedBy(viewer, a.Id)).ToArray();
         var garrison = visibleArmies.SelectMany(a => a.Troops).GroupBy(t => t.Unit.UnitId)
             .ToDictionary(g => g.Key, g => g.Sum(t => t.Count));
         var burnedRemaining = Math.Max(0, oasis.BurnedUntil - warTime);
         var burningProgress = Math.Clamp(oasis.BurningSeconds / 90.0, 0, 1);
         return new(oasis.Id, oasis.Name, oasis.Position, oasis.Resource, oasis.OwnerId, oasis.VillageId,
-            mine ? guarding.Sum(Fighters) : 0,
-            mine && !isBurned ? oasis.Stock : null, ResourceOasis.StorageCapacity, isBurned ? default : oasis.ProductionPerMinute,
-            mine ? oasis.AutoTransport : null, mine ? status : null, mine ? convoy?.Id : null,
+            reveal ? guarding.Sum(Fighters) : 0,
+            reveal && !isBurned ? oasis.Stock : null, ResourceOasis.StorageCapacity, isBurned ? default : oasis.ProductionPerMinute,
+            mine ? oasis.AutoTransport : null, reveal ? status : null, reveal ? convoy?.Id : null,
             oasis.WallLevel, oasis.WallHealth, oasis.WallMaximum, mine && !isBurned ? oasis.WallUpgradeCost : null, OasisUnderAttack(oasis),
             blockaded, oasisSieges.Find(s=>s.Oasis==oasis&&s.Status=="Active")?.Id,
-            mine ? armies.Where(a=>OasisFoodSource(a)==oasis).Sum(a=>a.Upkeep)*60 : null,
-            mine && garrison.Count > 0 ? garrison : null,
+            reveal ? armies.Where(a=>OasisFoodSource(a)==oasis).Sum(a=>a.Upkeep)*60 : null,
+            reveal && garrison.Count > 0 ? garrison : null,
             oasis.Level,
             mine && !isBurned ? oasis.LevelUpgradeCost : null,
             burnedRemaining,
@@ -201,6 +282,25 @@ public sealed partial class LogisticsWorld
         army.TargetId = destination; army.Destination = site.Position; army.Order = "Reinforcing"; army.ActionSeconds = 0;
         Note(site.Owner.Value, now, "Reinforcements are on their way.", "reinforcement", targetId: destination);
     }
+    private void MergeOasisGuards(Guid siteId)
+    {
+        if (!oases.Any(o => o.Id == siteId && o.BurnedUntil <= warTime)) return;
+        var groups = armies
+            .Where(a => a.DefendingSiteId == siteId && a.Order == "Guarding" && !Engaged(a) && !a.Routing && Count(a) > 0)
+            .GroupBy(a => a.OwnerId)
+            .Where(g => g.Count() > 1)
+            .ToArray();
+        foreach (var group in groups)
+        {
+            var ordered = group.OrderByDescending(Count).ToArray();
+            var survivor = ordered[0];
+            for (var i = 1; i < ordered.Length; i++)
+            {
+                AbsorbIntoArmy(survivor, ordered[i]);
+                armies.Remove(ordered[i]);
+            }
+        }
+    }
     private IEnumerable<Army> Guards(Guid site, Guid attacker) => armies.Where(a =>
         a.DefendingSiteId == site && a.SupportedOwnerId != attacker && a.OwnerId != attacker
         && !CampAllied(a.OwnerId, attacker) && (a.SupportedOwnerId is null || !CampAllied(a.SupportedOwnerId.Value, attacker))
@@ -247,6 +347,7 @@ public sealed partial class LogisticsWorld
             }
             var oasisSiege = oasisSieges.Find(s=>s.Oasis.Id==army.DefendingSiteId&&ValidOasisSiege(s));
             if(newlyArrived&&oasisSiege is not null&&now>=shieldUntil){var besieger=oasisSiege.Attackers.FirstOrDefault(a=>ValidOasisArmy(oasisSiege,a));if(besieger is not null)StartBattle(army,besieger,now);}
+            if (army.Order == "Guarding" && army.DefendingSiteId is { } guardSiteId && !Engaged(army)) MergeOasisGuards(guardSiteId);
         }
         if (army.Order is not ("Occupying" or "Blockading" or "Burning") || Distance(army.Position, army.Destination) > 4) return;
         var oasis = oases.Find(o => o.Id == army.TargetId);
@@ -321,6 +422,7 @@ public sealed partial class LogisticsWorld
             if(support.AfterAttack==AfterAttack.Return)CompleteAttack(support);
             else{support.Order="Guarding";support.DefendingSiteId=oasis.Id;support.SupportedOwnerId=army.OwnerId;support.ActionSeconds=0;}
         }
+        MergeOasisGuards(oasis.Id);
     }
 }
 

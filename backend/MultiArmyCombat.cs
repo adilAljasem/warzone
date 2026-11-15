@@ -248,6 +248,35 @@ public sealed partial class LogisticsWorld
         Damage(army,losses,now,enemy,true);
         Note(army.OwnerId,now,$"The army withdrew from combat and lost {losses} units (20% of its remaining force).","war",targetId:army.Id);
     }
+    private void WithdrawFromSieges(Army army, double now, Guid? formerTargetId = null, string? formerOrder = null)
+    {
+        foreach (var siege in sieges.Where(s => s.Status == "Active" && s.Attackers.Contains(army)).ToArray())
+        {
+            if (siege.Attackers.Count(a => a != army && armies.Contains(a) && Fighters(a) > 0 && !a.Routing && a.Order is "Sieging" or "Battle") == 0)
+                EndSiege(siege, "Withdrawn", now);
+            else
+                siege.Attackers.Remove(army);
+        }
+
+        if (formerOrder == "Burning" && formerTargetId is { } burningOasisId
+            && oases.Find(o => o.Id == burningOasisId) is { } burnedOasis
+            && !armies.Any(a => a != army && !a.Routing && a.Order == "Burning" && a.TargetId == burningOasisId))
+        {
+            burnedOasis.BurningSeconds = 0;
+        }
+
+        foreach (var siege in oasisSieges.Where(s => s.Status == "Active" && s.Attackers.Contains(army)).ToArray())
+        {
+            if (!armies.Any(a => a != army && !a.Routing && a.Order == "Burning" && a.TargetId == siege.Oasis.Id))
+                siege.Oasis.BurningSeconds = 0;
+            if (!siege.Attackers.Any(a => a != army && ValidOasisArmy(siege, a)))
+                EndOasisSiege(siege, "Withdrawn", now, siege.Defender);
+            else
+                siege.Attackers.Remove(army);
+        }
+        if (oasisSieges.RemoveAll(s => s.Status != "Active") > 0)
+            RefreshOasisBonuses();
+    }
     private void WithdrawFromCombat(Army army,double now)
     {
         foreach(var battle in battles.Where(b=>b.Status=="Active"&&b.ActiveContains(army)).ToArray())
@@ -256,10 +285,7 @@ public sealed partial class LogisticsWorld
             ReportEvent(battle.Id,now,"An army was recalled from the battle.");
             if(Fighting(battle.Attackers).Length==0||Fighting(battle.Defenders).Length==0)EndBattle(battle,Fighting(battle.Attackers).Length==0?battle.Defender:battle.Attacker,now);
         }
-        foreach(var siege in sieges.Where(s=>s.Attackers.Contains(army)&&s.Status == "Active").ToArray())
-        {
-            if(siege.Attackers.Count(a=>a!=army&&!a.Routing&&a.Order is "Sieging" or "Battle")==0)EndSiege(siege,"Withdrawn",now);
-        }
+        WithdrawFromSieges(army, now, army.TargetId, army.Order);
     }
     private void EndBattle(BattleState battle,Army winner,double now)
     {

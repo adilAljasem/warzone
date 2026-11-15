@@ -3,23 +3,104 @@ import { unitPortrait } from './units';
 import { currentLanguage } from './locale';
 import type { OasisView } from './map';
 
+export interface OasisGarrisonForce {
+    ownerId: string;
+    ownerName: string;
+    units: [string, number][];
+    totalSoldiers: number;
+}
+
+export interface OasisGarrisonView {
+    ownArmyId: string | null;
+    ownUnits: [string, number][];
+    alliedForces: OasisGarrisonForce[];
+    selectedUnits: string[];
+}
+
 const resources=['wood','iron','stone','wheat'] as const;
 const resourceIcon=(name:string)=>`<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
-export function oasisPanel(o:OasisView,you:string,owner:string,running:boolean,protectedEnemy:boolean,canTransfer=false,linkedPosition?:{x:number;y:number}){
+export function oasisPanel(o:OasisView,you:string,owner:string,running:boolean,protectedEnemy:boolean,canTransfer=false,linkedPosition?:{x:number;y:number},garrisonView?:OasisGarrisonView){
     const isAr = currentLanguage() === 'ar';
     const mine=o.ownerId===you,total=Object.values(o.stock??{}).reduce((a,b)=>a+b,0);
     const btn=(label:string,action:string,disabled=false,extra='')=>`<button data-action="${action}" data-id="${o.id}" class="wide ${action==='plan-attack'?'action-capture':action==='plan-blockade'?'action-blockade':action==='reinforce'?'action-reinforce':action==='plan-camp'?'primary':''}" ${disabled?'disabled':''} ${extra}>${label}</button>`;
     const actionBtn = (icon: string, label: string, action: string, disabled = false, cls = '') =>
         `<button data-action="${action}" data-id="${o.id}" class="action-btn ${cls}" ${disabled ? 'disabled' : ''}><span class="btn-icon">${icon}</span><span>${label}</span></button>`;
 
-    const garrisonEntries = Object.entries(o.garrison ?? {});
+    const ownUnits = garrisonView?.ownUnits ?? [];
+    const ownArmyId = garrisonView?.ownArmyId ?? null;
+    const selectedSet = new Set(garrisonView?.selectedUnits ?? []);
+    const alliedForces = garrisonView?.alliedForces ?? [];
+    const fallbackEntries = (!garrisonView && mine) ? Object.entries(o.garrison ?? {}) : [];
+
     let garrisonHtml = "";
-    if (mine && garrisonEntries.length > 0) {
+    if (ownUnits.length > 0 || alliedForces.length > 0) {
+        const ownTotal = ownUnits.reduce((s, [, n]) => s + n, 0);
+        const selectedTotal = ownUnits.filter(([id]) => selectedSet.has(id)).reduce((s, [, n]) => s + n, 0);
+        const allSelected = ownUnits.length > 0 && ownUnits.every(([id]) => selectedSet.has(id));
+        const ownSection = ownUnits.length > 0 ? `
+        <div class="oasis-own-block">
+            <div class="oasis-garrison-head">
+                <strong>${isAr ? `قواتك في الواحة (${ownTotal.toLocaleString()})` : `Your troops (${ownTotal.toLocaleString()})`}</strong>
+                ${ownArmyId && running ? `<div class="oasis-garrison-actions">
+                    ${!allSelected ? `<button type="button" class="mini-pill" data-action="oasis-select-all" data-oasis-id="${o.id}" data-army-id="${ownArmyId}">${isAr ? 'الكل' : 'All'}</button>` : ''}
+                    ${selectedSet.size > 0 ? `<button type="button" class="mini-pill" data-action="oasis-clear-units" data-oasis-id="${o.id}" data-army-id="${ownArmyId}">${isAr ? 'إلغاء' : 'Clear'}</button>` : ''}
+                </div>` : ''}
+            </div>
+            <div class="report-forces oasis-stationed-forces">
+                <div class="report-unit-grid">
+                    ${ownUnits.map(([id, count]) => {
+                        const isSel = selectedSet.has(id);
+                        return ownArmyId
+                            ? `<button type="button" class="report-unit oasis-unit-tile ${isSel ? 'selected' : ''}" data-action="oasis-select-unit" data-oasis-id="${o.id}" data-army-id="${ownArmyId}" data-id="${id}" aria-pressed="${isSel}" title="${safe(unitName(id))}">
+                                ${isSel ? '<span class="oasis-unit-check" aria-hidden="true">✓</span>' : ''}
+                                ${unitPortrait(id, false)}
+                                <span class="unit-counts"><b class="positive">${count.toLocaleString()}</b></span>
+                            </button>`
+                            : `<div class="report-unit" title="${safe(unitName(id))}">
+                                ${unitPortrait(id, false)}
+                                <span class="unit-counts"><b class="positive">${count.toLocaleString()}</b></span>
+                            </div>`;
+                    }).join('')}
+                </div>
+            </div>
+            ${ownArmyId ? `<small class="oasis-garrison-hint">${selectedSet.size > 0
+                ? (isAr ? `المحدد: ${selectedSet.size} نوع (${selectedTotal.toLocaleString()} وحدة) — كلك يمين على الخريطة للهجوم أو التحرك` : `Selected: ${selectedSet.size} types (${selectedTotal.toLocaleString()} units) — right-click map to attack or move`)
+                : (isAr ? 'اضغط لتحديد وحدة · Shift لتحديد أكثر من وحدة · كلك يمين على الخريطة للأمر' : 'Click a unit · Shift+click multiple · Right-click map to command')}</small>` : ''}
+        </div>` : '';
+
+        const allyTotal = alliedForces.reduce((s, f) => s + f.totalSoldiers, 0);
+        const allyTiles = alliedForces.flatMap(force => {
+            if (force.units.length > 0) {
+                return force.units.map(([id, count]) => `<div class="report-unit oasis-ally-unit" title="${safe(unitName(id))} · ${safe(force.ownerName)}">
+                    ${unitPortrait(id, false)}
+                    <span class="unit-counts"><b class="positive">${count.toLocaleString()}</b></span>
+                    <small class="oasis-ally-owner">${safe(force.ownerName)}</small>
+                </div>`);
+            }
+            return [`<div class="report-unit oasis-ally-unit" title="${safe(force.ownerName)}">
+                <span class="unit-portrait" style="display:flex;align-items:center;justify-content:center;font-size:18px;border:1px solid #4ade8066;border-radius:4px;background:#103824;">🛡</span>
+                <span class="unit-counts"><b class="positive">${force.totalSoldiers.toLocaleString()}</b></span>
+                <small class="oasis-ally-owner">${safe(force.ownerName)}</small>
+            </div>`];
+        }).join('');
+
+        const allySection = alliedForces.length > 0 ? `
+        <div class="oasis-ally-row">
+            <div class="oasis-garrison-head">
+                <strong>${isAr ? `تعزيزات لاعبين آخرين (${allyTotal.toLocaleString()})` : `Allied reinforcements (${allyTotal.toLocaleString()})`}</strong>
+            </div>
+            <div class="report-forces oasis-stationed-forces">
+                <div class="report-unit-grid">${allyTiles}</div>
+            </div>
+        </div>` : '';
+
+        garrisonHtml = `<section class="oasis-section oasis-garrison-section">${ownSection}${allySection}</section>`;
+    } else if (fallbackEntries.length > 0) {
         garrisonHtml = `
     <section class="oasis-section oasis-garrison-section">
         <div class="report-forces oasis-stationed-forces">
-            <div class="report-unit-grid" style="--unit-cols:4">
-                ${garrisonEntries.map(([id, count]) => `
+            <div class="report-unit-grid">
+                ${fallbackEntries.map(([id, count]) => `
                     <div class="report-unit" title="${safe(unitName(id))}">
                         ${unitPortrait(id, false)}
                         <span class="unit-counts"><b class="positive">${count.toLocaleString()}</b></span>

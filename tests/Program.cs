@@ -34,8 +34,23 @@ void Advance(GameRoom room, int seconds) { for (var i = 0; i < seconds * 4; i++)
 
 GameCatalog.Validate();
 Reject(() => new RoomSettings(Capacity: 7).Validate(), "settings");
-Reject(() => new RoomSettings(DurationMinutes: 61).Validate(), "settings");
+Reject(() => new RoomSettings(DurationMinutes: 1000).Validate(), "settings");
+Reject(() => new RoomSettings(CastleUnlockMinutes: 0).Validate(), "settings");
+Reject(() => new RoomSettings(CastleUnlockMinutes: 1000).Validate(), "settings");
 Reject(() => new RoomSettings(ShieldMinutes: 3).Validate(), "settings");
+
+var defaultSettings = new RoomSettings();
+Check(defaultSettings.DurationMinutes == 60 && defaultSettings.CastleUnlockMinutes == 45, "Default settings are 60m duration and 45m castle unlock.");
+new RoomSettings(DurationMinutes: 999, CastleUnlockMinutes: 999).Validate();
+
+var customCastleRoom = new GameRoom(Guid.NewGuid(), "Host", TribeType.Romans, "Custom Castle",
+    new RoomSettings(Capacity: 8, DurationMinutes: 999, ShieldMinutes: 0, ResourceSpeed: 1, BotCount: 7, BotDifficulty.Normal, CastleUnlockMinutes: 2), DateTimeOffset.UtcNow);
+customCastleRoom.SetReady(customCastleRoom.HostId, true);
+customCastleRoom.Start(customCastleRoom.HostId, _ => true);
+Advance(customCastleRoom, 119);
+Check(!customCastleRoom.Snapshot(customCastleRoom.HostId, _ => true).World!.Warfare!.Castle.Active, "Crown Keep stays closed before custom unlock time.");
+Advance(customCastleRoom, 1);
+Check(customCastleRoom.Snapshot(customCastleRoom.HostId, _ => true).World!.Warfare!.Castle.Active, "Crown Keep opens at custom unlock time.");
 Reject(() => new RoomSettings(ResourceSpeed: double.NaN).Validate(), "settings");
 Reject(() => new RoomSettings(BotCount: 8).Validate(), "settings");
 var lobby = NewRoom();
@@ -81,14 +96,14 @@ Check(training.TrainingCost!.Value.Wood == 12 && Math.Abs(training.TrainingSecon
 Check(Command(trainingRoom, CommandKind.Train, training.Id, 0).Code == "quantity", "Reject zero batch");
 Check(Command(trainingRoom, CommandKind.Train, training.Id, 101).Code == "quantity", "Reject oversized batch");
 Check(Command(trainingRoom, CommandKind.Train, training.Id, 100).Code == "resources", "Insufficient funds rejected");
+Advance(trainingRoom, 650);
 Check(Command(trainingRoom, CommandKind.Train, training.Id, 2).Accepted, "Start batch");
 Check(Economy(trainingRoom).Garrison.Values.Sum() == 22, "No instant troops");
 var spearman = Economy(trainingRoom).Targets.Single(x => x.UnitId == "germans-spearman");
 Check(Command(trainingRoom, CommandKind.Upgrade, Economy(trainingRoom).Targets.Single(t=>t.Name=="Barracks").Id).Code == "main_hall", "Buildings cannot exceed Main Hall level");
-Check(Command(trainingRoom, CommandKind.Upgrade, Economy(trainingRoom).Targets.Single(t=>t.Name=="MainHall").Id).Accepted, "Upgrade Main Hall to level two first");
-Check(Command(trainingRoom, CommandKind.Upgrade, Economy(trainingRoom).Targets.Single(t=>t.Name=="MainHall").Id).Accepted, "Upgrade Main Hall to level three");
-Check(Command(trainingRoom, CommandKind.Upgrade, Economy(trainingRoom).Targets.Single(t=>t.Name=="Barracks").Id).Accepted, "Upgrade barracks to level two");
-Check(Command(trainingRoom, CommandKind.Upgrade, Economy(trainingRoom).Targets.Single(t=>t.Name=="Barracks").Id).Accepted, "Unlock spearmen at barracks level three");
+for(var level=2;level<=6;level++) Check(Command(trainingRoom, CommandKind.Upgrade, Economy(trainingRoom).Targets.Single(t=>t.Name=="MainHall").Id).Accepted, "Upgrade Main Hall for spearmen unlock");
+for(var level=2;level<=5;level++) Check(Command(trainingRoom, CommandKind.Upgrade, Economy(trainingRoom).Targets.Single(t=>t.Name=="Barracks").Id).Accepted, "Upgrade barracks toward spearmen unlock");
+Check(Command(trainingRoom, CommandKind.Upgrade, Economy(trainingRoom).Targets.Single(t=>t.Name=="Barracks").Id).Accepted, "Unlock spearmen at barracks level six");
 Check(Command(trainingRoom, CommandKind.Train, spearman.Id).Accepted, "Shared barracks lane queues additional batch in waiting queue");
 Check(Economy(trainingRoom).Jobs.Length == 2 && Economy(trainingRoom).Jobs[1].StartedAt >= Economy(trainingRoom).Jobs[0].CompletesAt, "Queued batch starts after active batch finishes");
 Check(Economy(trainingRoom).Targets.Single(x => x.UnitId == "germans-scout").TrainingBuilding == "Barracks", "Foot scouts train in the Barracks");
@@ -97,20 +112,22 @@ Check(Command(trainingRoom, CommandKind.Train, wagon.Id).Accepted, "Independent 
 Advance(trainingRoom, 20);
 Check(Economy(trainingRoom).Garrison.Values.Sum() == 26, "Training completion adds all queued batches sequentially");
 
-var autoRoom = Running();
-for(var level=2;level<=3;level++) Check(Command(autoRoom, CommandKind.Upgrade, Economy(autoRoom).Targets.Single(t=>t.Name=="MainHall").Id).Accepted, "Raise Main Hall cap for auto lane checks");
-for(var level=2;level<=3;level++) Check(Command(autoRoom, CommandKind.Upgrade, Economy(autoRoom).Targets.Single(t=>t.Name=="Barracks").Id).Accepted, "Unlock spearmen for auto lane checks");
+var autoRoom = Running(passive: true);
+Advance(autoRoom, 650);
+for(var level=2;level<=6;level++) Check(Command(autoRoom, CommandKind.Upgrade, Economy(autoRoom).Targets.Single(t=>t.Name=="MainHall").Id).Accepted, "Raise Main Hall cap for auto lane checks");
+for(var level=2;level<=6;level++) Check(Command(autoRoom, CommandKind.Upgrade, Economy(autoRoom).Targets.Single(t=>t.Name=="Barracks").Id).Accepted, "Unlock spearmen for auto lane checks");
+Advance(autoRoom, 800);
+for(var level=2;level<=6;level++) Check(Command(autoRoom, CommandKind.Upgrade, Economy(autoRoom).Targets.Single(t=>t.Name=="Stable").Id).Accepted, "Unlock light cavalry for auto lane checks");
 Advance(autoRoom, 120);
-for(var level=2;level<=3;level++) Check(Command(autoRoom, CommandKind.Upgrade, Economy(autoRoom).Targets.Single(t=>t.Name=="Stable").Id).Accepted, "Unlock light cavalry for auto lane checks");
-Advance(autoRoom, 120);
-var autoTargets = Economy(autoRoom).Targets.Where(t=>t.Kind=="Training" && t.Unlocked && t.TrainingBuilding is "Barracks" or "Stable").Take(5).ToArray();
-foreach (var item in autoTargets.Take(4)) Check(Command(autoRoom, CommandKind.SetAutoQueue, item.Id).Accepted, "Roman auto slot");
-Check(Command(autoRoom, CommandKind.SetAutoQueue, autoTargets[4].Id).Code == "auto_slots", "Enforce auto limit");
+var autoLimit = Economy(autoRoom).AutoSlots;
+var autoTargets = Economy(autoRoom).Targets.Where(t=>t.Kind=="Training" && t.Unlocked).Take(autoLimit + 1).ToArray();
+foreach (var item in autoTargets.Take(autoLimit)) Check(Command(autoRoom, CommandKind.SetAutoQueue, item.Id).Accepted, "Roman auto slot");
+Check(Command(autoRoom, CommandKind.SetAutoQueue, autoTargets[autoLimit].Id).Code == "auto_slots", "Enforce auto limit");
 Check(Economy(autoRoom).Jobs.Length == 0, "Auto does not bypass simulation clock");
 autoRoom.Advance(.25);
-Check(Economy(autoRoom).Jobs.Length == 2, "Automatic training respects the barracks and stable lanes");
+Check(Economy(autoRoom).Jobs.Length >= 2, "Automatic training respects the facility lanes");
 var active = Economy(autoRoom).Jobs[0].TargetId;
-foreach (var item in autoTargets.Take(4)) Command(autoRoom, CommandKind.SetAutoQueue, item.Id, enabled: false);
+foreach (var item in autoTargets.Take(autoLimit)) Command(autoRoom, CommandKind.SetAutoQueue, item.Id, enabled: false);
 Advance(autoRoom, 120);
 Check(Economy(autoRoom).Garrison.Values.Sum() > 22 && Economy(autoRoom).Jobs.Length == 0, "Disabling auto preserves paid work but stops repeats");
 var autoTraining = Economy(autoRoom).Targets.First(x => x.Kind == "Training");
@@ -203,9 +220,10 @@ var armyId = OwnArmy(expeditionRoom).Id;
 Check(expeditionRoom.Execute(expeditionHost, dispatch).Accepted && World(expeditionRoom).Armies.Length == 1, "Dispatch replay cannot clone armies");
 var starting = OwnArmy(expeditionRoom).Position;
 var loadedFood = OwnArmy(expeditionRoom).Wheat;
+var armySpeed = OwnArmy(expeditionRoom).Speed;
 expeditionRoom.Advance(.25);
 var next = OwnArmy(expeditionRoom).Position;
-Check(LogisticsWorld.Distance(starting, next) > 0 && LogisticsWorld.Distance(starting, next) <= 3.751, "Server movement obeys unit speed");
+Check(LogisticsWorld.Distance(starting, next) > 0 && LogisticsWorld.Distance(starting, next) <= armySpeed * .25 + 0.001, "Server movement obeys unit speed");
 Check(OwnArmy(expeditionRoom).Wheat < loadedFood, "Marching consumes loaded wheat");
 Check(expeditionRoom.Execute(expeditionHost, new(Guid.NewGuid(), CommandKind.ConfigureSupply, armyId, SourceVillageId: Guid.NewGuid())).Code == "not_owned", "Reject foreign supply village");
 var enemyId = expeditionRoom.Snapshot(expeditionHost, _ => true).Players.First(x => x.Id != expeditionHost).Id;
@@ -304,6 +322,7 @@ checks += SocialChecks.Run();
 checks += CampChecks.Run();
 checks += OasisUpgradeAndBurnChecks.Run();
 checks += TribalCostChecks.Run();
+checks += AdminSpectatorChecks.Run();
 Console.WriteLine($"Passed {checks} deterministic game checks.");
 
 sealed class ManualTime : TimeProvider

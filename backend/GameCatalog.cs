@@ -11,7 +11,7 @@ public static class GameCatalog
     {
         new TribeDefinition(TribeType.Romans, "Romans", "/assets/tribes/romans.svg", new(ExtraAutoQueueSlots: 1)),
         new TribeDefinition(TribeType.Germans, "Germans", "/assets/tribes/germans.svg",
-            new(TrainingCostMultiplier: .8, TrainingTimeMultiplier: .7, LootMultiplier: 1.2)),
+            new( TrainingTimeMultiplier: .7, LootMultiplier: 1.2)),
         new TribeDefinition(TribeType.Greeks, "Greeks", "/assets/tribes/greeks.svg", new(WallMultiplier: 2, HealingMultiplier: 2)),
         new TribeDefinition(TribeType.Mongols, "Mongols / Nomads", "/assets/tribes/mongols.svg", new(CanRelocate: true)),
         new TribeDefinition(TribeType.Persians, "Persians / Babylonians", "/assets/tribes/persians.svg",
