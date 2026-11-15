@@ -13,6 +13,8 @@ public sealed partial class LogisticsWorld
             throw new GameRuleException("target", "Choose another surviving village for this shipment.");
         if (source.Besieged)
             throw new GameRuleException("blockaded", "A blockaded village cannot send resource shipments.");
+        if (source.Relocating || recipient.Relocating)
+            throw new GameRuleException("relocating", "Resource shipments cannot start while a settlement is relocating.");
         var cargo = command.Shipment;
         if (cargo.Total < 1 || new[] { cargo.Wood, cargo.Iron, cargo.Stone, cargo.Wheat }.Any(amount => amount > 1000000))
             throw new GameRuleException("shipment", "Send at least one resource, up to 1000000 of each type.");

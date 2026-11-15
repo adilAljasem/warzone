@@ -14,14 +14,14 @@ import { loadUnitArt, unitSprite } from './unit-art';
 import { loadArt, oasisSprite } from "./art";
 
 export interface Point { x: number; y: number }
-export interface MapPlayer { tribe?: string; id: string; name: string; villageId: string | null; position: Point | null; level: number | null; ruined?: boolean; flagColor?: string; isBot?: boolean; team?: number; spawnSlot?: number | null; effectiveSpawnSlot?: number | null }
+export interface MapPlayer { tribe?: string; id: string; name: string; villageId: string | null; position: Point | null; level: number | null; ruined?: boolean; flagColor?: string; isBot?: boolean; team?: number; spawnSlot?: number | null; effectiveSpawnSlot?: number | null; relocateTarget?: Point | null }
 export interface ArmyView { id: string; ownerId: string; homeVillageId: string; position: Point; destination: Point; order: string; soldiers: number; wagons: number; speed: number; wheat: number | null; capacity: number; autoSupply: boolean; supplyWagons: number; escorts: number; supplyStatus: string | null; targetId: string | null; actionSeconds: number }
 export interface ConvoyView { id: string; ownerId: string; targetArmyId: string | null; position: Point; destination: Point; returning: boolean; wagons: number; escorts: number; wheat: number | null; speed: number; cargo: Cargo | null; recipientId: string | null }
 export interface OasisView { id: string; name: string; position: Point; resource: string; ownerId: string | null; villageId: string | null; defenders: number; stock: Cargo | null; capacity: number; productionPerMinute: Cargo; autoTransport: boolean | null; transportStatus: string | null; convoyId: string | null; wallLevel: number; wallHealth: number; wallMaximum: number; wallUpgradeCost: Cargo | null; underAttack: boolean; blockaded:boolean; siegeReportId:string|null; wheatUpkeepPerMinute:number|null; garrison?: Record<string, number> | null; level: number; levelUpgradeCost: Cargo | null; burnedRemainingSeconds: number; burningProgress: number }
 export interface ArmyView { supplyVillageId: string; formation: Record<string, number> | null; mapFigures?:Record<string,number>|null; loot: Cargo | null }
 export interface ArmyView { afterAttack: string; tribe: string; defendingSiteId: string | null; supportedOwnerId: string | null; campRadius: number | null; scoutedUntil?: number | null; wounded?: number; dead?: number; fled?: number }
 export interface ConvoyView { kind: "Supply" | "Trade" | "Oasis" | "Shipment"; inBattle: boolean }
-export interface SettlementView { id: string; ownerId: string; tribe: string; position: Point; level: number; ruined: boolean; besieged: boolean; relocateIn: number; biome: string; smokeSeconds?: number }
+export interface SettlementView { id: string; ownerId: string; tribe: string; position: Point; level: number; ruined: boolean; besieged: boolean; relocateIn: number; biome: string; smokeSeconds?: number; relocateTarget?: Point | null }
 export interface RankView { playerId: string; score: number; castleSeconds: number; settlements: number; kills: number; dead: number; wounded: number; fled: number; eliminated: boolean }
 export interface BattleView { id: string; position: Point; attackerId: string; defenderId: string; attackerOwner: string; defenderOwner: string; defenderKind: string; elapsed: number; round: number; attackerTroops: number; defenderTroops: number; status: string; winner: string | null; attackerArmyIds:string[];defenderArmyIds:string[] }
 export interface SiegeView { id: string; armyId: string; villageId: string; attackerOwner: string; defenderOwner: string; position: Point; elapsed: number; wall: number; gate: number; loyalty: number; status: string; armyIds: string[]; objective:string; phase:string; remainingBuildingLevels:number; progress:number }
@@ -56,6 +56,7 @@ function resourceBadge(resource: string): Container {
 }
 
 interface MovingNode { root: Container; from: Point; to: Point; dest?: Point; at: number; duration: number; label: Text; kind: "army" | "convoy"; artworkKey?: string; party?: Container; partyY?: number; dust?: Graphics; flag?: Graphics; marching?: boolean; figures?:{sprite:Sprite;y:number}[]; lastSoldiers?: number; lastEscorts?: number; wasFighting?: boolean; }
+interface MovingSettlement { id: string; root: Container; plate: Container; wagons: { sprite: Sprite; baseY: number }[]; dust: Graphics; from: Point; to: Point; dest?: Point; at: number; duration: number; moving: boolean; }
 interface LossIndicator { root: Container; caption: Text; at: number; duration: number; startX: number; startY: number; jitterX: number; targetArmyId?: string; }
 export class WorldMap {
   private armyLayout=new ArmyLayout();
@@ -93,6 +94,7 @@ export class WorldMap {
   private smoke: {sprite:Graphics; origin:Point; phase:number}[]=[];
   private celebrations: {root:Container; at:number; ring:Graphics; caption:Text}[]=[];
   private moving = new Map<string, MovingNode>();
+  private movingSettlements = new Map<string, MovingSettlement>();
   private picks: MapSelection[] = [];
   private players: MapPlayer[] = [];
   private viewer = "preview";
@@ -295,7 +297,7 @@ export class WorldMap {
       world = { regions:previewRegions, armies: [], convoys: [], oases: isWelcomePreview ? [{ id: "preview-oasis", name: "Wood oasis", resource: "Wood", position: { x: 1500, y: 785 }, ownerId: null, villageId: null, defenders: 0, stock:null, capacity:15000, productionPerMinute:{wood:240,iron:120,stone:120,wheat:120}, autoTransport:null, transportStatus:null, convoyId:null, wallLevel:0, wallHealth:0, wallMaximum:0, wallUpgradeCost:null, underAttack:false,blockaded:false,siegeReportId:null,wheatUpkeepPerMinute:null, level: 0, levelUpgradeCost: null, burnedRemainingSeconds: 0, burningProgress: 0 }] : [], notices: [] };
     }
     for(const player of players){const color=player.flagColor?parseColor(player.flagColor):null;if(color!==null)this.ownerColors.set(player.id,color);}
-    if (world.warfare) players = world.warfare.settlements.filter(city=>!city.ruined).map(city => ({ id: city.ownerId, villageId: city.id, position: city.position, level: city.level, ruined: city.ruined, tribe: city.tribe, name: players.find(player => player.id === city.ownerId)?.name ?? "Settlement", flagColor: players.find(player => player.id === city.ownerId)?.flagColor }));
+    if (world.warfare) players = world.warfare.settlements.filter(city=>!city.ruined).map(city => ({ id: city.ownerId, villageId: city.id, position: city.position, level: city.level, ruined: city.ruined, tribe: city.tribe, relocateTarget: city.relocateTarget ?? null, name: players.find(player => player.id === city.ownerId)?.name ?? "Settlement", flagColor: players.find(player => player.id === city.ownerId)?.flagColor }));
     const nowMs = performance.now();
     if (!isPreview) {
       if (this.lastSnapshotAt > 0) {
@@ -306,17 +308,17 @@ export class WorldMap {
       }
       this.lastSnapshotAt = nowMs;
     }
-    const terrainKey = `${world.regions?.length ?? 0}|` + players.map(p => `${p.position?.x ?? 0},${p.position?.y ?? 0}`).join(';') + '|' + world.oases.map(c => `${c.position.x},${c.position.y}`).join(';');
+    const terrainKey = `${world.regions?.length ?? 0}|` + players.map(p => p.relocateTarget ? 'relocating' : `${p.position?.x ?? 0},${p.position?.y ?? 0}`).join(';') + '|' + world.oases.map(c => `${c.position.x},${c.position.y}`).join(';');
     if(world.regions?.length && (terrainKey !== this.terrainSignature || (this.lastRegionsRef && this.lastRegionsRef.length !== world.regions.length))){
       this.terrainSignature=terrainKey; this.lastRegionsRef = world.regions; this.landscape?.destroy();
-      this.landscape=drawLandscape(this.terrain,world.regions,players.flatMap(p=>p.position?[p.position]:[]),world.oases.map(c=>c.position));
+      this.landscape=drawLandscape(this.terrain,world.regions,players.filter(p=>!p.relocateTarget).flatMap(p=>p.position?[p.position]:[]),world.oases.map(c=>c.position));
       this.landscape.setBoundaries(this.showBoundaries);
     }
     this.players = players; this.viewer = viewer;
-    const signature = JSON.stringify([isLobbyPreview, lobbyCapacity ?? null, viewer, ...players.map(x => [x.id, x.name, x.level, x.position, x.tribe, x.ruined, x.flagColor, x.isBot, x.team, x.effectiveSpawnSlot])]) + JSON.stringify(world.oases.map(x => [x.id,x.position,x.resource,x.ownerId,x.villageId,x.wallLevel,x.wallHealth>0,x.level,(x.burnedRemainingSeconds??0)>0,(x.burningProgress??0)>0]));
+    const signature = JSON.stringify([isLobbyPreview, lobbyCapacity ?? null, viewer, ...players.map(x => [x.id, x.name, x.level, x.relocateTarget ? 'moving' : x.position, !!x.relocateTarget, x.tribe, x.ruined, x.flagColor, x.isBot, x.team, x.effectiveSpawnSlot])]) + JSON.stringify(world.oases.map(x => [x.id,x.position,x.resource,x.ownerId,x.villageId,x.wallLevel,x.wallHealth>0,x.level,(x.burnedRemainingSeconds??0)>0,(x.burningProgress??0)>0]));
     this.picks = [];
     if (signature !== this.signature) {
-      this.signature = signature; this.smoke=[];
+      this.signature = signature; this.smoke=[]; this.movingSettlements.clear();
       this.settlements.removeChildren().forEach(child => child.destroy({ children: true })); this.nameplates.removeChildren().forEach(child=>child.destroy({children:true})); this.flags = []; this.oasisRipples = [];
       this.oasisMarkers.clear(); this.secondaryLabels = [];
       players.forEach((player,playerIndex) => {
@@ -324,27 +326,59 @@ export class WorldMap {
         const root = new Container(); const p = project(player.position); root.position.set(p.x, p.y); root.scale.set(1.5);
         root.zIndex = p.y;
         const color = this.colorFor(player.id);
+        const relocating = !!player.relocateTarget;
+        const dust = relocating ? new Graphics() : null;
+        if (dust) root.addChild(dust);
+
+        if (relocating) {
+          root.addChild(new Graphics().ellipse(0, 8, 56, 26).stroke({ color: 0xf4cf77, width: 1.5, alpha: .55 }));
+        }
+        const wagons: { sprite: Sprite; baseY: number }[] = [];
+        const wagonPoints = relocating ? Array.from({ length: 10 }, (_, wi) => {
+          const a = (wi / 10) * Math.PI * 2 + 0.15;
+          return { x: Math.cos(a) * 52, y: 6 + Math.sin(a) * 25 };
+        }) : [];
+        wagonPoints.filter(pt => pt.y < 6).forEach(pt => {
+          const s = unitSprite(`${(player.tribe ?? 'Mongols').toLowerCase()}-wagon`, 34);
+          s.position.set(pt.x, pt.y);
+          root.addChild(s);
+          wagons.push({ sprite: s, baseY: pt.y });
+        });
 
         root.addChild(settlementArt(player.tribe??'Romans',player.level??1,player.id===viewer));
+        wagonPoints.filter(pt => pt.y >= 6).forEach(pt => {
+          const s = unitSprite(`${(player.tribe ?? 'Mongols').toLowerCase()}-wagon`, 36);
+          s.position.set(pt.x, pt.y);
+          root.addChild(s);
+          wagons.push({ sprite: s, baseY: pt.y });
+        });
         this.flag(root,color);
         for(let i=0;i<3;i++){
           const puff=new Graphics().circle(0,0,4).fill(0xe5ddbd);puff.alpha=0;
           root.addChild(puff);this.smoke.push({sprite:puff,origin:{x:-12,y:-43},phase:i/3+playerIndex*.17});
         }
         const stage=settlementStage(player.level??1);
-        const plateW = isLobbyPreview ? 140 : 116;
+        const plateW = isLobbyPreview ? 140 : relocating ? 132 : 116;
         const plate = new Container(); plate.position.copyFrom(root.position); plate.scale.set(1.36);
-        plate.addChild(new Graphics().roundRect(-plateW/2,36,plateW,31,5).fill({color:0x173529,alpha:.9}).roundRect(-plateW/2,36,plateW,31,5).stroke({color:player.id===viewer?0xe4c27a:0x9dab83,width:player.id===viewer&&isLobbyPreview?1.6:1,alpha:.75}));
+        plate.addChild(new Graphics().roundRect(-plateW/2,36,plateW,31,5).fill({color:0x173529,alpha:.9}).roundRect(-plateW/2,36,plateW,31,5).stroke({color:relocating?0xf4cf77:player.id===viewer?0xe4c27a:0x9dab83,width:relocating||(player.id===viewer&&isLobbyPreview)?1.6:1,alpha:.8}));
         const displayName = (player.id === viewer && !isLobbyPreview) ? `YOUR ${stage.toUpperCase()}` : player.name.slice(0, 15);
         const name = label(displayName, 12); name.anchor.set(.5, 0); name.position.set(0, 39); plate.addChild(name);
         const isAr = currentLanguage() === 'ar';
         const subText = isLobbyPreview
           ? `${player.isBot ? (isAr ? "بوت" : "Bot") : (player.id === viewer ? (isAr ? "أنت" : "You") : (isAr ? "لاعب" : "Player"))} · ${isAr ? t(player.tribe ?? 'Romans') : (player.tribe ?? 'Romans')}${player.team ? (isAr ? ` · حلف ${player.team}` : ` · T${player.team}`) : ""}`
+          : relocating ? `${isAr ? 'قافلة ترحيل' : 'Relocating caravan'} · ${stage}`
           : `${stage} / LEVEL ${player.level}`;
-        const level=label(subText,9,0xd2d6b2);level.anchor.set(.5,0);level.position.set(0,54);plate.addChild(level);
+        const level=label(subText,9,relocating?0xffe49e:0xd2d6b2);level.anchor.set(.5,0);level.position.set(0,54);plate.addChild(level);
         this.secondaryLabels.push(level);
         this.nameplates.addChild(plate);
         this.settlements.addChild(root);
+        if (relocating && player.villageId && dust) {
+          this.movingSettlements.set(player.villageId, {
+            id: player.villageId, root, plate, wagons, dust,
+            from: p, to: p, dest: player.relocateTarget ? project(player.relocateTarget) : undefined,
+            at: nowMs, duration: Math.max(950, Math.min(1450, this.snapshotIntervalMs)), moving: false
+          });
+        }
       });
       if (isLobbyPreview && lobbyCapacity) {
         const ringSize = Math.max(2, lobbyCapacity);
@@ -418,6 +452,23 @@ export class WorldMap {
     const oasisIds = new Set(world.oases.map(o => o.id));
     const villageIds = new Set((world.warfare?.settlements ?? []).map(s => s.id));
     const live = new Set<string>(); this.paths.clear(); this.camps.clear();
+    for (const city of world.warfare?.settlements ?? []) {
+      const ms = this.movingSettlements.get(city.id);
+      if (ms && city.relocateTarget) {
+        const interpDuration = Math.max(950, Math.min(1450, this.snapshotIntervalMs));
+        const p = project(city.position);
+        const dest = project(city.relocateTarget);
+        ms.from = { x: ms.root.x, y: ms.root.y };
+        ms.to = p;
+        ms.dest = dest;
+        ms.at = nowMs;
+        ms.duration = interpDuration;
+        ms.moving = !city.besieged && Math.hypot(city.position.x - city.relocateTarget.x, city.position.y - city.relocateTarget.y) > 0.5;
+        if (city.ownerId === viewer || this.alliedOwners.has(city.ownerId)) {
+          this.dash(p, dest, 0xf4cf77, 2.2);
+        }
+      }
+    }
     for(const army of world.armies)if(army.campRadius){const p=project(army.position);drawCamp(this.camps,p.x,p.y,army.campRadius,this.colorFor(army.ownerId));}
     for (const entity of [...world.armies, ...world.convoys]) {
       const isArmy = "soldiers" in entity;
@@ -784,6 +835,48 @@ export class WorldMap {
         if(node.party && !node.party.destroyed)node.party.y=(node.partyY??0)+(!this.reduced&&!document.hidden?(node.marching?Math.sin(now/110)*1.1:Math.sin(now/1000)*.3):0);
         if(node.flag && !node.flag.destroyed && !this.reduced&&!document.hidden)node.flag.scale.x=.96+Math.sin(now/500)*.04;
         if(node.dust && !node.dust.destroyed){node.dust.clear();if(node.marching&&!this.reduced&&!document.hidden)for(let i=0;i<3;i++){const phase=(now/1100+i/3)%1;node.dust.ellipse(-phase*22,8+phase*5,2+phase*4,1+phase*2).fill({color:0xdac48e,alpha:(1-phase)*.22});}}
+      }
+      for (const ms of this.movingSettlements.values()) {
+        if (ms.root.destroyed) continue;
+        const duration = Math.max(250, ms.duration);
+        let t = (now - ms.at) / duration;
+        if (t > 1) t = 1 + Math.min(0.4, t - 1);
+        let nx = ms.from.x + (ms.to.x - ms.from.x) * t;
+        let ny = ms.from.y + (ms.to.y - ms.from.y) * t;
+        if (t > 1 && ms.dest) {
+          const dx = ms.to.x - ms.from.x, dy = ms.to.y - ms.from.y;
+          const remainX = ms.dest.x - ms.to.x, remainY = ms.dest.y - ms.to.y;
+          if (dx * remainX + dy * remainY <= 0) {
+            nx = ms.to.x; ny = ms.to.y;
+          } else {
+            const maxOvershoot = Math.hypot(remainX, remainY);
+            const curOvershoot = Math.hypot(nx - ms.to.x, ny - ms.to.y);
+            if (curOvershoot > maxOvershoot && curOvershoot > 0.001) {
+              const ratio = maxOvershoot / curOvershoot;
+              nx = ms.to.x + (nx - ms.to.x) * ratio;
+              ny = ms.to.y + (ny - ms.to.y) * ratio;
+            }
+          }
+        }
+        ms.root.position.set(nx, ny);
+        ms.root.zIndex = ny;
+        if (!ms.plate.destroyed) ms.plate.position.set(nx, ny);
+        const dir = ms.dest ? (ms.dest.x < nx ? -1 : 1) : 1;
+        ms.wagons.forEach(({ sprite, baseY }, i) => {
+          if (!sprite.destroyed) {
+            sprite.y = baseY + (ms.moving && !this.reduced && !document.hidden ? Math.sin(now / 150 + i * 0.9) * 1.4 : 0);
+            sprite.scale.x = Math.abs(sprite.scale.x) * dir;
+          }
+        });
+        if (!ms.dust.destroyed) {
+          ms.dust.clear();
+          if (ms.moving && !this.reduced && !document.hidden) {
+            for (let i = 0; i < 4; i++) {
+              const phase = (now / 1200 + i / 4) % 1;
+              ms.dust.ellipse(-dir * phase * 28, 12 + phase * 6, 4 + phase * 8, 2 + phase * 4).fill({ color: 0xdac48e, alpha: (1 - phase) * .25 });
+            }
+          }
+        }
       }
       if (!this.reduced && !document.hidden && this.host.clientWidth>0) {
         this.landscape?.animate(now);

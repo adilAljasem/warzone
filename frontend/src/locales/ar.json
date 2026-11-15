@@ -1095,6 +1095,16 @@
     ["^(.*?) invited you to an alliance\\.$", "دعاك $1 إلى التحالف."],
     ["^Request sent to (.*?)$", "تم إرسال الطلب إلى $1"],
     ["^The army withdrew from combat and lost (\\d+) units \\(20% of its remaining force\\)\\.$", "انسحب الجيش من القتال وخسر $1 وحدة، أي 20٪ من قوته المتبقية."],
-    ["^A new field army has been formed outside the village\\.$", "تم تشكيل جيش ميداني جديد خارج القرية."]
+    ["^A new field army has been formed outside the village\\.$", "تم تشكيل جيش ميداني جديد خارج القرية."],
+    ["^Relocate for 4,000 of each resource \\(15m cooldown, speed 10 caravan\\)\\. Choose a free spot on the world map first\\.$", "انقل القرية مقابل 4,000 من كل مورد (تهدئة 15 دقيقة، قافلة بسرعة 10). اختر موقعًا مناسبًا على الخريطة أولًا."],
+    ["^Relocating\\.\\.\\.$", "جاري ترحيل القرية..."],
+    ["^Cannot relocate while under siege or active defense\\.$", "لا يمكن ترحيل القرية أثناء الحصار أو الاشتباك الدفاعي."],
+    ["^Choose a destination further from your settlement's current position\\.$", "اختر موقعًا أبعد عن مكان قريتك الحالي."],
+    ["^Keep 350 units from other settlements, 250 from Crown Keep, and 150 from oases\\.$", "يجب ترك مسافة 350 وحدة عن القرى الأخرى و250 عن قلعة التاج و150 عن الواحات."],
+    ["^Your nomad caravan has packed the settlement and begun moving at speed 10 toward its new site\\.$", "بدأت قافلة العربات ترحيل قريتك بسرعة 10 نحو الموقع الجديد."],
+    ["^Your nomad settlement has arrived at its new location\\. Return and supply routes follow its new position\\.$", "وصلت قريتك إلى موقعها الجديد؛ وتتبعه الآن جميع مسارات العودة والإمداد."],
+    ["^A relocating market cannot trade\\.$", "يتعذر التداول بالسوق أثناء ترحيل القرية."],
+    ["^Resource shipments cannot start while a settlement is relocating\\.$", "يتعذر إرسال أو استقبال شحنات الموارد أثناء ترحيل القرية."],
+    ["^A relocating village cannot dispatch collection wagons\\.$", "يتعذر إرسال عربات جلب موارد الواحة أثناء ترحيل القرية."]
   ]
 }

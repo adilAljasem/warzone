@@ -128,7 +128,7 @@ const TRIBE_PROFILES: TribeGuideInfo[] = [
             en: 'Unmatched map mobility with half wheat upkeep on every unit, plus the exclusive ability to relocate settlements.'
         },
         pros: [
-            { ar: 'القدرة الفريدة على نقل القرية لموقع جديد (300 خشب + 300 قمح، مهلة تهدئة 120ث، وتُبتعد 120 عن القرى و100 عن القلعة).', en: 'Can relocate settlements (300 Wood + 300 Wheat, 120s cooldown, outside siege).' },
+            { ar: 'القدرة الفريدة على نقل القرية لموقع جديد كقافلة عربات تسير بسرعة بطيئة (10) بتكلفة 4,000 من كل مورد ومهلة تهدئة 15 دقيقة (يتوقف الترحيل إذا حوصرت القرية، وتُشترط مسافة 350 عن القرى، 250 عن القلعة، و150 عن الواحات).', en: 'Can relocate settlements as a wagon caravan marching at speed 10 (costs 4,000 of each resource, 15m cooldown, halts under siege, requires 350 spacing from settlements, 250 from Keep, and 150 from oases).' },
             { ar: 'أسرع وحدات في الخريطة (كشاف 97.5، مغير السهوب 82، فارس ثقيل 60، وحتى الكباش والمقاليع سرعتها 20!).', en: 'Fastest map speeds across the board (Scout 97.5, Light Cav 82, Heavy Cav 60, Siege 20!).' },
             { ar: 'نصف استهلاك القمح لجميع الوحدات (0.5 للمشاة، 1 للخفيفة، 1.75 للثقيلة، 2 للمقاليع).', en: '50% reduced Wheat upkeep per minute on every single unit.' }
         ],

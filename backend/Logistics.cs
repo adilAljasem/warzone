@@ -445,6 +445,7 @@ public sealed partial class LogisticsWorld
         if (now < army.NextSupplyAt) return;
         var home = villages[army.SupplyVillageId];
         if (home.Besieged) { army.SupplyStatus = "Source village blockaded"; return; }
+        if (home.Relocating) { army.SupplyStatus = "Village relocating"; return; }
         var wagonId = UnitId(home, UnitRole.Wagon);
         var escortId = UnitId(home, UnitRole.Infantry);
         var speed = GameCatalog.Units[wagonId].Stats.Speed;

@@ -46,11 +46,17 @@ internal static class BiomeLogisticsChecks
                 "Public settlement and private production agree on biome");
         }
         var nomad = new VillageEconomy(Guid.NewGuid(), TribeType.Mongols, regions[0].Center);
+        nomad.ReceiveCargo(new(4000, 4000, 4000, 4000));
         var nomadWorld = new LogisticsWorld([nomad], 731);
+        var nomadOases = nomadWorld.Snapshot(nomad.Village.OwnerId).Oases;
+        var destRegion = regions.First(r => r != regions[0]
+            && LogisticsWorld.Distance(r.Center, new(LogisticsWorld.MapCenter, LogisticsWorld.MapCenter)) >= LogisticsWorld.NomadRelocationCastleSpacing
+            && nomadOases.All(o => LogisticsWorld.Distance(r.Center, o.Position) >= LogisticsWorld.NomadRelocationOasisSpacing));
         nomadWorld.Apply(nomad.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RelocateVillage, nomad.Village.Id,
-            X: regions[1].Center.X, Y: regions[1].Center.Y), 0, 0);
-        Check(nomad.Biome == regions[1].Kind && nomad.Snapshot().Production.Single(p => p.Resource == "Iron").GrossPerMinute == 240 * regions[1].Iron,
-            "Relocating updates the production bonus immediately");
+            X: destRegion.Center.X, Y: destRegion.Center.Y), 0, 0);
+        for (var i = 0; i < 3000 && nomad.Relocating; i++) nomadWorld.Advance(1, i + 1, 0, 7200);
+        Check(!nomad.Relocating && nomad.Biome == destRegion.Kind && nomad.Snapshot().Production.Single(p => p.Resource == "Iron").GrossPerMinute == 240 * destRegion.Iron,
+            "Relocating updates the production bonus upon arrival");
 
         var home = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(LogisticsWorld.MapCenter + LogisticsWorld.SettlementRadius, LogisticsWorld.MapCenter));
         var visualHome = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(1200, 1200));

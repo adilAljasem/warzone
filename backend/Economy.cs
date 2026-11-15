@@ -150,6 +150,8 @@ public sealed class VillageEconomy
     public bool Besieged { get; internal set; }
     public bool Ruined { get; private set; }
     public double RelocateAfter { get; internal set; }
+    public Position? RelocateTarget { get; internal set; }
+    public bool Relocating => RelocateTarget is not null;
     public double RaidedUntil { get; internal set; }
     public int Population => garrison.Values.Sum() + awayTroops + wounded.Sum(x => x.Count) + jobs.Sum(x => x.Quantity);
     public Village Village { get; }

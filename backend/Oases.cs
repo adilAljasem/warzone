@@ -219,7 +219,7 @@ public sealed partial class LogisticsWorld
         {
             oasis.NextTransportAt = now + 5;
             if (convoys.Any(c => c.OasisId == oasis.Id)) continue;
-            if (villages.GetValueOrDefault(oasis.VillageId ?? Guid.Empty) is not { Ruined: false } city) continue;
+            if (villages.GetValueOrDefault(oasis.VillageId ?? Guid.Empty) is not { Ruined: false, Relocating: false } city) continue;
             try { SendOasisConvoy(oasis, city, now); }
             catch (GameRuleException) { /* Wait for actual transport capacity and provisions. */ }
         }
@@ -228,6 +228,7 @@ public sealed partial class LogisticsWorld
     {
         if (oasis.BurnedUntil > now) throw new GameRuleException("burned", "A burned oasis cannot send collection wagons.");
         if (city.Besieged) throw new GameRuleException("siege", "A blockaded village cannot send collection wagons.");
+        if (city.Relocating) throw new GameRuleException("relocating", "A relocating village cannot send collection wagons.");
         if (OasisBlockaded(oasis)) throw new GameRuleException("siege", "Oasis blockaded: collection suspended");
         if (oasis.Stock.Total < 1) throw new GameRuleException("resources", "The oasis has no stored resources yet.");
         if (convoys.Any(c => c.OasisId == oasis.Id)) throw new GameRuleException("convoy", "Collection wagons are already in transit.");

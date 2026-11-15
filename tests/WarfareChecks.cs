@@ -236,11 +236,57 @@ internal static class WarfareChecks
         Check(archived.Status == "Raided" && archived.Events.Last().Text.Contains("Loot"), "Raid consequences remain in reports after markers expire");
         Check(!reportRealm.View.Warfare.Sieges.Any() && archived.DefenderLoss == siegeReport.DefenderLoss, "Report archives survive transient siege cleanup without changing plunder totals");
 
-        var nomad = new Realm(TribeType.Mongols); var homeStock = nomad.A.Resources;
-        nomad.World.Apply(nomad.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RelocateVillage, nomad.A.Village.Id, X: 150, Y: 200), 0, 0);
-        Check(nomad.A.Village.Position == new Position(150, 200) && nomad.A.Resources.Wood == homeStock.Wood - 300, "Nomad relocation moves the city and charges resources");
-        Reject(() => nomad.World.Apply(nomad.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RelocateVillage, nomad.A.Village.Id, X: 150, Y: 250), 1, 0), "cooldown");
+        var nomad = new Realm(TribeType.Mongols);
+        var oasesForNomad = nomad.World.Snapshot(nomad.A.Village.OwnerId).Oases;
+        Position FreeNomadDest(Position preferred)
+        {
+            for (var dy = 0; dy <= 1200; dy += 160)
+            {
+                var cand = new Position(preferred.X, Math.Clamp(preferred.Y + dy, LogisticsWorld.MapMinimum + 50, LogisticsWorld.MapMaximum - 50));
+                if (LogisticsWorld.Distance(cand, nomad.B.Village.Position) >= LogisticsWorld.NomadRelocationVillageSpacing
+                    && LogisticsWorld.Distance(cand, new(LogisticsWorld.MapCenter, LogisticsWorld.MapCenter)) >= LogisticsWorld.NomadRelocationCastleSpacing
+                    && oasesForNomad.All(o => LogisticsWorld.Distance(cand, o.Position) >= LogisticsWorld.NomadRelocationOasisSpacing))
+                    return cand;
+            }
+            return preferred;
+        }
+        var nomadDest = FreeNomadDest(new(300, 1200));
+        Reject(() => nomad.World.Apply(nomad.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RelocateVillage, nomad.A.Village.Id, X: nomadDest.X, Y: nomadDest.Y), 0, 0), "resources");
+        Upgrade(nomad.A, BuildingType.Warehouse, 2); nomad.A.AddResources(new(3000, 3000, 3000, 3000));
+        var homeStock = nomad.A.Resources;
+        Reject(() => nomad.World.Apply(nomad.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RelocateVillage, nomad.A.Village.Id, X: 350, Y: 500), 0, 0), "spacing");
+        nomad.World.Apply(nomad.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RelocateVillage, nomad.A.Village.Id, X: nomadDest.X, Y: nomadDest.Y), 0, 0);
+        Check(nomad.A.Relocating && nomad.A.Village.Position == new Position(200, 500) && nomad.A.Resources == homeStock - new Resources(4000, 4000, 4000, 4000),
+            "Nomad relocation begins a caravan move instead of teleporting and charges 4000 of each resource");
+        Reject(() => nomad.World.Apply(nomad.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RelocateVillage, nomad.A.Village.Id, X: 150, Y: 1600), 1, 0), "cooldown");
         Reject(() => nomad.Order(nomad.B, CommandKind.RelocateVillage, nomad.B.Village.Id), "tribe");
+        nomad.Tick(10, false);
+        Check(Math.Abs(LogisticsWorld.Distance(new(200, 500), nomad.A.Village.Position) - 100) < .1 && nomad.A.Relocating,
+            "Nomad caravan advances smoothly at speed 10 map units per second");
+        for (var i = 0; i < 1000 && nomad.A.Relocating; i++) nomad.Tick(1, false);
+        Check(!nomad.A.Relocating && LogisticsWorld.Distance(nomad.A.Village.Position, nomadDest) < .01,
+            "Nomad settlement finishes relocation upon reaching its target coordinates");
+        Reject(() => nomad.World.Apply(nomad.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RelocateVillage, nomad.A.Village.Id, X: 800, Y: 1800), nomad.Now, 0), "cooldown");
+        nomad.Tick(900, false);
+        var siegeReloc = new Realm(TribeType.Mongols);
+        Upgrade(siegeReloc.A, BuildingType.Warehouse, 2); siegeReloc.A.AddResources(new(3000, 3000, 3000, 3000));
+        Gift(siegeReloc.B, "greeks-wagon", 2); siegeReloc.B.AddResources(new(1000, 1000, 1000, 1000));
+        siegeReloc.World.Apply(siegeReloc.B.Village.OwnerId, new(Guid.NewGuid(), CommandKind.SendResources, siegeReloc.B.Village.Id, DestinationId: siegeReloc.A.Village.Id, Shipment: new(100, 0, 0, 0)), 0, 0);
+        var dest2 = FreeNomadDest(new(300, 1400));
+        siegeReloc.World.Apply(siegeReloc.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RelocateVillage, siegeReloc.A.Village.Id, X: dest2.X, Y: dest2.Y), 0, 0);
+        Reject(() => siegeReloc.World.Apply(siegeReloc.B.Village.OwnerId, new(Guid.NewGuid(), CommandKind.SendResources, siegeReloc.B.Village.Id, DestinationId: siegeReloc.A.Village.Id, Shipment: new(50, 0, 0, 0)), 1, 0), "relocating");
+        var beforeWoodShip = siegeReloc.A.Resources.Wood;
+        for (var i = 0; i < 60 && siegeReloc.World.Snapshot(siegeReloc.B.Village.OwnerId).Convoys.Any(); i++) siegeReloc.Tick(1, false);
+        Check(!siegeReloc.World.Snapshot(siegeReloc.B.Village.OwnerId).Convoys.Any() && siegeReloc.A.Resources.Wood >= beforeWoodShip + 100,
+            "In-flight convoys track a relocating nomad village and deliver without glitches");
+        Gift(siegeReloc.B, "greeks-infantry", 80);
+        var chaseArmy = siegeReloc.Dispatch(siegeReloc.B, new() { ["greeks-infantry"] = 80 }, 1);
+        siegeReloc.Order(siegeReloc.B, CommandKind.BeginSiege, chaseArmy, siegeReloc.A.Village.Id, AttackObjective.Blockade);
+        for (var i = 0; i < 200 && !siegeReloc.A.Besieged; i++) siegeReloc.Tick(1, false);
+        Check(siegeReloc.A.Besieged && siegeReloc.A.Relocating, "Pursuing army catches and besieges the slow relocation caravan");
+        var frozenPos = siegeReloc.A.Village.Position;
+        siegeReloc.Tick(10, false);
+        Check(siegeReloc.A.Village.Position == frozenPos, "Besieged settlement stops relocating until the siege is lifted");
 
         var castle = new Realm(); castle.A.Village.Relocate(new(1950, 2250)); castle.B.Village.Relocate(new(2050, 2250)); castle.Now = 1799; castle.Tick(.75, false);
         Check(!castle.View.Warfare.Castle.Active, "Keep stays closed until 30 minutes");

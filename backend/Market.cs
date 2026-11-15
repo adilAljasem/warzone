@@ -26,6 +26,7 @@ public sealed partial class LogisticsWorld
     private static void RequireMarket(VillageEconomy city)
     {
         if (city.Ruined || city.Besieged) throw new GameRuleException("market", "A blockaded or ruined market cannot trade.");
+        if (city.Relocating) throw new GameRuleException("relocating", "A relocating market cannot trade.");
         if (city.BuildingLevel(BuildingType.Market) < 1) throw new GameRuleException("market", "A market is required.");
     }
     private bool ApplyMarket(Guid actor, GameCommand command, double now)

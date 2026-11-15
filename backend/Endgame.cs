@@ -1,7 +1,7 @@
 namespace Warzone;
 
 public sealed record SettlementSnapshot(Guid Id, Guid OwnerId, TribeType Tribe, Position Position, int Level, bool Ruined,
-    bool Besieged, double RelocateIn, BiomeType Biome, double SmokeSeconds = 0);
+    bool Besieged, double RelocateIn, BiomeType Biome, double SmokeSeconds = 0, Position? RelocateTarget = null);
 public sealed record RankSnapshot(Guid PlayerId, long Score, double CastleSeconds, int Settlements, int Kills, int Dead, int Wounded, int Fled, bool Eliminated);
 public sealed record CastleSnapshot(Guid Id, Position Position, bool Active, Guid? ControllerId, Guid? ClaimantId, double CaptureProgress, bool Contested);
 public sealed record WarfareSnapshot(SettlementSnapshot[] Settlements, BattleSnapshot[] Battles, SiegeSnapshot[] Sieges, CastleSnapshot Castle, RankSnapshot[] Rankings);
@@ -21,6 +21,12 @@ public sealed partial class LogisticsWorld
     private readonly Dictionary<Guid, WarStatistics> statistics = [];
     private readonly CentralCastle castle = new();
     private double warTime, protectionUntil, matchDuration = 1800, castleUnlockSeconds = 1800;
+    public const double NomadRelocationSpeed = 10;
+    public const double NomadRelocationCooldownSeconds = 900;
+    public static readonly Resources NomadRelocationCost = new(4000, 4000, 4000, 4000);
+    public const double NomadRelocationVillageSpacing = 350;
+    public const double NomadRelocationCastleSpacing = 250;
+    public const double NomadRelocationOasisSpacing = 150;
     private void InitializeWarfare() { foreach (var owner in economies.Keys) statistics[owner] = new(); }
     private void RegisterLoss(Army force, BaseUnit unit, int count, double now, Guid enemy, bool deployed)
     {
@@ -64,18 +70,29 @@ public sealed partial class LogisticsWorld
         {
             var city = EconomyTarget(actor, command.TargetId);
             if (!GameCatalog.Tribes[city.Village.Tribe].Bonuses.CanRelocate) throw new GameRuleException("tribe", "Only nomad settlements can relocate.");
-            if (city.Besieged || now < city.RelocateAfter) throw new GameRuleException("cooldown", "This settlement cannot relocate yet.");
+            var underThreatBattle = armies.Any(a => a.DefendingSiteId == city.Village.Id && a.Order == "Battle");
+            if (city.Besieged || underThreatBattle) throw new GameRuleException("cooldown", "Cannot relocate while under siege or active defense.");
+            if (city.Relocating || now < city.RelocateAfter) throw new GameRuleException("cooldown", "This settlement cannot relocate yet.");
             var point = Point(command.X, command.Y);
-            if (villages.Values.Any(x => x != city && !x.Ruined && Distance(point, x.Village.Position) < 120) || Distance(point, castle.Position) < 100)
-                throw new GameRuleException("spacing", "Keep 120 map units from another settlement and 100 from the castle.");
-            city.Pay(new(300, 0, 0, 300)); city.Village.Relocate(point); city.Biome = Biomes.At(regions, point); city.RelocateAfter = now + 120;
-            Note(actor, now, "Your nomad settlement has relocated. Return and supply routes now follow its new position."); return true;
+            if (Distance(point, city.Village.Position) < 40)
+                throw new GameRuleException("spacing", "Choose a destination further from your settlement's current position.");
+            if (villages.Values.Any(x => x != city && !x.Ruined && (Distance(point, x.Village.Position) < NomadRelocationVillageSpacing
+                    || (x.RelocateTarget is { } reserved && Distance(point, reserved) < NomadRelocationVillageSpacing)))
+                || Distance(point, castle.Position) < NomadRelocationCastleSpacing
+                || oases.Any(o => Distance(point, o.Position) < NomadRelocationOasisSpacing))
+                throw new GameRuleException("spacing", $"Keep {NomadRelocationVillageSpacing:0} units from other settlements, {NomadRelocationCastleSpacing:0} from Crown Keep, and {NomadRelocationOasisSpacing:0} from oases.");
+            city.Pay(NomadRelocationCost);
+            CancelVillageOffers(city);
+            city.RelocateTarget = point;
+            city.RelocateAfter = now + NomadRelocationCooldownSeconds;
+            Note(actor, now, "Your nomad caravan has packed the settlement and begun moving at speed 10 toward its new site."); return true;
         }
         return false;
     }
     private void ResolveCity(SiegeState siege, double now)
     {
         var city = siege.City; var attacker = siege.Attacker; var former = city.Village.OwnerId;
+            city.RelocateTarget = null;
             CancelVillageOffers(city);
             var fallback = villages.Values.FirstOrDefault(x => x != city && !x.Ruined && x.Village.OwnerId == former);
             if (fallback is not null) fallback.ReceiveGift(city.Garrison());
@@ -149,8 +166,26 @@ public sealed partial class LogisticsWorld
         foreach (var v in villages.Values)
             v.SetHardBotBonuses(difficulty == BotDifficulty.Hard && hardBotOwners.Contains(v.Village.OwnerId));
     }
+    private void AdvanceNomadRelocations(double seconds, double now)
+    {
+        foreach (var city in villages.Values)
+        {
+            if (city.Ruined || city.RelocateTarget is not { } target) continue;
+            if (city.Besieged || armies.Any(a => a.DefendingSiteId == city.Village.Id && a.Order == "Battle")) continue;
+            Move(city.Village, target, NomadRelocationSpeed * seconds);
+            city.Biome = Biomes.At(regions, city.Village.Position);
+            if (Distance(city.Village.Position, target) < .01)
+            {
+                city.Village.Relocate(target);
+                city.Biome = Biomes.At(regions, target);
+                city.RelocateTarget = null;
+                Note(city.Village.OwnerId, now, "Your nomad settlement has arrived at its new location. Return and supply routes follow its new position.");
+            }
+        }
+    }
     private void AdvancePolitics(double seconds, double now, double duration)
     {
+        AdvanceNomadRelocations(seconds, now);
         castle.Active = now >= castleUnlockSeconds;
         if (!castle.Active) return;
         var present = armies.Where(x => Distance(x.Position, castle.Position) < 45 && !x.Routing && Fighters(x) > 0).ToArray();
@@ -221,7 +256,7 @@ public sealed partial class LogisticsWorld
     }
     private WarfareSnapshot WarfareSnapshot(Guid viewer) => new(
         villages.Values.Select(x => new SettlementSnapshot(x.Village.Id, x.Village.OwnerId, x.Village.Tribe, x.Village.Position, x.Village.Level,
-            x.Ruined, x.Besieged, Math.Max(0, x.RelocateAfter - warTime), x.Biome, x.Ruined ? 0 : Math.Max(0, x.RaidedUntil - warTime))).ToArray(),
+            x.Ruined, x.Besieged, Math.Max(0, x.RelocateAfter - warTime), x.Biome, x.Ruined ? 0 : Math.Max(0, x.RaidedUntil - warTime), x.RelocateTarget)).ToArray(),
         battles.Select(x => new BattleSnapshot(x.Id, x.Attacker.Position, x.Attacker.Id, x.Convoy?.Id ?? x.Defender.Id, x.Attacker.OwnerId, x.Defender.OwnerId,
             x.Convoy is null ? "Army" : "Convoy", Math.Max(0, (x.Status == "Active" ? warTime : x.Ended) - x.Started), x.Round,
             x.Attackers.Where(m=>!m.Withdrawn).Sum(m=>Count(m.Army)), x.Defenders.Where(m=>!m.Withdrawn).Sum(m=>Count(m.Army)), x.Status, x.Winner, x.Attackers.Where(m=>!m.Withdrawn).Select(m=>m.Army.Id).ToArray(), x.Defenders.Where(m=>!m.Withdrawn).Select(m=>m.Army.Id).ToArray())).ToArray(),
