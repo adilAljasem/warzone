@@ -797,13 +797,14 @@ internal static class BotController
     {
         var isHard = difficulty == BotDifficulty.Hard;
         var garrisonTotal = economy.Garrison.Values.Sum();
-        var marchWheatReserve = garrisonTotal >= (isHard ? 180 : 120)
-            ? Math.Clamp(garrisonTotal * 3L, isHard ? 600L : 400L, isHard ? 4500L : 2500L)
+        var marchWheatReserve = garrisonTotal >= (isHard ? 140 : 100)
+            ? Math.Clamp(garrisonTotal * 3L, isHard ? 700L : 450L, isHard ? 4500L : 2500L)
             : 0L;
         var wheatNet = economy.Production.FirstOrDefault(p => p.Resource == "Wheat")?.NetPerMinute ?? 0;
         var starving = isHard
-            ? (economy.FoodShortage && wheatNet < 0) || (garrisonTotal >= 240 && ((economy.Resources.Wheat < marchWheatReserve && wheatNet < 200) || wheatNet < -20))
-            : economy.FoodShortage || (wheatNet < 0 && (economy.Resources.Wheat < Math.Max(350L, marchWheatReserve) || garrisonTotal >= 140));
+            ? (economy.FoodShortage && wheatNet < 0) || (garrisonTotal >= 200 && (wheatNet < 20 || (economy.Resources.Wheat < marchWheatReserve && wheatNet < 160)))
+            : economy.FoodShortage || (wheatNet < 0 && (economy.Resources.Wheat < Math.Max(400L, marchWheatReserve) || garrisonTotal >= 120))
+                || (garrisonTotal >= 150 && economy.Resources.Wheat < marchWheatReserve && wheatNet < 80);
 
         var autoPasses = isHard ? 8 : 1;
         for (var pass = 0; pass < autoPasses; pass++)
@@ -816,7 +817,7 @@ internal static class BotController
                 if (active is not null)
                     acted = commands.Execute(actorId, new(Guid.NewGuid(), CommandKind.SetAutoQueue, active.Id, Enabled: false)).Accepted;
             }
-            else if (isHard || (wheatNet >= (garrisonTotal >= 140 ? 10 : -5) && (economy.Resources.Wheat >= Math.Max(300L, marchWheatReserve) || wheatNet >= 15)))
+            else if (isHard || (wheatNet >= (garrisonTotal >= 140 ? 15 : -5) && (economy.Resources.Wheat >= Math.Max(300L, marchWheatReserve) || wheatNet >= 20)))
             {
                 var nonCombatAuto = trainings.FirstOrDefault(x => x.Auto && UnitPriority(x, personality, difficulty) == 0);
                 if (nonCombatAuto is not null)
@@ -862,11 +863,11 @@ internal static class BotController
             var mainHallLevel = economy.Targets.FirstOrDefault(t => t.Name == "MainHall")?.Level ?? 1;
             var remaining = economy.Resources;
             var trainings = economy.Targets.Where(x => x.Kind == "Training").ToArray();
-            var upgradeWheatFloor = economy.FoodShortage || wheatNet < 0 ? 0L : isHard ? 140L : 0L;
+            var upgradeWheatFloor = garrisonTotal >= 60 ? Math.Max(400L, marchWheatReserve) : (isHard ? 140L : 0L);
             var building = economy.Targets
                 .Where(x => x.Kind == "Building" && (x.Name == "MainHall" || x.Level < mainHallLevel)
                     && x.UpgradeCost is { } cost && remaining.Covers(cost)
-                    && remaining.Wheat >= cost.Wheat + (x.Name is "Farm" or "Granary" ? upgradeWheatFloor : Math.Max(upgradeWheatFloor, marchWheatReserve)))
+                    && remaining.Wheat >= cost.Wheat + (x.Name == "Warehouse" && economy.Resources.Total >= economy.Capacity * 0.8 ? 0L : upgradeWheatFloor))
                 .OrderBy(x => BuildingScore(x, economy, personality, difficulty))
                 .FirstOrDefault();
 

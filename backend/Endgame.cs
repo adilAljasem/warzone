@@ -660,7 +660,7 @@ public sealed partial class LogisticsWorld
                     }
                 }
                 if (!allyHolding && (!selfHolding || castle.Contested) && ownArmies.Any(a => a.Order is "Battle" or "Capturing"))
-                    return true;
+                    return HomeCombatTroops(home) < 120 || nonGuardField >= 4;
             }
         }
 
@@ -743,6 +743,24 @@ public sealed partial class LogisticsWorld
                             return true;
                         }
                     }
+                }
+            }
+
+            // Fallback: if home still holds >= 120 combat troops and targetCity was blocked/unaffordable, launch a fast raid/blockade on any open enemy settlement.
+            if (HomeCombatTroops(home) >= 120 && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 12)
+            {
+                var openEnemy = villages.Values
+                    .Where(v => !v.Ruined && v.Village.OwnerId != actor && !CampAllied(actor, v.Village.OwnerId)
+                        && !sieges.Any(s => s.City == v && s.Status == "Active" && !CampAllied(actor, s.Attacker.OwnerId)))
+                    .OrderBy(v => Distance(v.Village.Position, home.Village.Position))
+                    .FirstOrDefault();
+                if (openEnemy is not null && BuildBotFormation(home, openEnemy.Village.Position, Math.Max(80, (int)(HomeCombatTroops(home) * 0.6)), false, false, 6, difficulty) is { } fallbackForce)
+                {
+                    var obj = sieges.FirstOrDefault(s => s.City == openEnemy && s.Status == "Active")?.Objective ?? AttackObjective.Raid;
+                    if (commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,
+                            fallbackForce.Values.Sum(), true, openEnemy.Village.Position.X, openEnemy.Village.Position.Y,
+                            UnitId(home, UnitRole.Infantry), 0, 2, openEnemy.Village.Id, Objective: obj, Formation: fallbackForce)).Accepted)
+                        return true;
                 }
             }
         }
@@ -950,8 +968,10 @@ public sealed partial class LogisticsWorld
             }
         }
 
-        // Only pause enemy village attacks while still fighting/marching to secure the Castle; once held cleanly, keep attacking enemies!
-        return !allyHolding && (!selfHolding || castle.Contested) && ownArmies.Any(a => a.Order is "Battle" or "Capturing" or "Attacking");
+        // Only pause enemy village attacks while fighting/marching for the Castle unless a large home garrison is idle.
+        return !allyHolding && (!selfHolding || castle.Contested)
+            && ownArmies.Any(a => a.Order is "Battle" or "Capturing" or "Attacking")
+            && (HomeCombatTroops(home) < 120 || fieldCount >= 6);
     }
 
     private bool TryHardBotKitingAndAmbush(Guid actor, VillageEconomy home, Army[] ownArmies, IGameCommands commands)

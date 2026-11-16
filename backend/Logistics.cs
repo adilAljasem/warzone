@@ -605,10 +605,30 @@ public sealed partial class LogisticsWorld
         while (budget >= minFallback)
         {
             var finalized = TryBuild(budget, includeSiege, includeGovernor)
-                ?? (includeSiege && (availableTotal >= 200 || home.FoodShortage) ? TryBuild(budget, false, includeGovernor) : null);
+                ?? (includeSiege && (availableTotal >= 140 || home.FoodShortage) ? TryBuild(budget, false, includeGovernor) : null);
             if (finalized is not null) return finalized;
             if (budget <= minFallback) break;
             budget = Math.Min(budget - 1, Math.Max(minFallback, (int)(budget * 0.72)));
+        }
+
+        // If wheat/wagons are too scarce for heavy or large formations, try a smaller low-upkeep expedition down to 10 soldiers.
+        var lightBudget = Math.Min(Math.Min(maxSoldiers, 160), Math.Max(0, availableTotal - reserveAtHome));
+        var lightFloor = Math.Min(minFallback, 10);
+        while (lightBudget >= lightFloor)
+        {
+            var form = new Dictionary<string, int>();
+            var rem = lightBudget;
+            foreach (var role in BotCombatRoles.Reverse())
+            {
+                if (TryUnitId(home, role) is not { } id) continue;
+                var cnt = Math.Min(rem, home.Available(id));
+                if (cnt > 0) { form[id] = cnt; rem -= cnt; }
+                if (rem <= 0) break;
+            }
+            if (form.Values.Sum() >= lightFloor && FinalizeBotFormation(home, destination, form) is { } lightOk)
+                return lightOk;
+            if (lightBudget <= lightFloor) break;
+            lightBudget = Math.Min(lightBudget - 1, Math.Max(lightFloor, (int)(lightBudget * 0.65)));
         }
         return null;
     }
@@ -1008,27 +1028,53 @@ public sealed partial class LogisticsWorld
         var maxArmies = difficulty == BotDifficulty.Hard ? (warTime < protectionUntil ? 3 : 6) : warTime < protectionUntil ? 4 : personality == BotPersonality.Aggressive ? 5 : 4;
         if (TryBotMergeArmies(actor, home, ownArmies, commands, difficulty, maxArmies)) return;
 
-        // If negative wheat upkeep trapped a large garrison at ~0 wheat so no expedition can depart, trim excess garrison upkeep.
-        if (!home.Besieged && homeTroops >= 200 && (home.FoodShortage || (wheatNet < -25 && home.Resources.Wheat < 120)))
+        bool TryRelieveWheatDeadlock()
         {
-            var trimTarget = Math.Clamp((int)Math.Ceiling(Math.Max(20d, -wheatNet) * 1.1), 25, Math.Max(25, homeTroops - 100));
+            var currentHome = HomeCombatTroops(home);
+            var currentNet = home.Snapshot().Production.FirstOrDefault(p => p.Resource == "Wheat")?.NetPerMinute ?? 0;
+            if (home.Besieged || currentHome < 120) return false;
+            if (!home.FoodShortage && !(currentNet < 60 && home.Resources.Wheat < 500)) return false;
+
+            // Trim excess upkeep (including idle surplus siege engines and higher-upkeep stacks first) to reach +240 wheat/min so remaining armies can quickly afford to march.
+            var upkeepToCut = Math.Max(60d, 240d - currentNet);
             var cutFormation = new Dictionary<string, int>();
-            var remainingCut = trimTarget;
-            foreach (var role in BotCombatRoles.Reverse())
+            var remainingUpkeep = upkeepToCut;
+            foreach (var role in new[] { UnitRole.Ram, UnitRole.Catapult })
             {
                 if (TryUnitId(home, role) is not { } unitId) continue;
-                var count = Math.Min(remainingCut, home.Available(unitId));
-                if (count > 0) { cutFormation[unitId] = count; remainingCut -= count; }
-                if (remainingCut <= 0) break;
+                var excess = Math.Max(0, home.Available(unitId) - 2);
+                if (excess <= 0) continue;
+                var unitUpkeep = Math.Max(1.0, GameCatalog.Units[unitId].Stats.WheatUpkeep);
+                var count = Math.Min(excess, (int)Math.Ceiling(remainingUpkeep / unitUpkeep));
+                if (count > 0) { cutFormation[unitId] = count; remainingUpkeep -= count * unitUpkeep; }
+                if (remainingUpkeep <= 0) break;
             }
-            if (cutFormation.Count > 0)
+            var remainingAllowedCut = Math.Max(20, currentHome - 60);
+            foreach (var role in BotCombatRoles)
             {
-                commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DisbandTroops, home.Village.Id, Formation: cutFormation));
-                return;
+                if (remainingUpkeep <= 0 || remainingAllowedCut <= 0) break;
+                if (TryUnitId(home, role) is not { } unitId) continue;
+                var avail = home.Available(unitId);
+                if (avail <= 0) continue;
+                var unitUpkeep = Math.Max(0.5, GameCatalog.Units[unitId].Stats.WheatUpkeep);
+                var wanted = (int)Math.Ceiling(remainingUpkeep / unitUpkeep);
+                var count = Math.Min(avail, Math.Min(wanted, remainingAllowedCut));
+                if (count > 0)
+                {
+                    cutFormation[unitId] = count;
+                    remainingUpkeep -= count * unitUpkeep;
+                    remainingAllowedCut -= count;
+                }
             }
+            if (cutFormation.Count == 0) return false;
+            return commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DisbandTroops, home.Village.Id, Formation: cutFormation)).Accepted;
         }
 
-        if (WarBotAct(actor, commands, personality, difficulty)) return;
+        if (homeTroops >= 200 && home.FoodShortage && TryRelieveWheatDeadlock()) return;
+
+        var dispatchedOrActed = WarBotAct(actor, commands, personality, difficulty);
+        if (HomeCombatTroops(home) >= homeTroops && TryRelieveWheatDeadlock()) return;
+        if (dispatchedOrActed) return;
 
         var weakCutoff = difficulty == BotDifficulty.Hard && fieldCount >= 2 ? 28 : 16;
         var weakArmy = ownArmies.FirstOrDefault(a => (a.Order == "Idle" || (difficulty != BotDifficulty.Hard && a.Order == "Guarding")) && !Engaged(a) && !a.Routing && !SiteUnderThreat(a.DefendingSiteId)
@@ -1096,7 +1142,8 @@ public sealed partial class LogisticsWorld
                 var maxDispatch = oasis.OwnerId is null
                     ? (warTime < protectionUntil ? 16 : difficulty == BotDifficulty.Hard ? Math.Clamp((int)(homeTroops * 0.4), 34, 90) : 16)
                     : (warTime < protectionUntil ? 20 : difficulty == BotDifficulty.Hard ? Math.Max(75, (int)(homeTroops * 0.55)) : 60);
-                var formation = BuildBotFormation(home, oasis.Position, maxDispatch, warTime >= protectionUntil, oasisMode == OasisMode.Capture && personality == BotPersonality.Aggressive && warTime >= protectionUntil, reserve, difficulty);
+                var needSiegeForOasis = oasis.OwnerId is not null && oasis.WallLevel > 0 && warTime >= protectionUntil;
+                var formation = BuildBotFormation(home, oasis.Position, maxDispatch, needSiegeForOasis, oasisMode == OasisMode.Capture && personality == BotPersonality.Aggressive && warTime >= protectionUntil, reserve, difficulty);
                 if (formation is not null)
                 {
                     commands.Execute(actor, new(Guid.NewGuid(), CommandKind.DispatchArmy, home.Village.Id,

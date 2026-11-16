@@ -103,7 +103,7 @@
         "wood": 10,
         "iron": 25,
         "stone": 0,
-        "wheat": 20
+        "wheat": 15
       },
       "stats": {
         "attack": 46,
@@ -183,7 +183,7 @@
         "defenseCavalry": 5,
         "speed": 6.75,
         "carryCapacity": 0,
-        "wheatUpkeep": 4,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -207,7 +207,7 @@
         "defenseCavalry": 10,
         "speed": 9,
         "carryCapacity": 0,
-        "wheatUpkeep": 3,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -327,7 +327,7 @@
         "defenseCavalry": 64,
         "speed": 36,
         "carryCapacity": 60,
-        "wheatUpkeep": 3.5,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -423,7 +423,7 @@
         "defenseCavalry": 5,
         "speed": 6.75,
         "carryCapacity": 0,
-        "wheatUpkeep": 4,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -447,7 +447,7 @@
         "defenseCavalry": 10,
         "speed": 9,
         "carryCapacity": 0,
-        "wheatUpkeep": 3,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -567,7 +567,7 @@
         "defenseCavalry": 60,
         "speed": 36,
         "carryCapacity": 60,
-        "wheatUpkeep": 3.5,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -587,7 +587,7 @@
       },
       "stats": {
         "attack": 15,
-        "defenseInfantry": 72,
+        "defenseInfantry": 65,
         "defenseCavalry": 40,
         "speed": 16.5,
         "carryCapacity": 40,
@@ -663,7 +663,7 @@
         "defenseCavalry": 5,
         "speed": 6.75,
         "carryCapacity": 0,
-        "wheatUpkeep": 4,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -687,7 +687,7 @@
         "defenseCavalry": 10,
         "speed": 9,
         "carryCapacity": 0,
-        "wheatUpkeep": 3,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -807,7 +807,7 @@
         "defenseCavalry": 62,
         "speed": 36,
         "carryCapacity": 60,
-        "wheatUpkeep": 3.5,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -903,7 +903,7 @@
         "defenseCavalry": 5,
         "speed": 20,
         "carryCapacity": 0,
-        "wheatUpkeep": 2,
+        "wheatUpkeep": 1,
         "hitPoints": 100
       }
     },
@@ -927,7 +927,7 @@
         "defenseCavalry": 10,
         "speed": 20,
         "carryCapacity": 0,
-        "wheatUpkeep": 1.5,
+        "wheatUpkeep": 1,
         "hitPoints": 100
       }
     },
@@ -1047,7 +1047,7 @@
         "defenseCavalry": 62,
         "speed": 60,
         "carryCapacity": 60,
-        "wheatUpkeep": 1.75,
+        "wheatUpkeep": 1,
         "hitPoints": 100
       }
     },
@@ -1167,7 +1167,7 @@
         "defenseCavalry": 5,
         "speed": 6.75,
         "carryCapacity": 0,
-        "wheatUpkeep": 4,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -1191,7 +1191,7 @@
         "defenseCavalry": 10,
         "speed": 9,
         "carryCapacity": 0,
-        "wheatUpkeep": 3,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     },
@@ -1287,7 +1287,7 @@
         "defenseCavalry": 64,
         "speed": 35,
         "carryCapacity": 60,
-        "wheatUpkeep": 3.5,
+        "wheatUpkeep": 2,
         "hitPoints": 100
       }
     }

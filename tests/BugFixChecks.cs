@@ -342,16 +342,48 @@ internal static class BugFixChecks
                 $"Single 5000-cap wagon loaded > 2000 resources in one trip (loaded={retConvoy.Cargo?.Total})");
         }
 
+        // 8. Late-game Hard bot with 1500+ starving troops inside village recovers wheat and dispatches field armies.
+        {
+            var bot = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var enemy = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(1600, 500));
+            var world = new LogisticsWorld([bot, enemy], 909);
+            bot.ReceiveGift([
+                new(BaseUnit.Create(GameCatalog.Units["romans-heavycavalry"]), 300),
+                new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 1200),
+                new(BaseUnit.Create(GameCatalog.Units["romans-catapult"]), 10),
+                new(BaseUnit.Create(GameCatalog.Units["romans-ram"]), 10),
+                new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 8),
+            ]);
+            var now = 0d;
+            for (var i = 0; i < 600 && !bot.FoodShortage; i++) { now += 1; world.AdvanceEconomies(1, now, 1); world.Advance(1, now, 1, 3600); }
+            Check(bot.FoodShortage && bot.Resources.Wheat == 0, "Late-game Hard bot started in severe FoodShortage at 0 wheat");
+
+            now = 2100d;
+            var commands = new WorldTestCommands(world, () => now);
+            for (var step = 0; step < 120; step++)
+            {
+                now += 1;
+                world.AdvanceEconomies(1, now, 1);
+                world.Advance(1, now, 0, 3600);
+                var eco = world.EconomySnapshot(bot.Village.OwnerId, null, 1)!;
+                BotController.ActEconomy(commands, bot.Village.OwnerId, eco, BotPersonality.Defensive, BotDifficulty.Hard);
+                world.BotAct(bot.Village.OwnerId, commands, BotPersonality.Defensive, BotDifficulty.Hard);
+            }
+            var armiesOut = world.Snapshot(bot.Village.OwnerId).Armies.Count(a => a.OwnerId == bot.Village.OwnerId && a.Order != "Guarding");
+            Check(bot.Resources.Wheat > 0, $"Late-game bot accumulated wheat instead of staying stuck at 0 (wheat={bot.Resources.Wheat})");
+            Check(armiesOut >= 1, $"Late-game bot dispatched army out of the village after recovering from wheat shortage (armiesOut={armiesOut})");
+        }
+
         return checks;
     }
 
-    private sealed class WorldTestCommands(LogisticsWorld world) : IGameCommands
+    private sealed class WorldTestCommands(LogisticsWorld world, Func<double>? getNow = null) : IGameCommands
     {
         public CommandResult Execute(Guid actorId, GameCommand command)
         {
             try
             {
-                world.Apply(actorId, command, 1800, 0);
+                world.Apply(actorId, command, getNow?.Invoke() ?? 1800, 0);
                 return new CommandResult(command.RequestId, true, "ok", "ok");
             }
             catch (GameRuleException ex)
