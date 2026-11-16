@@ -60,7 +60,7 @@ public sealed partial class LogisticsWorld
         {
             if (!castle.Active) throw new GameRuleException("castle", $"The central castle opens at {Math.Round(castleUnlockSeconds / 60)} minutes.");
             var army = Owned(actor, command.TargetId);
-            if (army.Routing || Engaged(army)) throw new GameRuleException("engaged", "This army cannot take castle orders now.");
+            if (Engaged(army)) throw new GameRuleException("engaged", "This army cannot take castle orders now.");
             if (OrderFighters(army, command.Formation) == 0) throw new GameRuleException("troops", "Fighting troops are required to claim the castle.");
             army = Detach(army, command.Formation, now);
             army.DefendingSiteId = null; army.SupportedOwnerId = null; army.CampRadius = null;
@@ -110,10 +110,12 @@ public sealed partial class LogisticsWorld
             }
             else
             {
-                var before = Carried(attacker);
-                var salvage = city.Raze(); TakeLoot(attacker, salvage);
+                var salvage = city.Raze();
+                var recipients = siege.Attackers.Where(a => armies.Contains(a) && Count(a) > 0).ToArray();
+                if (recipients.Length == 0) recipients = [attacker];
+                var captured = DistributeLoot(recipients, salvage);
                 var report = reports.Find(r => r.Id == siege.Id);
-                if (report is not null) { report.AttackerLoot += Gained(before, Carried(attacker)); report.DefenderLoss += salvage; }
+                if (report is not null) { report.AttackerLoot += captured; report.DefenderLoss += salvage; }
                 Note(attacker.OwnerId, now, "Every building has been destroyed. The village has been removed from the map.");
                 Note(former, now, "Your city has been reduced to ruins.");
             }

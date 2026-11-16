@@ -212,6 +212,136 @@ internal static class BugFixChecks
             Check(bot.Garrison().Sum(t => t.Count) < 920, "Bot disbanded excess starving garrison troops");
         }
 
+        // 4. Recalled / withdrawing returning armies are never locked as "broken" and can be re-commanded immediately.
+        {
+            var a = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var b = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(750, 500));
+            var world = new LogisticsWorld([a, b], 505);
+            a.AddResources(new(10000, 10000, 10000, 10000));
+            a.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 50)]);
+            world.Apply(a.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, a.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 50 }, Wagons: 0, X: 620, Y: 500), 0, 0);
+            var armyId = world.Snapshot(a.Village.OwnerId).Armies.Single().Id;
+            world.Advance(1, 1, 0, 3600);
+            world.Apply(a.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RecallArmy, armyId), 1, 0);
+            Check(world.Snapshot(a.Village.OwnerId).Armies.Single(x => x.Id == armyId).Order == "Returning", "Recalled army is returning home");
+            world.Apply(a.Village.OwnerId, new(Guid.NewGuid(), CommandKind.MoveArmy, armyId, X: 660, Y: 520), 1, 0);
+            var redirected = world.Snapshot(a.Village.OwnerId).Armies.Single(x => x.Id == armyId);
+            Check(redirected.Order == "Marching" && Math.Abs(redirected.Destination.X - 660) < 0.01, "Returning army can be immediately re-commanded without broken lock");
+        }
+
+        // 5. First-to-arrive ally sets city siege objective; second ally arriving with a different objective adopts and joins.
+        {
+            var a1 = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var a2 = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(540, 560));
+            var enemy = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(620, 500));
+            var world = new LogisticsWorld([a1, a2, enemy], 606);
+            foreach (var c in new[] { a1, a2, enemy })
+            {
+                c.AddResources(new(15000, 15000, 15000, 15000));
+                c.ReceiveGift([
+                    new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 120),
+                    new(BaseUnit.Create(GameCatalog.Units["romans-catapult"]), 2),
+                    new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 4)
+                ]);
+            }
+            world.SetAlliances([new(a1.Village.OwnerId, a2.Village.OwnerId, 0)]);
+
+            // Faster infantry Raid launched slightly earlier or slower Raze arrives first: Raze arrives first? Launch Raze closer (a1 is at 500,500) and Raid further away (a2 is at 540,560) AFTER a1 has catapults -> actually send Blockade from a2 later so a1 arrives first as Raze!
+            world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, a1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 80, ["romans-catapult"] = 2, ["romans-wagon"] = 2 },
+                Wagons: 0, DestinationId: enemy.Village.Id, Objective: AttackObjective.Raze), 0, 0);
+            var now = 0d;
+            for (var i = 0; i < 40; i++) { now += .25; world.Advance(.25, now, 0, 3600); }
+            // a2 marches with Raid before siege is established, arrives second after a1 starts Raze.
+            world.Apply(a2.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, a2.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 40, ["romans-wagon"] = 1 },
+                Wagons: 0, DestinationId: enemy.Village.Id, Objective: AttackObjective.Raid), now, 0);
+            for (var i = 0; i < 600; i++)
+            {
+                now += .25;
+                world.Advance(.25, now, 0, 3600);
+                if (world.Snapshot(a1.Village.OwnerId).Warfare.Sieges.Any(s => s.Status == "Active" && s.ArmyIds.Length == 2)) break;
+            }
+            var siege = world.Snapshot(a1.Village.OwnerId).Warfare.Sieges.Single(s => s.Status == "Active");
+            Check(siege.Objective == AttackObjective.Raze && siege.ArmyIds.Length == 2,
+                "Second allied army arriving after first establishes Raze adopts Raze and joins the siege");
+        }
+
+        // 6. Capturing an owned oasis with stockpiled resources loots those resources.
+        {
+            var prev = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(700, 500));
+            var taker = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var world = new LogisticsWorld([prev, taker], 707);
+            prev.AddResources(new(10000, 10000, 10000, 10000));
+            taker.AddResources(new(10000, 10000, 10000, 10000));
+            taker.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 80), new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 2)]);
+
+            var oasis = world.Snapshot(prev.Village.OwnerId).Oases.OrderBy(o => LogisticsWorld.Distance(prev.Village.Position, o.Position)).First();
+            world.Apply(prev.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, prev.Village.Id,
+                Formation: new Dictionary<string, int> { ["greeks-infantry"] = 5 }, Wagons: 0, DestinationId: oasis.Id, AfterAttack: AfterAttack.Return), 0, 0);
+            var now = 0d;
+            for (var i = 0; i < 400 && world.Snapshot(prev.Village.OwnerId).Oases.Single(o => o.Id == oasis.Id).OwnerId != prev.Village.OwnerId; i++)
+            {
+                now += .25;
+                world.Advance(.25, now, 0, 3600);
+            }
+            world.Apply(prev.Village.OwnerId, new(Guid.NewGuid(), CommandKind.SetOasisTransport, oasis.Id, Enabled: false), now, 0);
+            for (var i = 0; i < 120; i++) { now += 1; world.AdvanceEconomies(1, now, 1); world.Advance(1, now, 0, 3600); }
+            var storedBeforeCapture = world.Snapshot(prev.Village.OwnerId).Oases.Single(o => o.Id == oasis.Id).Stock?.Total ?? 0;
+            Check(storedBeforeCapture > 0, "Owned oasis accumulated stockpiled resources");
+
+            world.Apply(taker.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, taker.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 60, ["romans-wagon"] = 1 },
+                Wagons: 0, DestinationId: oasis.Id, OasisMode: OasisMode.Capture, AfterAttack: AfterAttack.Hold), now, 0);
+            for (var i = 0; i < 600 && world.Snapshot(taker.Village.OwnerId).Oases.Single(o => o.Id == oasis.Id).OwnerId != taker.Village.OwnerId; i++)
+            {
+                now += 1;
+                world.AdvanceEconomies(1, now, 1);
+                world.Advance(1, now, 0, 3600);
+            }
+            var captorArmy = world.Snapshot(taker.Village.OwnerId).Armies.Single(a => a.OwnerId == taker.Village.OwnerId);
+            Check((captorArmy.Loot?.Total ?? 0) >= storedBeforeCapture, "Capturing army looted stockpiled resources from the conquered oasis");
+        }
+
+        // 7. A single wagon (carry capacity 5000) loads > 2000 resources (e.g. 4200) up to its capacity while leaving provisions.
+        {
+            var hunter = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var victim = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(600, 500));
+            var peer = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(780, 500));
+            var world = new LogisticsWorld([hunter, victim, peer], 808);
+            foreach (var city in new[] { hunter, victim, peer })
+            {
+                var wh = city.Village.Buildings.Single(b => b.Type == BuildingType.Warehouse);
+                while (wh.Level < 10) wh.CompleteUpgrade(wh.Level);
+                city.AddResources(new(25000, 25000, 25000, 25000));
+                city.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 120), new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 6)]);
+            }
+            // Leave hunter with exact 1 free wagon at home after dispatch (start had 2+6=8, keep 1 at home)
+            world.Apply(hunter.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, hunter.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 120, ["romans-wagon"] = 7 },
+                Wagons: 0, X: 690, Y: 500, AfterAttack: AfterAttack.Hold), 0, 0);
+            var now = 0d;
+            for (var i = 0; i < 120; i++) { now += .25; world.Advance(.25, now, 0, 3600); }
+            world.Apply(victim.Village.OwnerId, new(Guid.NewGuid(), CommandKind.SendResources, victim.Village.Id,
+                DestinationId: peer.Village.Id, Shipment: new(4200, 0, 0, 0)), now, 0);
+            var cid = world.Snapshot(victim.Village.OwnerId).Convoys.Single(c => c.Kind == ConvoyKind.Shipment).Id;
+            var hid = world.Snapshot(hunter.Village.OwnerId).Armies.Single(x => x.OwnerId == hunter.Village.OwnerId).Id;
+            world.Apply(hunter.Village.OwnerId, new(Guid.NewGuid(), CommandKind.InterceptConvoy, hid, DestinationId: cid, AfterAttack: AfterAttack.Hold), now, 0);
+            for (var i = 0; i < 240 && (world.Snapshot(hunter.Village.OwnerId).Armies.Single(x => x.Id == hid).Loot?.Total ?? 0) < 4000; i++)
+            {
+                now += .25; world.Advance(.25, now, 0, 3600);
+            }
+            for (var i = 0; i < 400; i++)
+            {
+                now += .25; world.Advance(.25, now, 0, 3600);
+                if (world.Snapshot(hunter.Village.OwnerId).Convoys.Any(c => c.Kind == ConvoyKind.Supply && c.Returning && c.TargetArmyId == hid)) break;
+            }
+            var retConvoy = world.Snapshot(hunter.Village.OwnerId).Convoys.Single(c => c.Kind == ConvoyKind.Supply && c.Returning && c.TargetArmyId == hid);
+            Check(retConvoy.Wagons == 1 && (retConvoy.Cargo?.Total ?? 0) >= 4200,
+                $"Single 5000-cap wagon loaded > 2000 resources in one trip (loaded={retConvoy.Cargo?.Total})");
+        }
+
         return checks;
     }
 

@@ -371,11 +371,12 @@ public sealed class VillageEconomy
     internal Resources Raze()
     {
         var value = Village.Buildings.Sum(x => (long)(x.Level * (x.Level + 1) / 2) * 45);
+        var stored = Resources;
         Ruined = true; Besieged = false; RaidedUntil = 0;
         foreach (var building in Village.Buildings) DamageBuilding(building.Type, true); jobs.Clear(); garrison.Clear(); wounded.Clear();
         foreach (var target in Training) target.SetAutoQueue(false);
         Array.Clear(stock);
-        return new(value / 2, value / 2, value / 2, value / 4);
+        return stored + new Resources(value / 2, value / 2, value / 2, value / 4);
     }
     internal void ChangeOwner(Guid owner, VillageEconomy? evacueeHome)
     {

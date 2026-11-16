@@ -55,7 +55,7 @@ function resourceBadge(resource: string): Container {
   root.addChild(g); return root;
 }
 
-interface MovingNode { root: Container; from: Point; to: Point; dest?: Point; at: number; duration: number; label: Text; kind: "army" | "convoy"; artworkKey?: string; party?: Container; partyY?: number; dust?: Graphics; flag?: Graphics; marching?: boolean; figures?:{sprite:Sprite;y:number}[]; lastSoldiers?: number; lastEscorts?: number; wasFighting?: boolean; }
+interface MovingNode { root: Container; from: Point; to: Point; dest?: Point; at: number; duration: number; label: Text; kind: "army" | "convoy"; artworkKey?: string; party?: Container; partyY?: number; dust?: Graphics; flags?: Graphics[]; marching?: boolean; figures?:{sprite:Sprite;y:number}[]; lastSoldiers?: number; lastEscorts?: number; wasFighting?: boolean; }
 interface MovingSettlement { id: string; root: Container; plate: Container; wagons: { sprite: Sprite; baseY: number }[]; dust: Graphics; from: Point; to: Point; dest?: Point; at: number; duration: number; moving: boolean; }
 interface LossIndicator { root: Container; caption: Text; at: number; duration: number; startX: number; startY: number; jitterX: number; targetArmyId?: string; }
 export class WorldMap {
@@ -492,7 +492,8 @@ export class WorldMap {
       const tribe=(isArmy ? entity.tribe : players.find(p=>p.id===entity.ownerId)?.tribe ?? 'Romans').toLowerCase();
       const formation=isArmy?armyFigures(entity.soldiers,tribe,entity.formation,entity.mapFigures):[];
       const wagonCount=armyFigureCount(entity.wagons),escortCount=!isArmy?armyFigureCount(entity.escorts):0;
-      const artworkKey=formation.join(',')+`|${tribe}|${wagonCount}|${escortCount}|${color}|${isArmy&&entity.campRadius?'camp':''}`;
+      const flagCount=isArmy?Math.min(12,1+Math.floor(Math.max(0,entity.soldiers)/250)):1;
+      const artworkKey=formation.join(',')+`|${tribe}|${wagonCount}|${escortCount}|${color}|${isArmy&&entity.campRadius?'camp':''}|f${flagCount}`;
       if (node.artworkKey !== artworkKey) {
         node.artworkKey=artworkKey;
         node.root.removeChildren().forEach(child=>{if(child!==node!.label)child.destroy({children:true});});
@@ -502,10 +503,15 @@ export class WorldMap {
         const flagX=-13-Math.max(0,Math.max(layout.columns,wagonLayout.columns)-1)*9;
         const flagTop=-50-Math.max(0,layout.rows-1)*17;
         const flagBase=-12-Math.max(0,layout.rows-1)*17;
+        const flagSlots=Array.from({length:flagCount},(_,i)=>({
+          x:flagX+i*12,
+          top:flagTop-(i%2)*4,
+          base:flagBase-(i%2)*4,
+        }));
         party.addChild(new Graphics().ellipse(0,5-Math.max(0,layout.rows-1)*8,Math.max(26,layout.columns*13),12+layout.rows*7).fill({color,alpha:.12}));
         // Camped troops stand in the middle of the perimeter rather than above its centre point.
         node.partyY=isArmy&&entity.campRadius?Math.max(0,layout.rows-1)*8.5+16:0;
-        this.unitFlagShaft(party,flagTop,flagBase,flagX);
+        for(const slot of flagSlots)this.unitFlagShaft(party,slot.top,slot.base,slot.x);
         formation.forEach((id,index)=>{
           const point=layout.points[index]!,sprite=unitSprite(id,layout.width);sprite.position.set(point.x,point.y);
           sprite.label='army-unit';party.addChild(sprite);node!.figures!.push({sprite,y:point.y});
@@ -516,7 +522,7 @@ export class WorldMap {
           supply.position.set(point.x,point.y+Math.max(0,wagonLayout.rows-1)*17+(formation.length?22:0));supply.label='army-wagon';party.addChild(supply);
         }
         for(let i=0;i<escortCount;i++){const escort=unitSprite(`${tribe}-infantry`,36);escort.position.set((i-(escortCount-1)/2)*22,18);party.addChild(escort);}
-        node.flag=this.unitFlagPennant(party,color,flagTop,flagX);
+        node.flags=flagSlots.map(slot=>this.unitFlagPennant(party,color,slot.top,slot.x));
         node.party=party;node.dust=dust;node.label.y=(formation.length&&wagonCount?42:27)+Math.max(0,wagonLayout.rows-1)*17+node.partyY;node.root.addChild(dust,party,node.label);
       }
       node.root.zIndex = position.y;
@@ -833,7 +839,7 @@ export class WorldMap {
           }
         });
         if(node.party && !node.party.destroyed)node.party.y=(node.partyY??0)+(!this.reduced&&!document.hidden?(node.marching?Math.sin(now/110)*1.1:Math.sin(now/1000)*.3):0);
-        if(node.flag && !node.flag.destroyed && !this.reduced&&!document.hidden)node.flag.scale.x=.96+Math.sin(now/500)*.04;
+        if(!this.reduced&&!document.hidden)node.flags?.forEach((flag,i)=>{if(!flag.destroyed)flag.scale.x=.96+Math.sin(now/500+i*.7)*.04;});
         if(node.dust && !node.dust.destroyed){node.dust.clear();if(node.marching&&!this.reduced&&!document.hidden)for(let i=0;i<3;i++){const phase=(now/1100+i/3)%1;node.dust.ellipse(-phase*22,8+phase*5,2+phase*4,1+phase*2).fill({color:0xdac48e,alpha:(1-phase)*.22});}}
       }
       for (const ms of this.movingSettlements.values()) {

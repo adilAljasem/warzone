@@ -191,8 +191,8 @@ internal static class WarfareChecks
 
         var (raze, razer) = Siege(objective: AttackObjective.Raze); raze.Tick(300);
         Check(raze.B.Ruined && raze.B.Village.Level == 0 && raze.B.Resources.Total == 0, "Razing creates an empty non-operating ruin");
-        var loot = raze.View.Armies.Single().Loot!.Value.Total; Check(loot == 0, "Destruction does not invent salvage after all building levels are demolished");
-        raze.Tick(10); Check(raze.B.Resources.Total == 0 && raze.View.Armies.Single().Loot!.Value.Total == loot, "Ruins produce neither resources nor repeat salvage");
+        var loot = raze.View.Armies.Single().Loot!.Value.Total; Check(loot > 0, "Destruction plunders remaining resources from the ruined village");
+        raze.Tick(10); Check(raze.B.Resources.Total == 0 && raze.View.Armies.Single().Loot!.Value.Total <= loot, "Ruins produce neither resources nor repeat salvage");
         Reject(() => raze.Order(raze.A, CommandKind.BeginSiege, razer, raze.B.Village.Id, AttackObjective.Raze), "target");
         Check(raze.B.Snapshot().Targets.Single(x => x.Name == "MainHall").UpgradeCost is null, "A ruined main hall has no invalid upgrade step");
 

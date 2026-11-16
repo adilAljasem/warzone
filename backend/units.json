@@ -754,7 +754,7 @@
         "wheat": 0
       },
       "stats": {
-        "attack": 84,
+        "attack": 75,
         "defenseInfantry": 40,
         "defenseCavalry": 36,
         "speed": 15,
@@ -774,11 +774,11 @@
       "cost": {
         "wood": 30,
         "iron": 15,
-        "stone": 70,
+        "stone": 75,
         "wheat": 0
       },
       "stats": {
-        "attack": 70,
+        "attack": 75,
         "defenseInfantry": 26,
         "defenseCavalry": 20,
         "speed": 65,

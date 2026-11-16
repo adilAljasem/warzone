@@ -29,8 +29,8 @@ public sealed partial class LogisticsWorld
             throw new GameRuleException("governor", "Include a governor in this army for conquest.");
         if (objective == AttackObjective.Raze && !Has(UnitRole.Catapult) && !allyHasSpecialist)
             throw new GameRuleException("catapult", "Include a catapult in this army for destruction.");
-        if (current is not null && (!CampAllied(current.Attacker.OwnerId, actor) || (current.Objective != objective && current.Objective != AttackObjective.Blockade && objective != AttackObjective.Blockade)))
-            throw new GameRuleException("siege", "Joining armies must share an allied siege commander and compatible attack objective.");
+        if (current is not null && !CampAllied(current.Attacker.OwnerId, actor))
+            throw new GameRuleException("siege", "A rival commander is already besieging this settlement.");
     }
 
     private void AdvanceCityObjective(SiegeState siege, double now)

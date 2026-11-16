@@ -77,7 +77,6 @@ public sealed partial class LogisticsWorld
         var remainder = army.Troops.Select(t => (t.Unit, Count: t.Count - formation.GetValueOrDefault(t.Unit.UnitId))).Where(t => t.Count > 0).Select(t => new TroopStack(t.Unit, t.Count)).ToArray();
         if (remainder.Length == 0) return army;
         if (Engaged(army) || army.Order is "Battle" or "Sieging") throw new GameRuleException("engaged", "Finish the engagement or retreat before splitting this army.");
-        if (army.Routing) throw new GameRuleException("routing", "A broken army cannot be split.");
         if (armies.Count(x => x.OwnerId == army.OwnerId) >= 16) throw new GameRuleException("army_limit", "Recall an army before splitting this force. Limit: sixteen.");
         var selCap = selected.Sum(t => (double)t.Count * t.Unit.CarryCapacity);
         var remCap = remainder.Sum(t => (double)t.Count * t.Unit.CarryCapacity);
@@ -219,8 +218,6 @@ public sealed partial class LogisticsWorld
             throw new GameRuleException("engaged", "This army is in combat. Recall it or send another formation.");
         if (selected.Order == "Sieging" && command.Kind is not (CommandKind.ConfigureSupply or CommandKind.RecallArmy or CommandKind.MoveArmy or CommandKind.CampArmy or CommandKind.Reinforce or CommandKind.CaptureOasis or CommandKind.BesiegeOasis or CommandKind.BurnOasis))
             throw new GameRuleException("engaged", "This army is in combat. Recall it or send another formation.");
-        if (selected.Routing && command.Kind is not CommandKind.ConfigureSupply)
-            throw new GameRuleException("routing", "This army has broken and is returning home.");
         var prevTargetId = selected.TargetId;
         var prevOrder = selected.Order;
         switch (command.Kind)
@@ -345,7 +342,7 @@ public sealed partial class LogisticsWorld
                 if (!army.Troops.Any(t => t.Unit is not SupplyWagon))
                 {
                     if (Count(army) == 0) { armies.Remove(army); continue; }
-                    if (!army.Routing && army.Order != "Battle") Route(army);
+                    if (army.Order != "Returning" && army.Order != "Battle") Route(army);
                 }
             }
             else
@@ -1233,7 +1230,7 @@ public sealed partial class LogisticsWorld
         }
 
         var army = Owned(actor, command.TargetId);
-        if (Engaged(army) || oasisSieges.Any(s => s.Status == "Active" && s.Attackers.Contains(army)) || army.Order is "Battle" or "Sieging" or "Returning" || army.Routing)
+        if (Engaged(army) || oasisSieges.Any(s => s.Status == "Active" && s.Attackers.Contains(army)) || army.Order is "Battle" or "Sieging" or "Returning")
             throw new GameRuleException("engaged", "Cannot disband troops from an army that is engaged in combat or returning.");
 
         var stackCounts = army.Troops.ToDictionary(t => t.Unit.UnitId, t => t.Count);
@@ -1283,8 +1280,6 @@ public sealed partial class LogisticsWorld
             {
                 if (Engaged(candidate) || candidate.Order is "Battle" or "Sieging" or "Returning")
                     throw new GameRuleException("engaged", "Cannot merge an army that is engaged in combat or already returning.");
-                if (candidate.Routing)
-                    throw new GameRuleException("routing", "A broken army cannot merge.");
             }
             var vGroupId = Guid.NewGuid();
             foreach (var candidate in candidates)
@@ -1321,8 +1316,6 @@ public sealed partial class LogisticsWorld
         {
             if (Engaged(candidate) || candidate.Order is "Battle" or "Sieging" or "Returning")
                 throw new GameRuleException("engaged", "Cannot merge an army that is engaged in combat or returning.");
-            if (candidate.Routing)
-                throw new GameRuleException("routing", "A broken army cannot merge.");
         }
 
         var guardedSites = selectedArmies

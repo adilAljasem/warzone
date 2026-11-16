@@ -74,7 +74,6 @@ public sealed partial class LogisticsWorld
         if (command.Kind == CommandKind.Scout)
         {
             var scoutArmy = Owned(actor, command.TargetId);
-            if (scoutArmy.Routing) throw new GameRuleException("routing", "A broken army must return home.");
             if (Engaged(scoutArmy)) throw new GameRuleException("engaged", "Finish the engagement or retreat first.");
             var scoutCount = OrderFormation(scoutArmy, command.Formation).Where(x => GameCatalog.Units.TryGetValue(x.Key, out var unit) && unit.Role == UnitRole.Scout).Sum(x => x.Value);
             if (scoutCount == 0 || OrderFighters(scoutArmy, command.Formation) != scoutCount)
@@ -95,7 +94,6 @@ public sealed partial class LogisticsWorld
         if (command.Kind is not (CommandKind.AttackArmy or CommandKind.BeginSiege)) return false;
         if (!Enum.IsDefined(command.Objective)) throw new GameRuleException("directive", "Unknown city order.");
         var army = Owned(actor, command.TargetId);
-        if (army.Routing) throw new GameRuleException("routing", "A broken army must return home.");
         if (now < shieldUntil) throw new GameRuleException("protected", "Wait until the protection shield expires.");
         if (Engaged(army)) throw new GameRuleException("engaged", "Finish the engagement or retreat first.");
         if (OrderFighters(army, command.Formation) == 0) throw new GameRuleException("troops", "This army has no fighting troops.");
@@ -329,7 +327,7 @@ public sealed partial class LogisticsWorld
     private void Route(Army army)
     {
         army.DefendingSiteId = null; army.SupportedOwnerId = null; army.AttackOrderedAt = 0; army.CampRadius = null;
-        army.Routing = true; army.Order = "Returning"; army.TargetId = null; army.Destination = villages[army.HomeVillageId].Village.Position;
+        army.Routing = false; army.Order = "Returning"; army.TargetId = null; army.Destination = villages[army.HomeVillageId].Village.Position;
     }
     private void ResumeBattleWinner(BattleState battle, Army winner)
     {
@@ -390,7 +388,7 @@ public sealed partial class LogisticsWorld
                 var ongoing=sieges.Find(s=>s.City==city&&s.Status=="Active");
                 if (ongoing is not null)
                 {
-                    if (CampAllied(ongoing.Attacker.OwnerId, army.OwnerId) && (ongoing.Objective == army.Objective || ongoing.Objective == AttackObjective.Blockade || army.Objective == AttackObjective.Blockade))
+                    if (CampAllied(ongoing.Attacker.OwnerId, army.OwnerId))
                     {
                         var escalated = ongoing.Objective == AttackObjective.Blockade && army.Objective != AttackObjective.Blockade;
                         if (escalated)
@@ -400,11 +398,15 @@ public sealed partial class LogisticsWorld
                             ongoing.Started = now;
                             ongoing.NextRound = now + 5;
                         }
+                        else
+                        {
+                            army.Objective = ongoing.Objective;
+                        }
                         if (!ongoing.Attackers.Contains(army)) ongoing.Attackers.Add(army);
                         army.Order = "Sieging"; AddReportArmy(reports.Single(r => r.Id == ongoing.Id), army, true);
                         ReportEvent(ongoing.Id, now, escalated ? "An allied assault force joined and escalated the blockade." : ongoing.Attacker.OwnerId == army.OwnerId ? "Another army joined the siege." : "An allied army joined the siege.");
                     }
-                    else { Route(army); Note(army.OwnerId, now, "The target has a different ongoing attack objective. Your army is returning."); }
+                    else { Route(army); Note(army.OwnerId, now, "Another commander is already besieging this settlement. Your army is returning."); }
                     continue;
                 }
                 var guard = Guards(city.Village.Id, army.OwnerId).FirstOrDefault();

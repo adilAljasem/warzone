@@ -52,7 +52,7 @@ public sealed partial class LogisticsWorld
     {
         foreach(var siege in oasisSieges.Where(s=>s.Status=="Active").ToArray())
         {
-            if(!ValidOasisSiege(siege)){EndOasisSiege(siege,siege.Attacker.Routing?"Repelled":"Withdrawn",now,siege.Defender);continue;}
+            if(!ValidOasisSiege(siege)){EndOasisSiege(siege,siege.Attacker.Order=="Returning"?"Repelled":"Withdrawn",now,siege.Defender);continue;}
             var report=reports.Find(r=>r.Id==siege.Id);if(report is null)continue;
             TrackOasisDefenders(siege,report);
             if(now>=siege.NextRound){siege.NextRound=now+5;siege.Round++;ReportEvent(siege.Id,now,siege.Mode==OasisMode.Blockade?"Blockade continues. Resource collection and village bonuses remain suspended.":$"Oasis wall durability: {Math.Ceiling(siege.Oasis.WallHealth)} / {siege.Oasis.WallMaximum}.");}

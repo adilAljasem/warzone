@@ -445,6 +445,16 @@ export function resolveTargetBehavior(target: MapSelection, ctx: TargetRuleConte
         options: []
       };
     }
+    const activeAlliedSiege = (ctx.sieges ?? []).find(
+      s => s.villageId === v.id && s.status === "Active" && ctx.isAlly(s.attackerOwner)
+    );
+    if (activeAlliedSiege) {
+      return {
+        intent: "ally",
+        directAction: siegeJoinOption(activeAlliedSiege.objective, v, ctx, L),
+        options: []
+      };
+    }
     const canConquer = ctx.hasGovernor || allyHasObjective(v.id, "Conquest", ctx);
     const canRaze = ctx.hasCatapult || allyHasObjective(v.id, "Raze", ctx);
     const options: RadialOption[] = [

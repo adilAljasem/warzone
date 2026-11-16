@@ -405,6 +405,21 @@ public sealed partial class LogisticsWorld
         army.ActionSeconds += seconds;
         if (army.ActionSeconds < 15) return;
         var formerOwner2 = oasis.OwnerId;
+        var oasisStock = oasis.Stock;
+        Resources oasisCaptured = new();
+        if (formerOwner2 != army.OwnerId && oasisStock.Total > 0)
+        {
+            var captors = armies.Where(a => armies.Contains(a) && Fighters(a) > 0 && (a == army
+                || (CampAllied(army.OwnerId, a.OwnerId) && a.TargetId == oasis.Id && a.Order == "Occupying" && Distance(a.Position, oasis.Position) <= 20))).ToArray();
+            oasisCaptured = DistributeLoot(captors, oasisStock);
+            if (oasisCaptured.Total > 0)
+            {
+                oasis.Stockpile[0] = Math.Max(0m, oasis.Stockpile[0] - oasisCaptured.Wood);
+                oasis.Stockpile[1] = Math.Max(0m, oasis.Stockpile[1] - oasisCaptured.Iron);
+                oasis.Stockpile[2] = Math.Max(0m, oasis.Stockpile[2] - oasisCaptured.Stone);
+                oasis.Stockpile[3] = Math.Max(0m, oasis.Stockpile[3] - oasisCaptured.Wheat);
+            }
+        }
         if (formerOwner2 != army.OwnerId) { oasis.WallLevel = 0; oasis.WallHealth = 0; oasis.AutoTransport = true; }
         oasis.OwnerId = army.OwnerId; oasis.VillageId = army.HomeVillageId;
         var parentReport=oasisSieges.Find(s=>s.Oasis==oasis&&s.Status=="Active")?.Id;
@@ -412,7 +427,9 @@ public sealed partial class LogisticsWorld
         RefreshOasisBonuses();
         var report2 = BeginReport(Guid.NewGuid(), "Occupation", now, army, formerOwner2, null, oasis.Position);
         report2.ParentReportId=parentReport;
-        ReportEvent(report2.Id, now, $"{oasis.Name} captured. Home production gains +50% {oasis.Resource} and +25% other resources. No resources were looted.", "Victory", army.OwnerId);
+        if (oasisCaptured.Total > 0) { report2.AttackerLoot += oasisCaptured; report2.DefenderLoss += oasisCaptured; }
+        var lootSummary = oasisCaptured.Total > 0 ? $"Looted {ResourceText(oasisCaptured)}." : "No resources were looted.";
+        ReportEvent(report2.Id, now, $"{oasis.Name} captured. Home production gains +50% {oasis.Resource} and +25% other resources. {lootSummary}", "Victory", army.OwnerId);
         Note(army.OwnerId, now, $"{oasis.Name} now supports its occupying village.", "war");
         if (formerOwner2 is { } former2 && former2 != army.OwnerId) Note(former2, now, "Your oasis was captured. Its production bonus has ended.", "oasis-loss", targetId: oasis.Id);
         army.ActionSeconds = 0;

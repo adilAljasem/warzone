@@ -31,7 +31,7 @@ public sealed partial class LogisticsWorld
             if (!armies.Contains(camp)) continue;
             var battle = battles.FirstOrDefault(b => b.Status == "Active" && b.ActiveContains(camp));
             var radius = camp.CampRadius!.Value;
-            var enemy = armies.Where(a => a != camp && !a.Routing && !Engaged(a) && Fighters(a) > 0
+            var enemy = armies.Where(a => a != camp && !a.Routing && a.Order != "Returning" && !Engaged(a) && Fighters(a) > 0
                     && !CampAllied(camp.OwnerId, a.OwnerId) && Distance(camp.Position, a.Position) <= radius)
                 .OrderBy(a => Distance(camp.Position, a.Position)).FirstOrDefault();
             if (enemy is not null)

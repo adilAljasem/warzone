@@ -320,39 +320,7 @@ public sealed partial class LogisticsWorld
             force.Loot=new();force.Wheat=0;
         }
         loot=totalSpoils;
-        if(recipients.Length>0&&totalSpoils.Total>0)
-        {
-            var remaining=totalSpoils;
-            var spaces=recipients.Select(r=>Math.Max(0d,r.LootSpace)).ToArray();
-            var totalSpace=spaces.Sum();
-            if(totalSpace>0)
-            {
-                var cap=Math.Min((double)totalSpoils.Total,totalSpace);
-                for(var i=0;i<recipients.Length&&remaining.Total>0;i++)
-                {
-                    if(spaces[i]<=0)continue;
-                    var shareRatio=cap*(spaces[i]/totalSpace)/totalSpoils.Total;
-                    var slice=totalSpoils.Fraction(shareRatio);
-                    var bounded=new Resources(
-                        Math.Min(remaining.Wood,slice.Wood),
-                        Math.Min(remaining.Iron,slice.Iron),
-                        Math.Min(remaining.Stone,slice.Stone),
-                        Math.Min(remaining.Wheat,slice.Wheat));
-                    var before=recipients[i].Loot;
-                    TakeLoot(recipients[i],bounded);
-                    var took=recipients[i].Loot-before;
-                    remaining-=took;captured+=took;
-                }
-                foreach(var force in recipients)
-                {
-                    if(remaining.Total<=0)break;
-                    var before=force.Loot;
-                    TakeLoot(force,remaining);
-                    var took=force.Loot-before;
-                    remaining-=took;captured+=took;
-                }
-            }
-        }
+        captured = DistributeLoot(recipients, totalSpoils);
         battle.Status="Resolved";battle.Ended=now;battle.Winner=survivors.Length==0?null:survivors[0].OwnerId;
         var report=reports.Find(r=>r.Id==battle.Id);
         if(report is not null){if(attacking){report.AttackerLoot+=captured;report.DefenderLoss+=loot;}else{report.DefenderLoot+=captured;report.AttackerResourceLoss+=loot;}}
@@ -361,5 +329,40 @@ public sealed partial class LogisticsWorld
         foreach(var force in won){if(convoyArmies.Contains(force))continue;if(Count(force)==0){armies.Remove(force);continue;}ResumeBattleWinner(battle,force);}
         if(survivors.Length>0)foreach(var owner in won.Select(a=>a.OwnerId).Distinct())Note(owner,now,"Victory in the field. Survivors follow their orders.");
         foreach(var owner in lost.Select(a=>a.OwnerId).Distinct())Note(owner,now,"The engagement is lost. Survivors are withdrawing; wounded are heading to hospital.");
+    }
+
+    private static Resources DistributeLoot(Army[] recipients, Resources totalSpoils)
+    {
+        var captured = new Resources();
+        if (recipients.Length == 0 || totalSpoils.Total <= 0) return captured;
+        var remaining = totalSpoils;
+        var spaces = recipients.Select(r => Math.Max(0d, r.LootSpace)).ToArray();
+        var totalSpace = spaces.Sum();
+        if (totalSpace <= 0) return captured;
+        var cap = Math.Min((double)totalSpoils.Total, totalSpace);
+        for (var i = 0; i < recipients.Length && remaining.Total > 0; i++)
+        {
+            if (spaces[i] <= 0) continue;
+            var shareRatio = cap * (spaces[i] / totalSpace) / totalSpoils.Total;
+            var slice = totalSpoils.Fraction(shareRatio);
+            var bounded = new Resources(
+                Math.Min(remaining.Wood, slice.Wood),
+                Math.Min(remaining.Iron, slice.Iron),
+                Math.Min(remaining.Stone, slice.Stone),
+                Math.Min(remaining.Wheat, slice.Wheat));
+            var before = recipients[i].Loot;
+            TakeLoot(recipients[i], bounded);
+            var took = recipients[i].Loot - before;
+            remaining -= took; captured += took;
+        }
+        foreach (var force in recipients)
+        {
+            if (remaining.Total <= 0) break;
+            var before = force.Loot;
+            TakeLoot(force, remaining);
+            var took = force.Loot - before;
+            remaining -= took; captured += took;
+        }
+        return captured;
     }
 }
