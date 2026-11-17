@@ -176,7 +176,17 @@ export class WorldMap {
     }
   }
   refreshLanguage() { this.signature = ""; this.terrainSignature = ""; const view = this.last; if(view)this.update(view.world,view.players,view.viewer,view.lobbyCapacity); }
-  zoom(delta: number) { this.zoomFactor = Math.max(.7, Math.min(8, this.zoomFactor + delta)); this.fit(); this.cameraMoveHandler?.(); }
+  zoom(delta: number) {
+    const prevZoom = this.zoomFactor;
+    const nextZoom = Math.max(.7, Math.min(8, prevZoom + delta));
+    if (nextZoom === prevZoom) return;
+    const ratio = nextZoom / prevZoom;
+    this.zoomFactor = nextZoom;
+    this.pan.x *= ratio;
+    this.pan.y *= ratio;
+    this.fit();
+    this.cameraMoveHandler?.();
+  }
   home() { this.zoomFactor = 1; this.pan = { x: 0, y: 0 }; this.fit(); this.cameraMoveHandler?.(); }
   focus(point: Point, zoom = 3.2) {
     if (!this.ready) {
