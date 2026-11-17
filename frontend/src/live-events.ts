@@ -20,10 +20,20 @@ function eventIconSvg(kind: LiveEventIcon): string {
 export function activeEvents(world:WorldView,you:string):LiveEvent[]{
     const events:LiveEvent[]=[],reports=world.reports??[];
     const active=reports.filter(r=>r.status==='Active');
+    const isPlayerInWorld=world.warfare?.settlements.some(s=>s.ownerId===you)||world.armies.some(a=>a.ownerId===you);
     for(const r of active){
         if(r.parentReportId&&active.some(parent=>parent.id===r.parentReportId))continue;
         const siege=world.warfare?.sieges.find(s=>s.id===r.id);
         const oasisSiege=world.oasisSieges?.find(os=>os.id===r.id);
+        const battle=world.warfare?.battles.find(b=>b.id===r.id);
+        if(isPlayerInWorld){
+            const isDefending=r.defender===you||siege?.defenderOwner===you||oasisSiege?.defenderOwner===you||battle?.defenderOwner===you;
+            const stillFighting=(r.armies?.some(a=>a.ownerId===you&&a.active)??false)
+                ||(siege?.armyIds.some(id=>world.armies.some(a=>a.id===id&&a.ownerId===you))??false)
+                ||(oasisSiege?.armyIds.some(id=>world.armies.some(a=>a.id===id&&a.ownerId===you))??false)
+                ||(battle?[...battle.attackerArmyIds,...battle.defenderArmyIds].some(id=>world.armies.some(a=>a.id===id&&a.ownerId===you)):false);
+            if(!isDefending&&!stillFighting)continue;
+        }
         const isAttacker=r.attacker===you||(r.armies?.some(a=>a.ownerId===you&&a.attacking)??false);
         const title=siege?({Fighting:'Village battle',Blockading:'Village blockade',Persuading:'Persuasion in progress',Demolishing:'Demolition in progress'}[siege.phase]??'Village battle'):r.kind==='OasisSiege'?'Oasis under attack':r.kind==='Interception'?'Caravan under attack':'Battle in progress';
         const detail=siege?(siege.phase==='Persuading'?`${Math.round(siege.progress)}% persuasion`:siege.phase==='Demolishing'?`${siege.remainingBuildingLevels} building levels remaining`:siege.phase==='Blockading'?'External supplies blocked · Wheat −50%':'View live battle report'):'View live battle report';

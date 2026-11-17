@@ -1,5 +1,12 @@
 {
   "phrases": {
+    "Instant swap (2:1)": "تبديل فوري (2:1)",
+    "Trade resources instantly without wagons by paying double what you receive.": "بدّل الموارد فوراً بدون عربات بدفع ضعف الكمية التي تحصل عليها.",
+    "Give (2x)": "تدفع (الضعف)",
+    "Receive (1x)": "تستلم",
+    "Swap now (2:1)": "تبديل فوري (2:1)",
+    "Player market": "سوق اللاعبين",
+    "The heart of your province. Unlocks more automatic training queues and increases all village resource production by +50% every 5 levels.": "قلب الإقليم. يفتح طوابير تدريب تلقائية إضافية ويرفع إنتاج جميع موارد القرية بنسبة +50% كل 5 مستويات.",
     "Guide": "التعليمات",
     "Game guide": "دليل اللعبة (التعليمات)",
     "Replay tutorial": "إعادة التيتوريال التفاعلي",

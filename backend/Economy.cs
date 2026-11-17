@@ -100,7 +100,7 @@ public sealed class GameRuleException(string code, string message) : Exception(m
 }
 
 public enum CommandKind { Upgrade, Train, SetAutoQueue, DispatchArmy, MoveArmy, CampArmy, RecallArmy, ConfigureSupply, CaptureOasis, InterceptConvoy,
-    AttackArmy, BeginSiege, CaptureCastle, RelocateVillage, SelectVillage, SetAfterAttack, Reinforce, PostMarketOffer, AcceptMarketOffer, CancelMarketOffer, SetOasisTransport, CollectOasis, UpgradeOasisWall, UpgradeOasisLevel, BesiegeOasis, BurnOasis, Scout,
+    AttackArmy, BeginSiege, CaptureCastle, RelocateVillage, SelectVillage, SetAfterAttack, Reinforce, PostMarketOffer, AcceptMarketOffer, CancelMarketOffer, SwapMarket, SetOasisTransport, CollectOasis, UpgradeOasisWall, UpgradeOasisLevel, BesiegeOasis, BurnOasis, Scout,
     SendResources, SendChat, ProposeAlliance, RespondAlliance, CancelAllianceRequest, MergeArmies, DisbandTroops }
 public enum OasisMode { Capture, Blockade, Burn }
 public enum AfterAttack { Hold, Return }
@@ -262,6 +262,7 @@ public sealed class VillageEconomy
 
     private void StartUpgrade(UpgradeableTarget target, double now)
     {
+        if (target is Building && Besieged) throw new GameRuleException("siege", "Buildings cannot be upgraded while the village is under siege.");
         if (target is UnitTraining training) RequireUnlocked(training);
         var cost = EffectiveUpgradeCost(target) ?? throw new GameRuleException("max_level", "Maximum level reached.");
         if (target is Building building && building.Type != BuildingType.MainHall && building.Level >= BuildingLevel(BuildingType.MainHall))
@@ -387,15 +388,17 @@ public sealed class VillageEconomy
     }
 
     private static int BaseProductionPerMinute(ResourceType resource) => resource == ResourceType.Wheat ? 360 : 240;
+    private double MainHallProductionMultiplier => 1.0 + (BuildingLevel(BuildingType.MainHall) / 5) * 0.5;
 
     internal void Advance(double seconds, double now, double resourceSpeed)
     {
         if (Ruined) return;
         var upkeep = HomeUpkeep / 60;
+        var hallMult = MainHallProductionMultiplier;
         for (var i = 0; i < stock.Length; i++)
         {
             var resource = (ResourceType)i;
-            var rate = BaseProductionPerMinute(resource) / 60d * resourceSpeed * BotResourceMultiplier * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, resource) * (1 + OasisBonuses[i]) * (Besieged && resource == ResourceType.Wheat ? .5 : 1) - (resource == ResourceType.Wheat ? upkeep : 0);
+            var rate = BaseProductionPerMinute(resource) / 60d * resourceSpeed * hallMult * BotResourceMultiplier * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, resource) * (1 + OasisBonuses[i]) * (Besieged && resource == ResourceType.Wheat ? .5 : 1) - (resource == ResourceType.Wheat ? upkeep : 0);
             stock[i] = Math.Clamp(stock[i] + (decimal)(rate * seconds), 0, Math.Max(Capacity, stock[i]));
         }
         FoodShortage = stock[3] == 0 && upkeep > 0;
@@ -427,7 +430,7 @@ public sealed class VillageEconomy
     public ProductionSnapshot[] Production(double resourceSpeed = 1) => Enum.GetValues<ResourceType>().Select(resource =>
     {
         var normal = BaseProductionPerMinute(resource);
-        var gross = Ruined ? 0 : normal * resourceSpeed * BotResourceMultiplier * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, resource) * (1 + OasisBonuses[(int)resource]) * (Besieged && resource == ResourceType.Wheat ? .5 : 1);
+        var gross = Ruined ? 0 : normal * resourceSpeed * MainHallProductionMultiplier * BotResourceMultiplier * bonuses.ResourceMultiplier * Biomes.Multiplier(Biome, resource) * (1 + OasisBonuses[(int)resource]) * (Besieged && resource == ResourceType.Wheat ? .5 : 1);
         var upkeep = resource == ResourceType.Wheat && !Ruined ? HomeUpkeep : 0;
         var net = gross - upkeep;
         return new ProductionSnapshot(resource.ToString(), gross, upkeep, net, net / normal * 100, Besieged && resource == ResourceType.Wheat, stock[(int)resource] >= Capacity);

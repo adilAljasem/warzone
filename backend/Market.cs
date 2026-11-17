@@ -31,7 +31,7 @@ public sealed partial class LogisticsWorld
     }
     private bool ApplyMarket(Guid actor, GameCommand command, double now)
     {
-        if (command.Kind is not (CommandKind.PostMarketOffer or CommandKind.AcceptMarketOffer or CommandKind.CancelMarketOffer)) return false;
+        if (command.Kind is not (CommandKind.PostMarketOffer or CommandKind.AcceptMarketOffer or CommandKind.CancelMarketOffer or CommandKind.SwapMarket)) return false;
         if (command.Kind == CommandKind.CancelMarketOffer)
         {
             var offer = marketOffers.Find(o => o.Id == command.TargetId && o.OwnerId == actor)
@@ -39,6 +39,22 @@ public sealed partial class LogisticsWorld
             RefundOffer(offer); Note(actor, now, "Market offer cancelled. Reserved goods and wagons are available again."); return true;
         }
         var city = EconomyTarget(actor, command.TargetId); RequireMarket(city);
+        if (command.Kind == CommandKind.SwapMarket)
+        {
+            if (!Enum.IsDefined(command.OfferResource) || !Enum.IsDefined(command.AskResource)
+                || command.OfferResource == command.AskResource || command.AskAmount is < 1 or > 500000)
+                throw new GameRuleException("offer", "Choose two different resources and a positive amount up to 500,000.");
+            var costAmount = command.AskAmount * 2;
+            var swapCost = ResourceAmount(command.OfferResource, costAmount);
+            if (!city.Resources.Covers(swapCost))
+                throw new GameRuleException("resources", "Not enough resources for a 2:1 instant swap.");
+            if (ResourceOf(city.Resources, command.AskResource) + command.AskAmount > city.Capacity)
+                throw new GameRuleException("capacity", "Not enough storage capacity for the received resource.");
+            city.Pay(swapCost);
+            city.ReceiveCargo(ResourceAmount(command.AskResource, command.AskAmount));
+            Note(actor, now, $"Instant swap: traded {costAmount} {command.OfferResource} for {command.AskAmount} {command.AskResource} (2:1).");
+            return true;
+        }
         if (command.Kind == CommandKind.PostMarketOffer)
         {
             if (!Enum.IsDefined(command.OfferResource) || !Enum.IsDefined(command.AskResource)

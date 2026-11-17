@@ -291,7 +291,7 @@ let pointerPressed = false, pendingSnapshot: Snapshot | null = null;
 let amount = 5, afterAttack = "Hold", supplySource = "", supplyWagons = 0, escorts = 2, autoSupply = true;
 let attackObjective = "Raid";
 let dispatchMission: "attack" | "reinforce" | "blockade" | "scout" | "camp" | "burn" = "attack";
-const marketDraft: MarketDraft = { offerResource: "Wood", offerAmount: 500, askResource: "Iron", askAmount: 500 };
+const marketDraft: MarketDraft = { offerResource: "Wood", offerAmount: 500, askResource: "Iron", askAmount: 500, swapGiveResource: "Iron", swapTakeResource: "Wheat", swapAmount: 250 };
 const transferDraft: Resources = { wood: 100, iron: 100, stone: 100, wheat: 100 };
 let transferSource = "", chatOpen = window.innerWidth > 700, chatKey = "";
 let dispatchAuto = true, campLoadedOnly = true, dispatchArmy = "new", preferredDispatchArmy = "", formation: Record<string, number> = {};
@@ -1800,7 +1800,7 @@ function renderTimers() {
     patchHtml(el("work-queue"), queueHtml);
     renderBuildings();
 }
-const descriptions: Record<string, string> = { Market: "Exchange goods with other players. Each level adds an offer slot. Goods and wagons are reserved until cancellation or trade delivery.", MainHall: "The heart of your province. Higher levels unlock more automatic training queues.", Warehouse: "Protect and store your supplies. Upgrade to increase the capacity of every resource.", Barracks: "Recruit infantry, spearmen and swordsmen. Prepare your next expedition here.", Stable: "Train cavalry, scouts and wagons to keep your armies moving.", SiegeWorkshop: "Build catapults and rams to overcome fortified cities.", Smithy: "Improve the weapons and armor of forces based in this village.", Hospital: "Wounded soldiers return here and recover automatically, using iron and wheat.", Wall: "Protect your garrison. Higher walls resist automatic attacks and siege engines." };
+const descriptions: Record<string, string> = { Market: "Exchange goods with other players or swap instantly at a 2:1 ratio. Each level adds an offer slot.", MainHall: "The heart of your province. Unlocks more automatic training queues and increases all village resource production by +50% every 5 levels.", Warehouse: "Protect and store your supplies. Upgrade to increase the capacity of every resource.", Barracks: "Recruit infantry, spearmen and swordsmen. Prepare your next expedition here.", Stable: "Train cavalry, scouts and wagons to keep your armies moving.", SiegeWorkshop: "Build catapults and rams to overcome fortified cities.", Smithy: "Improve the weapons and armor of forces based in this village.", Hospital: "Wounded soldiers return here and recover automatically, using iron and wheat.", Wall: "Protect your garrison. Higher walls resist automatic attacks and siege engines." };
 let drawerTabs = "", drawerBody = "";
 function setTabs(tabs: {
     id: string;
@@ -1857,7 +1857,7 @@ function buildingPanel(target: Target) {
     if (panelTab === "govern")
         return governPanel();
     if (panelTab === "trade" && target.name === "Market") return marketPanel(state!.world!, e, state!.you, marketDraft, owner, running());
-    const extra = target.name === "Warehouse" ? `Storage per resource: ${e.capacity.toLocaleString()}` : target.name === "Hospital" ? `${e.wounded} wounded awaiting recovery` : target.name === "MainHall" ? `${e.usedAutoSlots} / ${e.autoSlots} automatic training queues` : target.name === "Smithy" ? `Attack & armor bonus: ${5 * (target.level - 1)}%` : target.name === "Market" ? `Market offer slots: ${target.level}` : target.name === "Wall" ? "Higher walls increase garrison protection." : "Faster recruitment with every building level.";
+    const extra = target.name === "Warehouse" ? `Storage per resource: ${e.capacity.toLocaleString()}` : target.name === "Hospital" ? `${e.wounded} wounded awaiting recovery` : target.name === "MainHall" ? `${e.usedAutoSlots} / ${e.autoSlots} auto queues · Production +${Math.floor(target.level / 5) * 50}%` : target.name === "Smithy" ? `Attack & armor bonus: ${5 * (target.level - 1)}%` : target.name === "Market" ? `Market offer slots: ${target.level} · Instant swap 2:1` : target.name === "Wall" ? "Higher walls increase garrison protection." : "Faster recruitment with every building level.";
     return `<div class="panel-hero">${target.kind === 'Training' ? unitPortrait(unitId(target)) : buildingArt(target.name, currentTribe())}<span class="level-seal">${target.level}<small>LEVEL</small></span></div><p class="muted">${descriptions[target.name] ?? 'Upgrade this training tier to recruit this unit faster.'}</p><div class="stat-line"><span>${extra}</span></div>${laneQueue}${training.length ? trainingSummary(target, training) + trainingRoadmap(training) : ''}<div class="cost-box"><small>${target.upgradeCost ? `UPGRADE TO LEVEL ${target.level + 1}` : 'FULLY UPGRADED'}</small>${costs(target.upgradeCost)}</div><div class="panel-footer">${button(target.kind === 'Training' ? 'Upgrade training tier' : 'Upgrade building', 'upgrade', target.id, 'primary wide', !running() || !target.upgradeCost || cappedByMainHall || !affordable(target.upgradeCost))}<small class="${cappedByMainHall ? "requirement-lack" : ""}">${cappedByMainHall ? `Requires Main Hall level ${target.level + 1}` : 'Upgrades complete instantly after payment.'}</small>${target.name === 'Market' ? button('Open market', 'tab', 'trade', 'quiet wide') : ''}</div>`;
 
 }
@@ -2662,6 +2662,19 @@ document.addEventListener("input", event => {
     }
     if (input.id === 'market-offer-amount') marketDraft.offerAmount = Math.floor(Number(input.value));
     if (input.id === 'market-ask-amount') marketDraft.askAmount = Math.floor(Number(input.value));
+    if (input.id === 'market-swap-amount') {
+        marketDraft.swapAmount = Math.max(0, Math.floor(Number(input.value) || 0));
+        const eco = state?.economy;
+        if (eco) {
+            const swapCost = marketDraft.swapAmount * 2;
+            const giveStock = eco.resources[marketDraft.swapGiveResource.toLowerCase() as keyof typeof eco.resources] ?? 0;
+            const takeStock = eco.resources[marketDraft.swapTakeResource.toLowerCase() as keyof typeof eco.resources] ?? 0;
+            const note = document.getElementById("market-swap-cost-note");
+            if (note) note.textContent = `Cost: ${swapCost.toLocaleString()} ${marketDraft.swapGiveResource} (have ${Math.floor(giveStock).toLocaleString()})`;
+            const btn = document.getElementById("market-swap-btn") as HTMLButtonElement | null;
+            if (btn) btn.disabled = !running() || eco.besieged || marketDraft.swapAmount < 1 || marketDraft.swapGiveResource === marketDraft.swapTakeResource || giveStock < swapCost || takeStock + marketDraft.swapAmount > eco.capacity;
+        }
+    }
     if (input.dataset.formation) {
         formation[input.dataset.formation] = Math.min(Number(input.max), Math.max(0, Math.floor(Number(input.value) || 0)));
         const quickBtn = input.parentElement?.querySelector<HTMLButtonElement>('[data-action="formation-quick"]');
@@ -2691,7 +2704,7 @@ document.addEventListener("input", event => {
         escorts = Number(input.value);
 });
 document.addEventListener("change", event => {
-    const input = event.target as HTMLInputElement, key = input.id; if (key === "transfer-source") transferSource = input.value; if (key === "market-offer-resource") marketDraft.offerResource = input.value; if (key === "market-ask-resource") marketDraft.askResource = input.value; if (key.startsWith("market-")) renderDrawer(true); if (key === "after-attack") { afterAttack = input.value; if (panel === "dispatch") renderDrawer(true); } if (key === "after-attack" && panel === "army" && army()) void perform(async () => { await command("SetAfterAttack", army()!.id, { afterAttack }); }); if (key === "supply-source")
+    const input = event.target as HTMLInputElement, key = input.id; if (key === "transfer-source") transferSource = input.value; if (key === "market-offer-resource") marketDraft.offerResource = input.value; if (key === "market-ask-resource") marketDraft.askResource = input.value; if (key === "market-swap-give") marketDraft.swapGiveResource = input.value; if (key === "market-swap-take") marketDraft.swapTakeResource = input.value; if (key.startsWith("market-")) renderDrawer(true); if (key === "after-attack") { afterAttack = input.value; if (panel === "dispatch") renderDrawer(true); } if (key === "after-attack" && panel === "army" && army()) void perform(async () => { await command("SetAfterAttack", army()!.id, { afterAttack }); }); if (key === "supply-source")
         supplySource = input.value; if (key === "dispatch-army") {
             dispatchArmy = input.value;
             page = 0; loadDispatchFormation(); highlightDispatchArmy(); renderDrawer(true);
@@ -3056,6 +3069,7 @@ document.addEventListener("click", event => {
         else if (action === 'market-post') await command('PostMarketOffer', state!.economy!.villageId, marketDraft as unknown as Record<string, unknown>);
         else if (action === 'market-accept') await command('AcceptMarketOffer', state!.economy!.villageId, { destinationId: id });
         else if (action === 'market-cancel') await command('CancelMarketOffer', id);
+        else if (action === 'market-swap') await command('SwapMarket', state!.economy!.villageId, { offerResource: marketDraft.swapGiveResource, askResource: marketDraft.swapTakeResource, askAmount: marketDraft.swapAmount });
         else if (action === "upgrade")
             await command("Upgrade", id);
         else if (action === "train")

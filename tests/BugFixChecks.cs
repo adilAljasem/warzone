@@ -374,6 +374,49 @@ internal static class BugFixChecks
             Check(armiesOut >= 1, $"Late-game bot dispatched army out of the village after recovering from wheat shortage (armiesOut={armiesOut})");
         }
 
+        // 9. Instant Market 2:1 swap + bot uses SwapMarket to rescue wheat shortage + MainHall 50% production bonus per 5 levels.
+        {
+            var c1 = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var c2 = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(900, 500));
+            var world = new LogisticsWorld([c1, c2], 1010);
+            var wh = c1.Village.Buildings.Single(b => b.Type == BuildingType.Warehouse);
+            while (wh.Level < 5) wh.CompleteUpgrade(wh.Level);
+            c1.AddResources(new(4000, 4000, 4000, 0));
+            var ironBefore = c1.Resources.Iron;
+            var wheatBefore = c1.Resources.Wheat;
+
+            // 2:1 swap: receive 500 Wheat, pay 1000 Iron
+            world.Apply(c1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.SwapMarket, c1.Village.Id,
+                OfferResource: ResourceType.Iron, AskResource: ResourceType.Wheat, AskAmount: 500), 0, 0);
+            Check(c1.Resources.Iron == ironBefore - 1000 && c1.Resources.Wheat == wheatBefore + 500,
+                "Instant 2:1 market swap deducts 2x resource and adds 1x target resource");
+
+            // Main Hall +50% resource production per 5 levels
+            var hall = c1.Village.Buildings.Single(b => b.Type == BuildingType.MainHall);
+            var lvl1Wood = c1.Production().Single(p => p.Resource == "Wood").GrossPerMinute;
+            while (hall.Level < 5) hall.CompleteUpgrade(hall.Level);
+            var lvl5Wood = c1.Production().Single(p => p.Resource == "Wood").GrossPerMinute;
+            Check(Math.Abs(lvl5Wood - lvl1Wood * 1.5) < 0.01, "Main Hall level 5 boosts all resource production by +50%");
+            while (hall.Level < 10) hall.CompleteUpgrade(hall.Level);
+            var lvl10Wood = c1.Production().Single(p => p.Resource == "Wood").GrossPerMinute;
+            Check(Math.Abs(lvl10Wood - lvl1Wood * 2.0) < 0.01, "Main Hall level 10 boosts all resource production by +100%");
+
+            // Besieged village cannot upgrade buildings to stall demolition
+            c1.Besieged = true;
+            Reject(() => c1.Apply(new(Guid.NewGuid(), CommandKind.Upgrade,
+                c1.Snapshot().Targets.First(t => t.Name == "Barracks").Id), 0), "siege");
+            c1.Besieged = false;
+
+            // Bot rescues FoodShortage instantly using surplus Iron via SwapMarket
+            c2.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]), 700)]);
+            var now = 0d;
+            for (var i = 0; i < 600 && !c2.FoodShortage; i++) { now += 1; world.AdvanceEconomies(1, now, 1); world.Advance(1, now, 1, 3600); }
+            c2.AddResources(new(3000, 3000, 0, 0));
+            var botCmd = new WorldTestCommands(world, () => now);
+            world.BotAct(c2.Village.OwnerId, botCmd, BotPersonality.Economic, BotDifficulty.Normal);
+            Check(c2.Resources.Wheat > 0, "Bot used instant 2:1 market swap to convert surplus Wood/Iron into Wheat immediately");
+        }
+
         return checks;
     }
 

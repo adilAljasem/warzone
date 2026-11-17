@@ -611,9 +611,9 @@ public sealed partial class LogisticsWorld
             budget = Math.Min(budget - 1, Math.Max(minFallback, (int)(budget * 0.72)));
         }
 
-        // If wheat/wagons are too scarce for heavy or large formations, try a smaller low-upkeep expedition down to 10 soldiers.
+        // If wheat/wagons are too scarce for heavy or large formations, try a smaller low-upkeep expedition without spamming tiny squads.
         var lightBudget = Math.Min(Math.Min(maxSoldiers, 160), Math.Max(0, availableTotal - reserveAtHome));
-        var lightFloor = Math.Min(minFallback, 10);
+        var lightFloor = warTime >= protectionUntil ? Math.Max(minFallback, 24) : Math.Min(minFallback, 10);
         while (lightBudget >= lightFloor)
         {
             var form = new Dictionary<string, int>();
@@ -674,7 +674,55 @@ public sealed partial class LogisticsWorld
 
     private void BotManageTradeAndAid(Guid actor, VillageEconomy home, Army[] ownArmies, IGameCommands commands, BotDifficulty difficulty)
     {
-        if (home.Besieged || home.BuildingLevel(BuildingType.Market) < 1) return;
+        if (home.Besieged || home.Relocating || home.BuildingLevel(BuildingType.Market) < 1) return;
+
+        // Instant 2:1 market swap to prevent wheat bankruptcy and avoid overflowing warehouse capacity.
+        var homeTroops = HomeCombatTroops(home);
+        var homeWheatNet = home.Production().FirstOrDefault(p => p.Resource == ResourceType.Wheat.ToString())?.NetPerMinute ?? 0;
+        var wheatGoal = Math.Clamp(Math.Max(500L, homeTroops * 3L), 500L, Math.Max(500L, (long)(home.Capacity * 0.65)));
+        if (home.FoodShortage || homeWheatNet < 20 || home.Resources.Wheat < wheatGoal)
+        {
+            var nonWheat = new[]
+            {
+                (Type: ResourceType.Wood, Value: home.Resources.Wood),
+                (Type: ResourceType.Iron, Value: home.Resources.Iron),
+                (Type: ResourceType.Stone, Value: home.Resources.Stone)
+            }.OrderByDescending(x => x.Value).ToArray();
+            var keepNonWheat = home.FoodShortage || home.Resources.Wheat < 350 ? 80L : 400L;
+            foreach (var src in nonWheat)
+            {
+                var room = Math.Max(0L, home.Capacity - home.Resources.Wheat);
+                var need = Math.Min(Math.Max(0L, wheatGoal + 400L - home.Resources.Wheat), room);
+                var availGain = (src.Value - keepNonWheat) / 2;
+                var gain = Math.Min(need, availGain);
+                if (gain >= 20)
+                {
+                    commands.Execute(actor, new(Guid.NewGuid(), CommandKind.SwapMarket, home.Village.Id,
+                        OfferResource: src.Type, AskResource: ResourceType.Wheat, AskAmount: gain));
+                }
+            }
+        }
+        else
+        {
+            var stocksNow = new[]
+            {
+                (Type: ResourceType.Wood, Value: home.Resources.Wood),
+                (Type: ResourceType.Iron, Value: home.Resources.Iron),
+                (Type: ResourceType.Stone, Value: home.Resources.Stone),
+                (Type: ResourceType.Wheat, Value: home.Resources.Wheat)
+            };
+            var overflow = stocksNow.Where(x => x.Value >= home.Capacity * 0.90).OrderByDescending(x => x.Value).FirstOrDefault();
+            var needy = stocksNow.Where(x => x.Type != overflow.Type && x.Value <= home.Capacity * 0.45).OrderBy(x => x.Value).FirstOrDefault();
+            if (overflow.Value > 0 && needy.Type != overflow.Type)
+            {
+                var gain = Math.Min((overflow.Value - (long)(home.Capacity * 0.65)) / 2, (long)(home.Capacity * 0.70) - needy.Value);
+                if (gain >= 100 && (overflow.Type != ResourceType.Wheat || home.Resources.Wheat - gain * 2 >= wheatGoal))
+                {
+                    commands.Execute(actor, new(Guid.NewGuid(), CommandKind.SwapMarket, home.Village.Id,
+                        OfferResource: overflow.Type, AskResource: needy.Type, AskAmount: gain));
+                }
+            }
+        }
 
         const int MaxBotTradeConvoys = 3;
         var activeTrades = convoys.Count(c => c.Kind is ConvoyKind.Trade or ConvoyKind.Shipment && c.OwnerId == actor);
@@ -825,9 +873,9 @@ public sealed partial class LogisticsWorld
                 var b = idles[j];
                 var dist = Distance(a.Position, b.Position);
                 if (dist > maxRange) continue;
-                var shouldCombine = Fighters(a) < 26 || Fighters(b) < 26
-                    || ownArmies.Length >= maxArmies - 1
-                    || (difficulty == BotDifficulty.Hard && Math.Min(Fighters(a), Fighters(b)) < 36);
+                var shouldCombine = Fighters(a) < 34 || Fighters(b) < 34
+                    || idles.Length >= 2 && ownArmies.Length >= maxArmies - 1
+                    || (difficulty == BotDifficulty.Hard && Math.Min(Fighters(a), Fighters(b)) < 45);
                 if (shouldCombine && dist < bestDist)
                 {
                     bestDist = dist;
@@ -1025,8 +1073,19 @@ public sealed partial class LogisticsWorld
         TryBotScout(actor, home, ownArmies, commands, difficulty);
 
         var fieldCount = ActiveFieldArmyCount(ownArmies);
-        var maxArmies = difficulty == BotDifficulty.Hard ? (warTime < protectionUntil ? 3 : 6) : warTime < protectionUntil ? 4 : personality == BotPersonality.Aggressive ? 5 : 4;
+        var maxArmies = difficulty == BotDifficulty.Hard ? (warTime < protectionUntil ? 3 : 4) : 3;
         if (TryBotMergeArmies(actor, home, ownArmies, commands, difficulty, maxArmies)) return;
+
+        // Release stale solo blockades (> 120s with no allied siege assault coming) so bots don't park armies in eternal blockades.
+        var staleBlockade = ownArmies.FirstOrDefault(a => a.Order == "Sieging"
+            && sieges.Any(s => s.Status == "Active" && s.Objective == AttackObjective.Blockade && s.Attackers.Contains(a)
+                && warTime - s.Started >= 120
+                && !armies.Any(other => other.Order == "Approaching" && other.TargetId == s.City.Village.Id && CampAllied(actor, other.OwnerId) && other.Objective != AttackObjective.Blockade)));
+        if (staleBlockade is not null)
+        {
+            commands.Execute(actor, new(Guid.NewGuid(), CommandKind.RecallArmy, staleBlockade.Id));
+            return;
+        }
 
         bool TryRelieveWheatDeadlock()
         {

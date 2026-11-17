@@ -438,8 +438,9 @@ public sealed partial class LogisticsWorld
             return AttackObjective.Raze;
         if (isContender && governors > 0 && fighters >= 35) return AttackObjective.Conquest;
         var cityDefense = targetCity.Garrison().Sum(t => t.Count) + targetCity.BuildingLevel(BuildingType.Wall) * 5 + Guards(targetCity.Village.Id, actor).Sum(Fighters);
+        var alliedAssaultersApproaching = armies.Any(a => CampAllied(actor, a.OwnerId) && a.Order == "Approaching" && a.TargetId == targetCity.Village.Id && a.Objective != AttackObjective.Blockade);
         if (difficulty == BotDifficulty.Hard && Guards(targetCity.Village.Id, actor).Sum(Fighters) == 0 && fighters >= 18
-            && (fighters < cityDefense * .9 || (hasAllies && fighters < 75)))
+            && fighters < cityDefense * .85 && (alliedAssaultersApproaching || cityDefense >= 35))
             return AttackObjective.Blockade;
         return AttackObjective.Raid;
     }
@@ -679,16 +680,16 @@ public sealed partial class LogisticsWorld
 
         var fieldArmies = ActiveFieldArmyCount(ownArmies);
         var activeSiegeArmies = ownArmies.Count(a => a.Order is "Approaching" or "Sieging");
-        var maxFieldArmies = difficulty == BotDifficulty.Hard ? 6 : personality == BotPersonality.Aggressive ? 4 : 3;
-        var minHomeDispatchThreshold = difficulty == BotDifficulty.Hard ? (activeSiegeArmies == 0 ? 42 : 85) : 55;
-        if (strikeArmy is null || (fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 12 && HomeCombatTroops(home) >= minHomeDispatchThreshold))
+        var maxFieldArmies = difficulty == BotDifficulty.Hard ? 4 : 3;
+        var minHomeDispatchThreshold = difficulty == BotDifficulty.Hard ? (activeSiegeArmies == 0 ? 45 : 75) : 55;
+        if (strikeArmy is null || (fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 8 && HomeCombatTroops(home) >= minHomeDispatchThreshold))
         {
             var targetCity = focusCity;
             var alliedPushingFocus = targetCity is not null && armies.Any(a => a.OwnerId != actor && CampAllied(actor, a.OwnerId)
                 && a.Order is "Approaching" or "Sieging" && a.TargetId == targetCity.Village.Id);
-            var ownPushingFocus = difficulty == BotDifficulty.Hard && targetCity is not null && ownArmies.Any(a => a.Order is "Approaching" or "Sieging" && a.TargetId == targetCity.Village.Id);
-            // If focus city already has siege pressure (allied or our first front) and Hard bot has capacity, open 2nd front against another enemy/human village with a real force.
-            if (difficulty == BotDifficulty.Hard && (alliedPushingFocus || ownPushingFocus) && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 12 && HomeCombatTroops(home) >= 40)
+            var ownPushingFocus = targetCity is not null && ownArmies.Any(a => a.Order is "Approaching" or "Sieging" && a.TargetId == targetCity.Village.Id);
+            // If this bot is already attacking targetCity or allies are pushing, avoid dogpiling small squads; pick an unbesieged enemy city when ready.
+            if ((alliedPushingFocus || ownPushingFocus) && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 8 && HomeCombatTroops(home) >= 55)
             {
                 var altCity = villages.Values
                     .Where(v => !v.Ruined && v != targetCity && v.Village.OwnerId != actor && !CampAllied(actor, v.Village.OwnerId)
@@ -696,20 +697,21 @@ public sealed partial class LogisticsWorld
                         && !armies.Any(a => CampAllied(actor, a.OwnerId) && a.Order is "Approaching" or "Sieging" && a.TargetId == v.Village.Id))
                     .OrderBy(v => (humanOwners.Contains(v.Village.OwnerId) ? -1400 : 0) + EffectiveCityThreatDefense(v) * 4 + Distance(v.Village.Position, home.Village.Position))
                     .FirstOrDefault();
-                if (altCity is not null && EffectiveCityThreatDefense(altCity) <= HomeCombatTroops(home) * 0.95)
+                if (altCity is not null && (EffectiveCityThreatDefense(altCity) <= HomeCombatTroops(home) * 0.95 || !ownPushingFocus))
                 {
                     targetCity = altCity;
                     alliedPushingFocus = false;
+                    ownPushingFocus = false;
                 }
             }
             var hasFocusOasisToHit = difficulty == BotDifficulty.Hard && !ownArmies.Any(a => a.Order == "Occupying")
                 && oases.Any(o => o.OwnerId is { } oid && oid != actor && !CampAllied(actor, oid) && o.BurnedUntil <= warTime
                     && (oid == focusEnemyId || Distance(o.Position, home.Village.Position) <= 1800));
             var minHomeToDispatch = difficulty == BotDifficulty.Hard
-                ? (activeSiegeArmies == 0 ? (hasFocusOasisToHit && HomeCombatTroops(home) < 75 ? 75 : 40) : (hasFocusOasisToHit ? 120 : 85))
-                : alliedPushingFocus ? 24 : 34;
+                ? (activeSiegeArmies == 0 ? (hasFocusOasisToHit && HomeCombatTroops(home) < 75 ? 75 : 45) : (hasFocusOasisToHit ? 120 : 75))
+                : alliedPushingFocus ? 32 : 42;
             var canLaunchFromHome = personality == BotPersonality.Aggressive || difficulty == BotDifficulty.Hard || alliedPushingFocus || HomeCombatTroops(home) >= 80;
-            if (canLaunchFromHome && targetCity is not null && (difficulty != BotDifficulty.Hard || activeSiegeArmies < 2) && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 12 && HomeCombatTroops(home) >= minHomeToDispatch)
+            if (canLaunchFromHome && targetCity is not null && !ownPushingFocus && (difficulty != BotDifficulty.Hard || activeSiegeArmies < 2) && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 8 && HomeCombatTroops(home) >= minHomeToDispatch)
             {
                 var activeFocusSiege = sieges.FirstOrDefault(s => s.City == targetCity && s.Status == "Active");
                 if (activeFocusSiege is null || CampAllied(actor, activeFocusSiege.Attacker.OwnerId))
@@ -746,11 +748,12 @@ public sealed partial class LogisticsWorld
                 }
             }
 
-            // Fallback: if home still holds >= 120 combat troops and targetCity was blocked/unaffordable, launch a fast raid/blockade on any open enemy settlement.
-            if (HomeCombatTroops(home) >= 120 && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 12)
+            // Fallback: if home still holds >= 120 combat troops and targetCity was blocked/unaffordable, launch a consolidated raid on any unbesieged enemy settlement.
+            if (HomeCombatTroops(home) >= 120 && fieldArmies < maxFieldArmies && ownArmies.Count(a => a.Order != "Guarding") < 8)
             {
                 var openEnemy = villages.Values
                     .Where(v => !v.Ruined && v.Village.OwnerId != actor && !CampAllied(actor, v.Village.OwnerId)
+                        && !ownArmies.Any(a => a.Order is "Approaching" or "Sieging" && a.TargetId == v.Village.Id)
                         && !sieges.Any(s => s.City == v && s.Status == "Active" && !CampAllied(actor, s.Attacker.OwnerId)))
                     .OrderBy(v => Distance(v.Village.Position, home.Village.Position))
                     .FirstOrDefault();

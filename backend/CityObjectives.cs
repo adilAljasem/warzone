@@ -40,9 +40,9 @@ public sealed partial class LogisticsWorld
         var leader=forces.FirstOrDefault(a=>RoleCount(a,neededRole)>0);
         if (leader is null)
         {
-            var specialistApproaching = armies.Any(a => a.Order == "Approaching" && a.TargetId == siege.City.Village.Id
+            var specialistApproaching = siege.Phase == "Fighting" && armies.Any(a => a.Order == "Approaching" && a.TargetId == siege.City.Village.Id
                 && !a.Routing && CampAllied(a.OwnerId, siege.Attacker.OwnerId) && a.Objective == siege.Objective
-                && RoleCount(a, neededRole) > 0);
+                && Distance(a.Position, siege.City.Village.Position) <= 350 && RoleCount(a, neededRole) > 0);
             if (specialistApproaching) return;
             EndSiege(siege,"SpecialistsLost",now);
             return;
@@ -70,6 +70,7 @@ public sealed partial class LogisticsWorld
             ReportEvent(siege.Id,now,$"Demolition: {building.Type} is now level {building.Level}.");
         }
         var remaining=siege.City.Village.Buildings.Sum(b=>b.Level);
+        if (remaining > siege.InitialBuildingLevels) siege.InitialBuildingLevels = remaining;
         siege.Progress=Math.Clamp(100*(1-remaining/(double)Math.Max(1,siege.InitialBuildingLevels)),0,100);
         if (remaining==0) ResolveCity(siege,now);
         else ReportEvent(siege.Id,now,$"Demolition progress {siege.Progress:0}%. Remaining building levels: {remaining}.");
