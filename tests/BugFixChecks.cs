@@ -450,6 +450,507 @@ internal static class BugFixChecks
                 $"Crown Keep reset timer on ruler change instead of letting ally win in < 1 minute (progress={handoff.CaptureProgress})");
         }
 
+        // 11. Critical backend fixes regression checks:
+        // 11a. Biome Voronoi generation stays finite across many seeds
+        {
+            for (var seed = 0; seed < 300; seed++)
+            {
+                var regions = Biomes.Generate(seed);
+                Check(regions.All(r => r.Boundary.All(p => double.IsFinite(p.X) && double.IsFinite(p.Y))),
+                    $"Seed {seed} produces finite biome boundary coordinates");
+            }
+        }
+
+        // 11b. Intercepted supply convoy awards its full WheatCargo as spoils even when all wagons die
+        {
+            var fieldOwner = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var interceptor = new VillageEconomy(Guid.NewGuid(), TribeType.Germans, new(600, 620));
+            var world = new LogisticsWorld([fieldOwner, interceptor], 303);
+            foreach (var c in new[] { fieldOwner, interceptor })
+            {
+                var wh = c.Village.Buildings.Single(b => b.Type == BuildingType.Warehouse);
+                while (wh.Level < 10) wh.CompleteUpgrade(wh.Level);
+                c.AddResources(new(10000, 10000, 10000, 20000));
+                c.ReceiveGift([
+                    new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 450),
+                    new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 25),
+                    new(BaseUnit.Create(GameCatalog.Units["germans-lightcavalry"]), 120)
+                ]);
+            }
+            // Send large infantry army far away with 0 wagons so Supply dispatches an unescorted wheat convoy (WheatCargo > 0)
+            world.Apply(fieldOwner.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, fieldOwner.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 400 }, Wagons: 0, X: 950, Y: 500), 0, 0);
+            var now = 0d;
+            for (var i = 0; i < 3200 && !world.Snapshot(fieldOwner.Village.OwnerId).Convoys.Any(c => c.Kind == ConvoyKind.Supply); i++)
+            { now += .25; world.Advance(.25, now, 0, 3600); }
+            var convoy = world.Snapshot(fieldOwner.Village.OwnerId).Convoys.First(c => c.Kind == ConvoyKind.Supply);
+            world.Apply(interceptor.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, interceptor.Village.Id,
+                Formation: new Dictionary<string, int> { ["germans-lightcavalry"] = 120 }, Wagons: 0, X: convoy.Position.X, Y: convoy.Position.Y), now, 0);
+            var raider = world.Snapshot(interceptor.Village.OwnerId).Armies.Single(a => a.OwnerId == interceptor.Village.OwnerId);
+            world.Apply(interceptor.Village.OwnerId, new(Guid.NewGuid(), CommandKind.InterceptConvoy, raider.Id, DestinationId: convoy.Id), now, 0);
+            for (var i = 0; i < 200; i++) { now += .25; world.Advance(.25, now, 0, 3600); }
+            var report = world.Snapshot(interceptor.Village.OwnerId).Reports.FirstOrDefault(r => r.Kind == "Interception");
+            Check(report is not null && report.DefenderLoss.Wheat > 0 && report.AttackerLoot.Wheat > 0,
+                $"Intercepted wheat supply convoy preserves WheatCargo spoils (loss={report?.DefenderLoss.Wheat}, loot={report?.AttackerLoot.Wheat})");
+        }
+
+        // 11c. Raze siege awards building salvage on completion
+        {
+            var att = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var def = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(650, 500));
+            var world = new LogisticsWorld([att, def], 404);
+            var wh = def.Village.Buildings.Single(b => b.Type == BuildingType.Warehouse);
+            while (wh.Level < 8) wh.CompleteUpgrade(wh.Level);
+            att.AddResources(new(10000, 10000, 10000, 20000));
+            att.ReceiveGift([
+                new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 120),
+                new(BaseUnit.Create(GameCatalog.Units["romans-catapult"]), 4),
+                new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 10)
+            ]);
+            def.AddResources(new(200, 200, 200, 200));
+            world.Apply(att.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, att.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 120, ["romans-catapult"] = 4, ["romans-wagon"] = 10 },
+                Wagons: 0, DestinationId: def.Village.Id, Objective: AttackObjective.Raze, AfterAttack: AfterAttack.Hold), 0, 0);
+            var now = 0d;
+            for (var i = 0; i < 2000 && !def.Ruined; i++) { now += .25; world.Advance(.25, now, 0, 3600); }
+            var razeReport = world.Snapshot(att.Village.OwnerId).Reports.Single(r => r.Kind == "Siege");
+            Check(def.Ruined && razeReport.DefenderLoss.Wood > 200 && razeReport.AttackerLoot.Wood > 200,
+                $"Raze siege preserves building salvage beyond stored village stock (defLossWood={razeReport.DefenderLoss.Wood}, lootWood={razeReport.AttackerLoot.Wood})");
+        }
+
+        // 11d. Rehome does not end allied battle prematurely and ResumeBattleWinner preserves distant Reinforcing & Capturing orders
+        {
+            var p1 = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var p2 = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(560, 500));
+            var enemy = new VillageEconomy(Guid.NewGuid(), TribeType.Germans, new(620, 500));
+            var raider = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 540));
+            var world = new LogisticsWorld([p1, p2, enemy, raider], 505, castleUnlockSeconds: 0);
+            world.SetAlliances([new(p1.Village.OwnerId, p2.Village.OwnerId, 0), new(enemy.Village.OwnerId, raider.Village.OwnerId, 0)]);
+            foreach (var c in new[] { p1, p2, enemy, raider })
+            {
+                var wh = c.Village.Buildings.Single(b => b.Type == BuildingType.Warehouse);
+                while (wh.Level < 10) wh.CompleteUpgrade(wh.Level);
+                c.AddResources(new(15000, 15000, 15000, 25000));
+            }
+            p1.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 50)]);
+            p2.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]), 450)]);
+            enemy.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]), 400)]);
+            raider.ReceiveGift([
+                new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 150),
+                new(BaseUnit.Create(GameCatalog.Units["romans-governor"]), 3),
+                new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 10)
+            ]);
+            // Start multi-army battle: p1 attacks enemy army, p2 joins on p1's side, while raider conquers undefended p1!
+            world.Apply(enemy.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, enemy.Village.Id,
+                Formation: new Dictionary<string, int> { ["germans-infantry"] = 400 }, Wagons: 0, X: 820, Y: 500), 0, 0);
+            var now = 0d;
+            for (var i = 0; i < 60; i++) { now += .25; world.Advance(.25, now, 0, 3600); }
+            var enemyArmyId = world.Snapshot(enemy.Village.OwnerId).Armies.Single(a => a.OwnerId == enemy.Village.OwnerId).Id;
+            world.Apply(p1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, p1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 50 }, Wagons: 0, X: 800, Y: 500), now, 0);
+            world.Apply(p2.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, p2.Village.Id,
+                Formation: new Dictionary<string, int> { ["greeks-infantry"] = 450 }, Wagons: 0, X: 800, Y: 500), now, 0);
+            var p1FieldId = world.Snapshot(p1.Village.OwnerId).Armies.Single(a => a.OwnerId == p1.Village.OwnerId).Id;
+            var p2FieldId = world.Snapshot(p2.Village.OwnerId).Armies.Single(a => a.OwnerId == p2.Village.OwnerId).Id;
+            world.Apply(p1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.AttackArmy, p1FieldId, DestinationId: enemyArmyId), now, 0);
+            world.Apply(p2.Village.OwnerId, new(Guid.NewGuid(), CommandKind.AttackArmy, p2FieldId, DestinationId: enemyArmyId), now, 0);
+            for (var i = 0; i < 200 && !world.Snapshot(p2.Village.OwnerId).Warfare.Battles.Any(b => b.Status == "Active" && b.AttackerArmyIds.Length >= 2); i++)
+            { now += .25; world.Advance(.25, now, 0, 3600); }
+            Check(world.Snapshot(p2.Village.OwnerId).Warfare.Battles.Any(b => b.Status == "Active" && b.AttackerArmyIds.Length >= 2),
+                "Multi-army allied battle is active before elimination");
+            // Raider conquers p1's sole village -> triggers Rehome(p1, p1, null, now)
+            world.Apply(raider.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, raider.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 150, ["romans-governor"] = 3, ["romans-wagon"] = 4 },
+                Wagons: 0, DestinationId: p1.Village.Id, Objective: AttackObjective.Conquest), now, 0);
+            for (var i = 0; i < 800 && p1.Village.OwnerId != raider.Village.OwnerId; i++) { now += .25; world.Advance(.25, now, 0, 3600); }
+            var postSnap = world.Snapshot(p2.Village.OwnerId);
+            var p1GoneFromBattle = !postSnap.Warfare.Battles.Any(b => b.AttackerArmyIds.Contains(p1FieldId));
+            var battleContinuedOrAllyWon = postSnap.Warfare.Battles.Any(b => b.Status == "Active" && b.AttackerArmyIds.Contains(p2FieldId))
+                || postSnap.Warfare.Battles.Any(b => b.Winner == p2.Village.OwnerId);
+            Check(p1GoneFromBattle && battleContinuedOrAllyWon,
+                "Eliminating p1 withdraws p1 without ghost forces and lets ally p2 finish the battle");
+
+            // ResumeBattleWinner keeps distant Reinforcing order (no teleport to Guarding at oasis)
+            var vOwner = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var vEnemy = new VillageEconomy(Guid.NewGuid(), TribeType.Germans, new(530, 500));
+            var allyWorld = new LogisticsWorld([vOwner, vEnemy], 606);
+            foreach (var c in new[] { vOwner, vEnemy })
+            {
+                var wh = c.Village.Buildings.Single(b => b.Type == BuildingType.Warehouse);
+                while (wh.Level < 10) wh.CompleteUpgrade(wh.Level);
+                c.AddResources(new(10000, 10000, 10000, 20000));
+            }
+            vOwner.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 200)]);
+            vEnemy.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]), 5)]);
+            var nearOasis = allyWorld.Snapshot(vOwner.Village.OwnerId).Oases.OrderBy(o => LogisticsWorld.Distance(o.Position, vOwner.Village.Position)).First();
+            allyWorld.Apply(vOwner.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, vOwner.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 50 }, Wagons: 0, DestinationId: nearOasis.Id, AfterAttack: AfterAttack.Hold), 0, 0);
+            now = 0d;
+            for (var i = 0; i < 800 && allyWorld.Snapshot(vOwner.Village.OwnerId).Oases.Single(o => o.Id == nearOasis.Id).OwnerId != vOwner.Village.OwnerId; i++)
+            { now += .25; allyWorld.Advance(.25, now, 0, 3600); }
+            allyWorld.Apply(vOwner.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, vOwner.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 80 }, Wagons: 0, DestinationId: nearOasis.Id, Reinforcement: true), now, 0);
+            var reinfId = allyWorld.Snapshot(vOwner.Village.OwnerId).Armies.First(a => a.Order == "Reinforcing").Id;
+            var reinfPos = allyWorld.Snapshot(vOwner.Village.OwnerId).Armies.First(a => a.Id == reinfId).Position;
+            allyWorld.Apply(vEnemy.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, vEnemy.Village.Id,
+                Formation: new Dictionary<string, int> { ["germans-infantry"] = 5 }, Wagons: 0, X: reinfPos.X, Y: reinfPos.Y), now, 0);
+            var smallEnemyId = allyWorld.Snapshot(vEnemy.Village.OwnerId).Armies.Single(a => a.OwnerId == vEnemy.Village.OwnerId).Id;
+            allyWorld.Apply(vEnemy.Village.OwnerId, new(Guid.NewGuid(), CommandKind.AttackArmy, smallEnemyId, DestinationId: reinfId), now, 0);
+            var verifiedReinforcingResume = false;
+            for (var i = 0; i < 400; i++)
+            {
+                now += .25; allyWorld.Advance(.25, now, 0, 3600);
+                var rArmy = allyWorld.Snapshot(vOwner.Village.OwnerId).Armies.FirstOrDefault(a => a.Id == reinfId);
+                if (rArmy is not null && rArmy.Order != "Battle" && allyWorld.Snapshot(vOwner.Village.OwnerId).Warfare.Battles.Any(b => b.Winner == vOwner.Village.OwnerId))
+                {
+                    if (LogisticsWorld.Distance(rArmy.Position, nearOasis.Position) > 4)
+                    {
+                        Check(rArmy.Order == "Reinforcing", $"Winning battle en route keeps Reinforcing instead of Guarding/merging at distance (order={rArmy.Order})");
+                        verifiedReinforcingResume = true;
+                    }
+                    break;
+                }
+            }
+            Check(verifiedReinforcingResume, "Reinforcing army resumed Reinforcing without teleporting into Guarding");
+        }
+
+        // 11e. GameServer Create/Join/Spectate failure preserves existing room & Receipts evict above 4096 & deferred FinalBroadcastSent
+        {
+            var server = new GameServer(TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<GameServer>.Instance);
+            var host = Guid.NewGuid();
+            var switcher = Guid.NewGuid();
+            server.Connect("c-host", host);
+            server.Connect("c-switcher", switcher);
+            server.EnableCheat(host, "aa123456");
+            var room1 = server.Create(host, "Host", TribeType.Romans, "RoomOne", new(8, 30, 0, 1, 0, BotDifficulty.Easy, 20));
+            server.Join(switcher, room1.Id, "Switcher", TribeType.Greeks);
+            // Invalid Create (bad capacity = 4) must NOT kick switcher out of RoomOne!
+            Reject(() => server.Create(switcher, "Switcher", TribeType.Romans, "BadRoom", new(4, 30, 0, 1, 0, BotDifficulty.Easy, 20)), "settings");
+            Check(server.RoomIdFor(switcher) == room1.Id && server.Resume(switcher)?.Id == room1.Id,
+                "Failed Create preserves caller's existing room membership");
+            // Invalid Join must NOT kick switcher out of RoomOne!
+            Reject(() => server.Join(switcher, "NOPE", "Switcher", TribeType.Romans), "not_found");
+            Check(server.RoomIdFor(switcher) == room1.Id, "Failed Join preserves caller's existing room membership");
+            // Exceeding 4096 receipts in Lobby/Running chat works without request_limit lockout
+            for (var i = 0; i < 4105; i++)
+            {
+                var res = server.Execute(host, new(Guid.NewGuid(), CommandKind.SendChat, Guid.Empty, Message: $"m{i % 5}"));
+                if (!res.Accepted && res.Code == "request_limit")
+                    throw new Exception($"Hit request_limit lockout at command {i}");
+            }
+            checks++;
+            // Deliveries(markFinalBroadcastSent: false) keeps Finished room until MarkFinalBroadcastSent runs
+            var quick = server.Create(host, "Host", TribeType.Romans, "QuickDeferred", new(8, 30, 0, 1, 7, BotDifficulty.Easy, 1));
+            server.Ready(host, true);
+            server.Start(host);
+            server.AdminSetSpeed(host, 20);
+            for (var i = 0; i < 400 && server.ListRooms().Any(r => r.Id == quick.Id); i++)
+                server.Tick(0.25);
+            var deferred = server.Deliveries(markFinalBroadcastSent: false);
+            Check(deferred.Any(d => d.Snapshot.Id == quick.Id && d.Snapshot.Status == RoomStatus.Finished),
+                "Deferred delivery still produces final Finished snapshot");
+            server.Tick(0.25);
+            Check(server.Resume(host) is not null,
+                "Finished room stays alive until transport confirms SendSnapshotsAsync completed");
+            server.MarkFinalBroadcastSent([quick.Id]);
+            server.Tick(0.25);
+            Check(server.Resume(host) is null,
+                "Finished room is cleaned up after MarkFinalBroadcastSent completes");
+        }
+
+        // 12. Medium backend gameplay & logic regression checks:
+        {
+            // 12a. TrainingRules matches units.json RequiredBuildingLevel across all units
+            foreach (var u in GameCatalog.Units.Values)
+            {
+                if (u.Role == UnitRole.Scout) continue;
+                Check(u.RequiredBuildingLevel == TrainingRules.RequiredLevel(u.Role),
+                    $"TrainingRules matches units.json level for {u.UnitId}");
+            }
+
+            // 12b. Allied city/oasis/convoy targets & own-oasis Burn are rejected, and co-occupying allies don't siege each other
+            var a1 = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var a2 = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(540, 500));
+            var fo = new VillageEconomy(Guid.NewGuid(), TribeType.Germans, new(650, 500));
+            var world = new LogisticsWorld([a1, a2, fo], 707);
+            world.SetAlliances([new(a1.Village.OwnerId, a2.Village.OwnerId, 0)]);
+            foreach (var c in new[] { a1, a2, fo })
+            {
+                var wh = c.Village.Buildings.Single(b => b.Type == BuildingType.Warehouse);
+                while (wh.Level < 10) wh.CompleteUpgrade(wh.Level);
+                c.AddResources(new(15000, 15000, 15000, 25000));
+                c.ReceiveGift([
+                    new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 120),
+                    new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]), 120),
+                    new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]), 120),
+                    new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 10),
+                    new(BaseUnit.Create(GameCatalog.Units["greeks-wagon"]), 10)
+                ]);
+            }
+            Reject(() => world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, a1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 20 }, Wagons: 0, DestinationId: a2.Village.Id, Objective: AttackObjective.Raid), 0, 0), "ally");
+            world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, a1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 30, ["romans-wagon"] = 2 }, Wagons: 0, X: 900, Y: 500), 0, 0);
+            world.Apply(a2.Village.OwnerId, new(Guid.NewGuid(), CommandKind.SendResources, a2.Village.Id,
+                DestinationId: a1.Village.Id, Shipment: new(100, 0, 0, 0)), 0, 0);
+            var allyConvoyId = world.Snapshot(a1.Village.OwnerId).Convoys.Single(c => c.OwnerId == a2.Village.OwnerId).Id;
+            var a1ArmyId = world.Snapshot(a1.Village.OwnerId).Armies.Single().Id;
+            Reject(() => world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.InterceptConvoy, a1ArmyId, DestinationId: allyConvoyId), 0, 0), "ally");
+            Reject(() => world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.BeginSiege, a1ArmyId, DestinationId: a2.Village.Id, Objective: AttackObjective.Raid), 0, 0), "ally");
+            // Both allies capture the same unclaimed oasis
+            var o1 = world.Snapshot(a1.Village.OwnerId).Oases.OrderBy(o => LogisticsWorld.Distance(o.Position, a1.Village.Position)).First();
+            world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.CaptureOasis, a1ArmyId, DestinationId: o1.Id, AfterAttack: AfterAttack.Hold), 0, 0);
+            world.Apply(a2.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, a2.Village.Id,
+                Formation: new Dictionary<string, int> { ["greeks-infantry"] = 30 }, Wagons: 0, DestinationId: o1.Id, AfterAttack: AfterAttack.Hold), 0, 0);
+            var now = 0d;
+            for (var i = 0; i < 600 && world.Snapshot(a1.Village.OwnerId).Oases.Single(o => o.Id == o1.Id).OwnerId is null; i++)
+            { now += .25; world.Advance(.25, now, 0, 3600); }
+            for (var i = 0; i < 100; i++) { now += .25; world.Advance(.25, now, 0, 3600); }
+            Check(!world.Snapshot(a1.Village.OwnerId).Reports.Any(r => r.Kind == "OasisSiege"),
+                "Co-occupying allies at the same oasis transition cleanly without besieging each other");
+            var ownedOasis = world.Snapshot(a1.Village.OwnerId).Oases.Single(o => o.Id == o1.Id);
+            var holder = ownedOasis.OwnerId == a1.Village.OwnerId ? a1 : a2;
+            var partner = holder == a1 ? a2 : a1;
+            var holderUnit = holder == a1 ? "romans-infantry" : "greeks-infantry";
+            var partnerUnit = partner == a1 ? "romans-infantry" : "greeks-infantry";
+            Reject(() => world.Apply(holder.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, holder.Village.Id,
+                Formation: new Dictionary<string, int> { [holderUnit] = 10 }, Wagons: 0, DestinationId: o1.Id, OasisMode: OasisMode.Burn), now, 0), "target");
+            Reject(() => world.Apply(partner.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, partner.Village.Id,
+                Formation: new Dictionary<string, int> { [partnerUnit] = 10 }, Wagons: 0, DestinationId: o1.Id, OasisMode: OasisMode.Burn), now, 0), "ally");
+            Reject(() => world.Apply(partner.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, partner.Village.Id,
+                Formation: new Dictionary<string, int> { [partnerUnit] = 10 }, Wagons: 0, DestinationId: o1.Id, OasisMode: OasisMode.Capture), now, 0), "ally");
+
+            // 12c. Splitting a Merging army preserves MergeVillageId on leftBehind so it finishes merging cleanly
+            world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, a1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 40, ["romans-wagon"] = 2 }, Wagons: 0, X: 900, Y: 500), now, 0);
+            var mergeSrc = world.Snapshot(a1.Village.OwnerId).Armies.Last(a => a.OwnerId == a1.Village.OwnerId && a.Order == "Marching").Id;
+            for (var i = 0; i < 40; i++) { now += .25; world.Advance(.25, now, 0, 3600); }
+            world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.MergeArmies, a1.Village.Id, TargetIds: [mergeSrc]), now, 0);
+            // Split half out while Merging
+            world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.MoveArmy, mergeSrc,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 20, ["romans-wagon"] = 1 }, X: 950, Y: 500), now, 0);
+            var leftBehindArmy = world.Snapshot(a1.Village.OwnerId).Armies.Single(a => a.OwnerId == a1.Village.OwnerId && a.Order == "Merging" && a.Id != mergeSrc);
+            for (var i = 0; i < 400 && world.Snapshot(a1.Village.OwnerId).Armies.Any(a => a.Id == leftBehindArmy.Id); i++)
+            { now += .25; world.Advance(.25, now, 0, 3600); }
+            Check(!world.Snapshot(a1.Village.OwnerId).Armies.Any(a => a.Id == leftBehindArmy.Id),
+                "Left-behind split from Merging army keeps MergeVillageId and completes village merge");
+
+            // 12d. DisbandTroops removing all fighters from an Attacking army routes surviving wagons home
+            world.Apply(fo.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, fo.Village.Id,
+                Formation: new Dictionary<string, int> { ["germans-infantry"] = 20 }, Wagons: 0, X: 1200, Y: 500), now, 0);
+            var foTargetId = world.Snapshot(fo.Village.OwnerId).Armies.Last(a => a.OwnerId == fo.Village.OwnerId).Id;
+            world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, a1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 20, ["romans-wagon"] = 1 }, Wagons: 0,
+                X: 1200, Y: 500), now, 0);
+            var atkArmyId = world.Snapshot(a1.Village.OwnerId).Armies.Last(a => a.OwnerId == a1.Village.OwnerId && a.Order == "Marching").Id;
+            world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.AttackArmy, atkArmyId, DestinationId: foTargetId), now, 0);
+            world.Apply(a1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DisbandTroops, atkArmyId,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 20 }), now, 0);
+            var disbandedAtk = world.Snapshot(a1.Village.OwnerId).Armies.Single(a => a.Id == atkArmyId);
+            Check(disbandedAtk.Order == "Returning",
+                $"Attacking army reduced to wagons via DisbandTroops routes home cleanly (order={disbandedAtk.Order})");
+
+            // 12e. Burn -> Recall resets oasis.BurningSeconds (BurningProgress) to 0 immediately
+            var foArmyBurn = world.Snapshot(fo.Village.OwnerId).Armies.Last(a => a.OwnerId == fo.Village.OwnerId);
+            var o2 = world.Snapshot(fo.Village.OwnerId).Oases.Where(o => o.Id != o1.Id && o.OwnerId is null)
+                .OrderBy(o => LogisticsWorld.Distance(o.Position, foArmyBurn.Position)).First();
+            world.Apply(fo.Village.OwnerId, new(Guid.NewGuid(), CommandKind.BurnOasis, foArmyBurn.Id, DestinationId: o2.Id), now, 0);
+            for (var i = 0; i < 1600 && !(world.Snapshot(fo.Village.OwnerId).Oases.Single(o => o.Id == o2.Id).BurningProgress > 0); i++)
+            { now += .25; world.Advance(.25, now, 0, 3600); }
+            Check(world.Snapshot(fo.Village.OwnerId).Oases.Single(o => o.Id == o2.Id).BurningProgress > 0,
+                "Burning oasis accrues BurningProgress");
+            world.Apply(fo.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RecallArmy, foArmyBurn.Id), now, 0);
+            Check(world.Snapshot(fo.Village.OwnerId).Oases.Single(o => o.Id == o2.Id).BurningProgress == 0,
+                "Recalling burning army resets oasis BurningProgress to 0");
+        }
+
+        // 13. Selection-circle collision battle engagement:
+        {
+            var c1 = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var c2 = new VillageEconomy(Guid.NewGuid(), TribeType.Germans, new(1500, 500));
+            var c3 = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(500, 1100));
+            var world = new LogisticsWorld([c1, c2, c3], 808);
+            foreach (var c in new[] { c1, c2, c3 })
+            {
+                var wh = c.Village.Buildings.Single(b => b.Type == BuildingType.Warehouse);
+                while (wh.Level < 10) wh.CompleteUpgrade(wh.Level);
+                c.AddResources(new(15000, 15000, 15000, 25000));
+                c.ReceiveGift([
+                    new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 200),
+                    new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]), 200),
+                    new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]), 200),
+                    new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 10),
+                    new(BaseUnit.Create(GameCatalog.Units["germans-wagon"]), 10),
+                    new(BaseUnit.Create(GameCatalog.Units["greeks-wagon"]), 10)
+                ]);
+            }
+
+            // 13a. Small armies start battle when selection ellipses collide (centers remain well over 50 units apart)
+            world.Apply(c1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, c1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 10 }, Wagons: 0, X: 950, Y: 500), 0, 0);
+            world.Apply(c2.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, c2.Village.Id,
+                Formation: new Dictionary<string, int> { ["germans-infantry"] = 10 }, Wagons: 0, X: 1250, Y: 500), 0, 0);
+            var now = 0d;
+            for (var i = 0; i < 400; i++)
+            {
+                now += .25;
+                world.Advance(.25, now, 0, 3600);
+                var s = world.Snapshot(c1.Village.OwnerId, omniscient: true);
+                if (s.Armies.Length == 2 && s.Armies.All(a => a.Order == "Idle")) break;
+            }
+            var smallAttId = world.Snapshot(c1.Village.OwnerId).Armies.Single(a => a.OwnerId == c1.Village.OwnerId).Id;
+            var smallDefId = world.Snapshot(c2.Village.OwnerId).Armies.Single(a => a.OwnerId == c2.Village.OwnerId).Id;
+            world.Apply(c1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.AttackArmy, smallAttId, DestinationId: smallDefId), now, 0);
+            now += .25;
+            world.Advance(.25, now, 0, 3600);
+            var beforeSmall = world.Snapshot(c1.Village.OwnerId, omniscient: true);
+            Check(beforeSmall.Armies.Single(a => a.Id == smallAttId).Order == "Attacking",
+                "Small army outside selection ellipse stays Attacking without premature battle");
+            var smallThreat = world.Snapshot(c2.Village.OwnerId).Threats.Single(t => t.ArmyId == smallAttId);
+            Check(smallThreat.ArrivesAt > now, "IncomingThreat reports future ETA while attacker approaches selection circle");
+
+            double smallEngageDist = 0;
+            for (var i = 0; i < 400; i++)
+            {
+                now += .25;
+                world.Advance(.25, now, 0, 3600);
+                var s = world.Snapshot(c1.Village.OwnerId, omniscient: true);
+                var a = s.Armies.Single(x => x.Id == smallAttId);
+                if (a.Order == "Battle")
+                {
+                    var d = s.Armies.Single(x => x.Id == smallDefId);
+                    smallEngageDist = LogisticsWorld.Distance(a.Position, d.Position);
+                    break;
+                }
+            }
+            Check(smallEngageDist > 50, $"Small armies engage when selection circles collide (dist={smallEngageDist:0.1})");
+
+            // 13b. Larger formations collide at a strictly wider center distance matching their larger selection circles
+            world.Apply(c1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, c1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 120, ["romans-wagon"] = 2 }, Wagons: 0, X: 800, Y: 800), now, 0);
+            world.Apply(c2.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, c2.Village.Id,
+                Formation: new Dictionary<string, int> { ["germans-infantry"] = 120, ["germans-wagon"] = 2 }, Wagons: 0, X: 1300, Y: 800), now, 0);
+            for (var i = 0; i < 600; i++)
+            {
+                now += .25;
+                world.Advance(.25, now, 0, 3600);
+                var s = world.Snapshot(c1.Village.OwnerId, omniscient: true);
+                var a = s.Armies.FirstOrDefault(x => x.OwnerId == c1.Village.OwnerId && x.Soldiers >= 100);
+                var d = s.Armies.FirstOrDefault(x => x.OwnerId == c2.Village.OwnerId && x.Soldiers >= 100);
+                if (a is not null && d is not null && a.Order == "Idle" && d.Order == "Idle") break;
+            }
+            var bigAttId = world.Snapshot(c1.Village.OwnerId).Armies.Single(a => a.OwnerId == c1.Village.OwnerId && a.Soldiers >= 100).Id;
+            var bigDefId = world.Snapshot(c2.Village.OwnerId).Armies.Single(a => a.OwnerId == c2.Village.OwnerId && a.Soldiers >= 100).Id;
+            world.Apply(c1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.AttackArmy, bigAttId, DestinationId: bigDefId), now, 0);
+            double bigEngageDist = 0;
+            for (var i = 0; i < 600; i++)
+            {
+                now += .25;
+                world.Advance(.25, now, 0, 3600);
+                var s = world.Snapshot(c1.Village.OwnerId, omniscient: true);
+                var a = s.Armies.Single(x => x.Id == bigAttId);
+                if (a.Order == "Battle")
+                {
+                    var d = s.Armies.Single(x => x.Id == bigDefId);
+                    bigEngageDist = LogisticsWorld.Distance(a.Position, d.Position);
+                    break;
+                }
+            }
+            Check(bigEngageDist > smallEngageDist + 30,
+                $"Larger formations engage farther apart on selection circle contact (big={bigEngageDist:0.1}, small={smallEngageDist:0.1})");
+
+            // 13c. Convoy interception starts when hunter selection circle collides with convoy selection circle (> 12 center distance)
+            world.Apply(c1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, c1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 60 }, Wagons: 0, X: 950, Y: 1100), now, 0);
+            for (var i = 0; i < 600; i++)
+            {
+                now += .25;
+                world.Advance(.25, now, 0, 3600);
+                if (world.Snapshot(c1.Village.OwnerId).Armies.Any(a => a.OwnerId == c1.Village.OwnerId && a.Order == "Idle" && Math.Abs(a.Position.Y - 1100) < 2))
+                    break;
+            }
+            var hunterId = world.Snapshot(c1.Village.OwnerId).Armies.Single(a => a.OwnerId == c1.Village.OwnerId && a.Order == "Idle" && Math.Abs(a.Position.Y - 1100) < 2).Id;
+            world.Apply(c2.Village.OwnerId, new(Guid.NewGuid(), CommandKind.SendResources, c2.Village.Id,
+                DestinationId: c3.Village.Id, Shipment: new(1500, 0, 0, 0)), now, 0);
+            var convoyId = world.Snapshot(c2.Village.OwnerId).Convoys.Single(c => c.Kind == ConvoyKind.Shipment).Id;
+            world.Apply(c1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.InterceptConvoy, hunterId, DestinationId: convoyId), now, 0);
+            double interceptDist = 0;
+            for (var i = 0; i < 400; i++)
+            {
+                now += .25;
+                world.Advance(.25, now, 0, 3600);
+                var s = world.Snapshot(c1.Village.OwnerId, omniscient: true);
+                var convoy = s.Convoys.FirstOrDefault(c => c.Id == convoyId);
+                if (convoy is not null && convoy.InBattle)
+                {
+                    var hunter = s.Armies.Single(a => a.Id == hunterId);
+                    interceptDist = LogisticsWorld.Distance(hunter.Position, convoy.Position);
+                    break;
+                }
+            }
+            Check(interceptDist > 20, $"Convoy interception begins on selection circle collision (dist={interceptDist:0.1})");
+
+            // 13d. Village siege starts once the attacking army steps slightly inside the village circle (well outside center)
+            c1.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 150)]);
+            c3.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]), 100)]);
+            world.Apply(c1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, c1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 60 }, Wagons: 0,
+                DestinationId: c3.Village.Id, Objective: AttackObjective.Raid), now, 0);
+            var citySiegerId = world.Snapshot(c1.Village.OwnerId).Armies
+                .Single(a => a.OwnerId == c1.Village.OwnerId && a.Order == "Approaching" && a.TargetId == c3.Village.Id).Id;
+            var cityThreat = world.Snapshot(c3.Village.OwnerId).Threats.Single(t => t.ArmyId == citySiegerId);
+            Check(cityThreat.ArrivesAt > now, "Village threat reports future ETA before reaching village perimeter");
+            double cityEngageDist = 0;
+            for (var i = 0; i < 800; i++)
+            {
+                now += .25;
+                world.Advance(.25, now, 0, 3600);
+                var s = world.Snapshot(c1.Village.OwnerId, omniscient: true);
+                var a = s.Armies.Single(x => x.Id == citySiegerId);
+                if (a.Order is "Sieging" or "Battle")
+                {
+                    cityEngageDist = LogisticsWorld.Distance(a.Position, c3.Village.Position);
+                    break;
+                }
+            }
+            Check(cityEngageDist is > 40 and < 78,
+                $"Village battle/siege starts slightly inside the village circle (dist={cityEngageDist:0.1})");
+
+            // 13e. Oasis battle/burn starts slightly inside the oasis circle and stops advancing inward
+            var targetOasis = world.Snapshot(c3.Village.OwnerId).Oases
+                .Where(o => o.OwnerId is null)
+                .OrderBy(o => LogisticsWorld.Distance(o.Position, c1.Village.Position))
+                .First();
+            world.Apply(c1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, c1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 60 }, Wagons: 0,
+                DestinationId: targetOasis.Id, OasisMode: OasisMode.Burn,
+                X: targetOasis.Position.X, Y: targetOasis.Position.Y), now, 0);
+            var oasisBurnerId = world.Snapshot(c1.Village.OwnerId).Armies
+                .Single(a => a.OwnerId == c1.Village.OwnerId && a.TargetId == targetOasis.Id && a.Order == "Occupying").Id;
+            double oasisEngageDist = 0;
+            Position? engagePos = null;
+            for (var i = 0; i < 2000; i++)
+            {
+                now += .25;
+                world.Advance(.25, now, 0, 3600);
+                var oState = world.Snapshot(c1.Village.OwnerId, omniscient: true).Oases.Single(o => o.Id == targetOasis.Id);
+                var burner = world.Snapshot(c1.Village.OwnerId, omniscient: true).Armies.Single(a => a.Id == oasisBurnerId);
+                if (oState.BurningProgress > 0 && engagePos is null)
+                {
+                    oasisEngageDist = LogisticsWorld.Distance(burner.Position, targetOasis.Position);
+                    engagePos = burner.Position;
+                }
+                else if (engagePos is not null)
+                {
+                    Check(LogisticsWorld.Distance(burner.Position, engagePos.Value) < 0.01,
+                        "Oasis-engaging army holds position on the oasis circle instead of walking to the center");
+                    break;
+                }
+            }
+            Check(oasisEngageDist is > 28 and < 65,
+                $"Oasis action begins slightly inside the oasis circle (dist={oasisEngageDist:0.1})");
+        }
+
         return checks;
     }
 

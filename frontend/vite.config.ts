@@ -1,5 +1,9 @@
 import { execSync } from "node:child_process";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+
+const rootDir = fileURLToPath(new URL(".", import.meta.url));
 
 function resolveGitVersion(): string {
   if (process.env.VITE_APP_VERSION?.trim()) {
@@ -18,5 +22,14 @@ function resolveGitVersion(): string {
 export default defineConfig({
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(resolveGitVersion()),
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(rootDir, "index.html"),
+        en: resolve(rootDir, "en/index.html"),
+        ar: resolve(rootDir, "ar/index.html"),
+      },
+    },
   },
 });

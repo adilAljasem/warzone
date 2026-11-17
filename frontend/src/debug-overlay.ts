@@ -128,6 +128,7 @@ export class DebugOverlay {
 
     constructor(private readonly ctx: DebugContext, private readonly onToggle?: (open: boolean) => void) {
         try {
+            this.open = localStorage.getItem(OPEN_KEY) === "1";
             this.collapsed = localStorage.getItem(COLLAPSE_KEY) === "1";
             const savedPos = localStorage.getItem(POS_KEY);
             if (savedPos) {

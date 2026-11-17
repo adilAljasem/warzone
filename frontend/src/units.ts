@@ -1,4 +1,4 @@
-import { t } from './locale';
+import { currentLanguage, t } from './locale';
 import { unitArtwork } from './unit-art';
 export { unitArtwork } from './unit-art';
 export {initUnitTooltips} from './unit-tooltip';
@@ -36,9 +36,13 @@ export async function loadUnits() {
         });
     return loadingUnits;
 }
+const escAttr = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+export const unitTitle = (unit: UnitDefinition, lang = currentLanguage()) =>
+    lang === 'ar' ? unit.displayName : `${unit.tribeType} ${unit.role.replace(/([a-z])([A-Z])/g, '$1 $2')}`;
 export function unitPortrait(id:string,help=true){
     const unit=unitCatalog.get(id);if(!unit)return '';
-    return `<span class="unit-portrait" data-unit="${id}" role="img" aria-label="${t(unit.displayName)}">${unitArtwork(id)}${help?`<span class="unit-help" role="button" tabindex="0" aria-label="${t('Unit properties')}" data-help-unit="${id}">?</span>`:''}</span>`;
+    const safeId = escAttr(id);
+    return `<span class="unit-portrait" data-unit="${safeId}" role="img" aria-label="${escAttr(unitTitle(unit))}">${unitArtwork(id)}${help?`<span class="unit-help" role="button" tabindex="0" aria-label="${escAttr(t('Unit properties'))}" data-help-unit="${safeId}">?</span>`:''}</span>`;
 }
 export function provisionEstimate(formation: Record<string, number>, distance: number, stock = Infinity) {
     let upkeep = 0, capacity = 0, speed = Infinity, total = 0;

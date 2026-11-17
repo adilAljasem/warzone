@@ -1,16 +1,28 @@
 {
   "name": "Warzonee — Sunmeadow Valley",
   "short_name": "Warzonee",
-  "description": "Real-time multiplayer strategy game. Build your kingdom, command armies across five tribes, capture oases, and conquer the Crown Keep.",
+  "description": "Free real-time multiplayer browser strategy game. Build your kingdom, command armies across five tribes, capture oases, and conquer the Crown Keep.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "landscape",
   "background_color": "#111e1a",
   "theme_color": "#182a25",
-  "lang": "ar",
-  "dir": "rtl",
+  "lang": "en",
+  "dir": "auto",
   "categories": ["games", "strategy"],
+  "shortcuts": [
+    {
+      "name": "Play Online",
+      "short_name": "Online",
+      "url": "/?mode=rooms"
+    },
+    {
+      "name": "Play Solo vs AI",
+      "short_name": "Solo",
+      "url": "/?mode=solo"
+    }
+  ],
   "icons": [
     {
       "src": "/icon-192.png",

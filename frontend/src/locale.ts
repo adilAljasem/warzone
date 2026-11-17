@@ -1,12 +1,38 @@
 import arabic from './locales/ar.json';
-let language = 'ar';
-try { language = localStorage.getItem('warzone.language') ?? 'ar'; } catch { /* Storage is optional. */ }
+const detectInitialLanguage = (): 'ar' | 'en' => {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const paramLang = params.get('lang')?.toLowerCase();
+        if (paramLang === 'ar' || paramLang === 'en') {
+            try { localStorage.setItem('warzone.language', paramLang); } catch { /* Storage is optional. */ }
+            return paramLang;
+        }
+        const path = window.location.pathname.toLowerCase();
+        if (path === '/en' || path.startsWith('/en/')) return 'en';
+        if (path === '/ar' || path.startsWith('/ar/')) return 'ar';
+    } catch { /* Ignore URL parsing errors. */ }
+    try {
+        const stored = localStorage.getItem('warzone.language');
+        if (stored === 'en' || stored === 'ar') return stored;
+    } catch { /* Storage is optional. */ }
+    try {
+        const nav = (navigator.language || (navigator.languages && navigator.languages[0]) || '').toLowerCase();
+        if (nav.startsWith('ar')) return 'ar';
+        if (nav) return 'en';
+    } catch { /* Ignore navigator errors. */ }
+    return 'en';
+};
+let language: 'ar' | 'en' = detectInitialLanguage();
 export const currentLanguage = () => language;
 const phrases = arabic.phrases as Record<string,string>;
 const patterns = arabic.patterns.map(([source, replacement]) => [new RegExp(source!, 'gi'), replacement!] as const);
 const words = Object.keys(phrases).filter(k=>k.length>2).sort((a,b)=>b.length-a.length);
 const expression = new RegExp('\\b(' + words.map(k=>k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|') + ')\\b', 'gi');
-const insensitive = new Map(Object.entries(phrases).map(([k,v])=>[k.toLowerCase(),v]));
+const insensitive = new Map<string, string>();
+for (const [k, v] of Object.entries(phrases)) {
+    const low = k.toLowerCase();
+    if (!insensitive.has(low) || k === low) insensitive.set(low, v);
+}
 export function t(text: string): string {
     if(language!=='ar'||!/[a-z]/i.test(text))return text;
     const trim=text.trim(), direct=phrases[trim]??insensitive.get(trim.toLowerCase());

@@ -53,12 +53,12 @@ export class GameMenu {
             const bounds=this.dialog.getBoundingClientRect();
             if(event.clientX<bounds.left||event.clientX>bounds.right||event.clientY<bounds.top||event.clientY>bounds.bottom)this.close();
         });
-        document.addEventListener('keydown',event=>{
-            if(event.key!=='Escape')return;
-            if(document.querySelector('#game-guide[open]'))return;
-            event.preventDefault();event.stopPropagation();
+        window.addEventListener('keydown',event=>{
+            if(event.key!=='Escape'||event.defaultPrevented)return;
+            if(document.querySelector('dialog[open]:not(#game-menu)'))return;
+            event.preventDefault();
             if(!event.repeat){if(this.dialog.open)this.close();else this.open();}
-        },true);
+        });
         window.addEventListener('languagechange',()=>this.refreshSound());
     }
     private element<T extends HTMLElement=HTMLElement>(id:string){return this.dialog.querySelector<T>(`#${id}`)!;}

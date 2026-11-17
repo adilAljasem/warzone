@@ -1,7 +1,7 @@
 import { buildingArt, oasisArt, tribes } from './art';
 import { currentLanguage, t } from './locale';
 import { unitArtwork } from './unit-art';
-import { compareUnitIds, loadUnits, unitCatalog, unitPortrait, type UnitDefinition } from './units';
+import { compareUnitIds, loadUnits, unitCatalog, unitPortrait, unitTitle, type UnitDefinition } from './units';
 
 export type GuideTabId =
     | 'quickstart'
@@ -271,6 +271,14 @@ export class GameGuide {
                 this.activeTab = TABS[nextIdx]!.id;
                 this.render();
             }
+        });
+
+        this.dialog.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const target = (event.target as Element).closest<HTMLElement>('[role="button"][data-guide-action]');
+            if (!target) return;
+            event.preventDefault();
+            target.click();
         });
 
         window.addEventListener('languagechange', () => {
@@ -580,7 +588,7 @@ export class GameGuide {
         const buildingName = BUILDING_LABELS[u.trainingBuilding ?? 'Barracks'];
         const buildingText = buildingName ? pick(buildingName) : (u.trainingBuilding ?? '');
         const reqLevel = u.requiredBuildingLevel ?? 1;
-        const unitName = ar ? u.displayName : `${t(u.displayName)} (${u.role})`;
+        const unitName = unitTitle(u);
 
         return `
             <article class="guide-unit-card">

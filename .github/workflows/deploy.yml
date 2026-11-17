@@ -7,7 +7,7 @@ on:
 # Prevent overlapping deployments from racing on Docker Swarm Raft state ("update out of sequence")
 concurrency:
   group: deploy-warzone-stack
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:

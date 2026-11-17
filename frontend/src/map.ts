@@ -1,4 +1,4 @@
-import { armyFigureCount, armyFigures, armyFigureLayout, isDemolishing, isSmoking } from './army-visual';
+import { armyFigureCount, armyFigures, armyFigureLayout, armyFlagSlots, isDemolishing, isSmoking } from './army-visual';
 import { BattleClash } from './battle-clash';
 import { combatAudibility, type CombatSound } from './audio-events';
 import { VillageFire, VillageSmoke } from './village-fire';
@@ -120,8 +120,8 @@ export class WorldMap {
   private cameraMoveHandler?: () => void;
   private pendingFocus: { point: Point; zoom: number } | null = null;
   private last: { world: WorldView | null; players: MapPlayer[]; viewer: string; lobbyCapacity?: number } | null = null;
-  private dragging: { x: number; y: number; panX: number; panY: number; moved: boolean; pointerId: number } | null = null;
-  constructor(private host: HTMLElement, private onSelect: (selection: MapSelection, modifiers: { ctrl: boolean; shift: boolean }) => void) {}
+  private dragging: { x: number; y: number; panX: number; panY: number; moved: boolean; pointerId: number; longPressTimer: number; longPressed: boolean } | null = null;
+  constructor(private host: HTMLElement, private onSelect: (selection: MapSelection, modifiers: { ctrl: boolean; shift: boolean; client?: Point }) => void) {}
 
   async init() {
     await Promise.all([loadArt(), loadUnitArt()]);
@@ -141,7 +141,7 @@ export class WorldMap {
     new ResizeObserver(() => this.fit()).observe(this.host);
     this.app.ticker.add(() => this.animate());
     this.fit();
-    if (pending) this.update(pending.world, pending.players, pending.viewer);
+    if (pending) this.update(pending.world, pending.players, pending.viewer, pending.lobbyCapacity);
     if (this.pendingFocus) {
       const target = this.pendingFocus;
       this.pendingFocus = null;
@@ -178,7 +178,7 @@ export class WorldMap {
   refreshLanguage() { this.signature = ""; this.terrainSignature = ""; const view = this.last; if(view)this.update(view.world,view.players,view.viewer,view.lobbyCapacity); }
   zoom(delta: number) {
     const prevZoom = this.zoomFactor;
-    const nextZoom = Math.max(.7, Math.min(8, prevZoom + delta));
+    const nextZoom = Math.max(.55, Math.min(8, prevZoom + delta));
     if (nextZoom === prevZoom) return;
     const ratio = nextZoom / prevZoom;
     this.zoomFactor = nextZoom;
@@ -318,10 +318,21 @@ export class WorldMap {
       }
       this.lastSnapshotAt = nowMs;
     }
-    const terrainKey = `${world.regions?.length ?? 0}|` + players.map(p => p.relocateTarget ? 'relocating' : `${p.position?.x ?? 0},${p.position?.y ?? 0}`).join(';') + '|' + world.oases.map(c => `${c.position.x},${c.position.y}`).join(';');
+    const lobbyClearings: Point[] = [];
+    if (isLobbyPreview && lobbyCapacity) {
+      const ringSize = Math.max(2, lobbyCapacity);
+      const occupiedSlots = new Set(players.map(p => p.effectiveSpawnSlot ?? p.spawnSlot).filter((s): s is number => s != null));
+      for (let slot = 0; slot < ringSize; slot++) {
+        if (occupiedSlots.has(slot)) continue;
+        const angle = (slot * Math.PI * 2) / ringSize;
+        lobbyClearings.push({ x: 2250 + Math.cos(angle) * 1750, y: 2250 + Math.sin(angle) * 1750 });
+      }
+    }
+    const landscapeSettlements = [...players.filter(p => !p.relocateTarget).flatMap(p => p.position ? [p.position] : []), ...lobbyClearings];
+    const terrainKey = `${world.regions?.length ?? 0}|` + players.map(p => p.relocateTarget ? 'relocating' : `${p.position?.x ?? 0},${p.position?.y ?? 0}`).join(';') + `|${lobbyClearings.length}|` + world.oases.map(c => `${c.position.x},${c.position.y}`).join(';');
     if(world.regions?.length && (terrainKey !== this.terrainSignature || (this.lastRegionsRef && this.lastRegionsRef.length !== world.regions.length))){
       this.terrainSignature=terrainKey; this.lastRegionsRef = world.regions; this.landscape?.destroy();
-      this.landscape=drawLandscape(this.terrain,world.regions,players.filter(p=>!p.relocateTarget).flatMap(p=>p.position?[p.position]:[]),world.oases.map(c=>c.position));
+      this.landscape=drawLandscape(this.terrain,world.regions,landscapeSettlements,world.oases.map(c=>c.position));
       this.landscape.setBoundaries(this.showBoundaries);
     }
     this.players = players; this.viewer = viewer;
@@ -510,14 +521,7 @@ export class WorldMap {
         const party=new Container(),dust=new Graphics(),layout=armyFigureLayout(formation.length);
         node.figures=[];
         const wagonLayout=armyFigureLayout(wagonCount);
-        const flagX=-13-Math.max(0,Math.max(layout.columns,wagonLayout.columns)-1)*9;
-        const flagTop=-50-Math.max(0,layout.rows-1)*17;
-        const flagBase=-12-Math.max(0,layout.rows-1)*17;
-        const flagSlots=Array.from({length:flagCount},(_,i)=>({
-          x:flagX+i*12,
-          top:flagTop-(i%2)*4,
-          base:flagBase-(i%2)*4,
-        }));
+        const flagSlots=armyFlagSlots(flagCount,layout.points,layout.rows,layout.columns,wagonLayout.columns);
         party.addChild(new Graphics().ellipse(0,5-Math.max(0,layout.rows-1)*8,Math.max(26,layout.columns*13),12+layout.rows*7).fill({color,alpha:.12}));
         // Camped troops stand in the middle of the perimeter rather than above its centre point.
         node.partyY=isArmy&&entity.campRadius?Math.max(0,layout.rows-1)*8.5+16:0;
@@ -607,6 +611,7 @@ export class WorldMap {
       node.root.destroy({ children: true }); this.moving.delete(id);
     }
     this.castleLayer.removeChildren().forEach(child => child.destroy({ children: true }));
+    this.flags = this.flags.filter(flag => !flag.destroyed);
     this.warfare.removeChildren().forEach(child => child.destroy({ children: true })); this.effects = [];
     const war = world.warfare;
     const demolitions=new Set<string>();
@@ -1063,6 +1068,7 @@ export class WorldMap {
   }
   private bind() {
     const canvas = this.app.canvas;
+    canvas.style.touchAction = "none";
     canvas.addEventListener("contextmenu", event => {
       event.preventDefault();
       try {
@@ -1073,7 +1079,17 @@ export class WorldMap {
     });
     canvas.addEventListener("pointerdown", event => {
       if (event.button !== 0) return;
-      this.dragging = { x: event.clientX, y: event.clientY, panX: this.pan.x, panY: this.pan.y, moved: false, pointerId: event.pointerId };
+      if (this.dragging?.longPressTimer) window.clearTimeout(this.dragging.longPressTimer);
+      const startX = event.clientX, startY = event.clientY, pointerId = event.pointerId;
+      const longPressTimer = event.pointerType === "touch"
+        ? window.setTimeout(() => {
+            if (!this.dragging || this.dragging.pointerId !== pointerId || this.dragging.moved) return;
+            this.dragging.longPressed = true;
+            try { navigator.vibrate?.(18); } catch { /* Optional haptic */ }
+            try { this.triggerRightClick(startX, startY); } catch (err) { console.error("Long-press error:", err); }
+          }, 420)
+        : 0;
+      this.dragging = { x: startX, y: startY, panX: this.pan.x, panY: this.pan.y, moved: false, pointerId, longPressTimer, longPressed: false };
     });
     canvas.addEventListener("pointermove", event => {
       try {
@@ -1090,6 +1106,10 @@ export class WorldMap {
         const dx = event.clientX - this.dragging.x, dy = event.clientY - this.dragging.y;
         if (!this.dragging.moved && Math.hypot(dx, dy) > 14) {
           this.dragging.moved = true;
+          if (this.dragging.longPressTimer) {
+            window.clearTimeout(this.dragging.longPressTimer);
+            this.dragging.longPressTimer = 0;
+          }
           try {
             canvas.setPointerCapture(this.dragging.pointerId);
           } catch { /* ignore */ }
@@ -1097,7 +1117,7 @@ export class WorldMap {
         if (this.dragging.moved) {
           this.hoverHandler?.(null, null);
           this.cameraMoveHandler?.();
-          this.pan.x = Math.max(-6000, Math.min(6000, this.dragging.panX + dx)); this.pan.y = Math.max(-4200, Math.min(4200, this.dragging.panY + dy));
+          this.pan.x = Math.max(-8500, Math.min(8500, this.dragging.panX + dx)); this.pan.y = Math.max(-5800, Math.min(5800, this.dragging.panY + dy));
           this.world.position.set((this.host.clientWidth - 4500 * this.scale) / 2 + this.pan.x, this.viewportCenterY - 1462.5 * this.scale + this.pan.y);
         }
       } catch (err) {
@@ -1105,16 +1125,21 @@ export class WorldMap {
       }
     });
     canvas.addEventListener("pointerup", event => {
+      if (!this.dragging || event.pointerId !== this.dragging.pointerId) return;
+      if (this.dragging.longPressTimer) {
+        window.clearTimeout(this.dragging.longPressTimer);
+        this.dragging.longPressTimer = 0;
+      }
       try {
-        if (event.button === 0 && this.dragging && !this.dragging.moved) {
+        if (event.button === 0 && !this.dragging.moved && !this.dragging.longPressed) {
           const selected = this.resolveAtClient(event.clientX, event.clientY);
           this.selected = selected; this.updateDetail();
-          this.onSelect(selected, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey });
+          this.onSelect(selected, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey, client: { x: event.clientX, y: event.clientY } });
         }
       } catch (err) {
         console.error("Pointerup error:", err);
       } finally {
-        const dragPointerId = this.dragging?.pointerId ?? event.pointerId;
+        const dragPointerId = this.dragging.pointerId;
         this.dragging = null;
         try {
           if (canvas.hasPointerCapture(dragPointerId)) canvas.releasePointerCapture(dragPointerId);
@@ -1122,7 +1147,11 @@ export class WorldMap {
         canvas.style.cursor = this.hovered ? 'pointer' : 'grab';
       }
     });
-    canvas.addEventListener("pointercancel", () => { this.dragging = null; this.hoverHandler?.(null, null); });
+    canvas.addEventListener("pointercancel", () => {
+      if (this.dragging?.longPressTimer) window.clearTimeout(this.dragging.longPressTimer);
+      this.dragging = null;
+      this.hoverHandler?.(null, null);
+    });
     canvas.addEventListener("pointerleave", () => { this.hovered = null; delete canvas.dataset.unit; this.updateDetail(); this.hoverHandler?.(null, null); });
     canvas.addEventListener("wheel", event => { event.preventDefault(); this.zoom(event.deltaY > 0 ? -.12 : .12); }, { passive: false });
     canvas.addEventListener("keydown", event => {

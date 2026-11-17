@@ -129,6 +129,7 @@ export class ArmyLayout {
 
     const center = project(site.position);
     const nearby = world.armies.filter(other => {
+      if (other.order === 'Guarding' && other.defendingSiteId && (other.defendingSiteId === oasis?.id || other.defendingSiteId === city?.id)) return false;
       const mdx = other.destination.x - other.position.x, mdy = other.destination.y - other.position.y;
       return mdx * mdx + mdy * mdy <= 16 && Math.hypot(other.position.x - site.position.x, other.position.y - site.position.y) <= 30;
     });

@@ -562,7 +562,12 @@ export class AdminOverlay {
                 for (const r of botRooms.slice(0, 12)) {
                     const row = document.createElement("div");
                     row.className = "admin-bot-room-item";
-                    row.innerHTML = `<span>🤖 <strong>${r.name}</strong> · ${r.bots} AI · x${r.speedMultiplier ?? 1} (${r.status})</span>`;
+                    const label = document.createElement("span");
+                    label.append("🤖 ");
+                    const nameEl = document.createElement("strong");
+                    nameEl.textContent = r.name;
+                    label.append(nameEl, ` · ${r.bots} AI · x${r.speedMultiplier ?? 1} (${r.status})`);
+                    row.append(label);
                     const watch = document.createElement("button");
                     watch.type = "button";
                     watch.className = "admin-btn";

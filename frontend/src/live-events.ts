@@ -40,7 +40,7 @@ export function activeEvents(world:WorldView,you:string):LiveEvent[]{
         const iconKind:LiveEventIcon=siege||r.kind==='Siege'||!!r.cityAttack?'village':(oasisSiege||r.kind==='OasisSiege'||!!r.oasisDefense?'oasis':'troops');
         events.push({key:r.id,action:'report',id:r.id,title,detail,friendly:false,tone:isAttacker?'attacking':'danger',at:r.startedAt,liveBattle:true,iconKind});
     }
-    const engaged=new Set(active.flatMap(r=>r.armies.map(a=>a.armyId)));
+    const engaged=new Set(active.flatMap(r=>(r.armies??[]).map(a=>a.armyId)));
     for(const a of world.armies){
         if(engaged.has(a.id))continue;
         if(a.order==='Reinforcing'&&(a.ownerId===you||a.supportedOwnerId===you))

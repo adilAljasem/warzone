@@ -69,8 +69,8 @@ const STEPS: StepDef[] = [
         shortTitle: { ar: 'تحريك الجيش لأقرب واحة', en: 'March to nearest oasis' },
         title: { ar: '3) سيطر على أقرب واحة مهجورة', en: '3) Claim the Nearest Oasis' },
         body: {
-            ar: 'اختر جيشك (Left Click من الشريط السفلي أو الخريطة)، ثم اضغط Right Click على الواحة المضيئة لإرسال جيشك واحتلالها.',
-            en: 'Select your army with Left Click, then Right Click the glowing Oasis on the map to send your troops to capture it.'
+            ar: 'اختر جيشك من الشريط السفلي أو الخريطة، ثم اضغط Right Click (أو بلمسة في وضع "أمر بلمسة" / ضغطة مطوّلة على الجوال) على الواحة المضيئة لاحتلالها.',
+            en: 'Select your army from the bottom bar or map, then Right Click (or Tap in Tap-Order mode / Long-Press on touch) on the glowing Oasis to capture it.'
         },
         tip: {
             ar: 'الواحة تمنح قريتك مكافأة إنتاج مستمرة وموارد إضافية!',
@@ -79,11 +79,11 @@ const STEPS: StepDef[] = [
     },
     {
         id: 'manage-oasis',
-        shortTitle: { ar: 'فتح لوحة الواحة وتجربة Shift', en: 'Inspect oasis & Shift-select' },
-        title: { ar: '4) إدارة الواحة وتحديد الوحدات', en: '4) Manage Oasis & Shift-Select' },
+        shortTitle: { ar: 'فتح لوحة الواحة وتحديد الوحدات', en: 'Inspect oasis & multi-select' },
+        title: { ar: '4) إدارة الواحة وتحديد الوحدات', en: '4) Manage Oasis & Multi-Select' },
         body: {
-            ar: 'اضغط Left Click على واحتك لرؤية إنتاجها ووحداتها منفصلة. يمكنك تحديد أكثر من نوع وحدة معاً بالضغط على Shift وإرسالهم بالرايت كليك!',
-            en: 'Left-click an oasis to open its panel. Select multiple unit types with Shift+Click and dispatch them together with Right Click.'
+            ar: 'افتح واحتك لرؤية إنتاجها ووحداتها منفصلة. يمكنك تحديد أكثر من نوع وحدة بالضغط على Shift (أو زر "＋ تحديد متعدد" على الجوال) وإرسالهم معاً!',
+            en: 'Open an oasis to inspect its production and units. Select multiple unit types with Shift+Click (or the "＋ Multi-Select" toggle on touch) and dispatch them together!'
         },
         tip: {
             ar: 'جيوشك تندمج تلقائياً داخل الواحة، وتعزيزات أصدقائك تظهر في الصف الأخضر.',
@@ -116,6 +116,7 @@ export class GameTutorial {
     private baselineTroops = 0;
     private baselineOases = 0;
     private lastContext: TutorialContext | null = null;
+    private renderKey = '';
     private rafId = 0;
 
     constructor(
@@ -244,6 +245,10 @@ export class GameTutorial {
                 this.coach.hidden = true;
                 this.ring.hidden = true;
                 this.setMapBeacon(null);
+                if (this.rafId) {
+                    cancelAnimationFrame(this.rafId);
+                    this.rafId = 0;
+                }
             }
             return;
         }
@@ -254,6 +259,8 @@ export class GameTutorial {
             }
             return;
         }
+
+        if (!this.rafId) this.startLoop();
 
         if (this.matchId !== ctx.matchId) {
             this.matchId = ctx.matchId;
@@ -283,7 +290,10 @@ export class GameTutorial {
         }
 
         this.coach.hidden = false;
-        this.render();
+        const nextKey = `${this.step}|${currentLanguage()}`;
+        if (this.renderKey !== nextKey) {
+            this.render();
+        }
         this.refreshSpotlights();
     }
 
@@ -318,7 +328,7 @@ export class GameTutorial {
         if (this.step === 1) {
             const trainBtn = ctx.panel === 'building'
                 ? document.querySelector<HTMLElement>('#drawer [data-action="train"]:not(:disabled)')
-                    ?? document.querySelector<HTMLElement>('#drawer [data-action="select-unit"]')
+                    ?? document.querySelector<HTMLElement>('#drawer [data-action="unit"]')
                 : null;
             if (trainBtn) {
                 return {
@@ -415,6 +425,7 @@ export class GameTutorial {
 
     private render() {
         const ar = currentLanguage() === 'ar';
+        this.renderKey = `${this.step}|${ar ? 'ar' : 'en'}`;
         this.coach.dir = ar ? 'rtl' : 'ltr';
         const cur = STEPS[this.step]!;
         const pct = Math.round(((this.step + 1) / STEPS.length) * 100);

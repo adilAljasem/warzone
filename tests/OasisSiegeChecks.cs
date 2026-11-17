@@ -36,7 +36,7 @@ internal static class OasisSiegeChecks
         var blockader=Send(enemy,10,OasisMode.Blockade);
         Check(!Site().Blockaded&&home.OasisBonuses[0]==.5,"A marching army does not prematurely disable production bonuses");
         Reject(()=>world.Apply(ally.Village.OwnerId,new(Guid.NewGuid(),CommandKind.BesiegeOasis,blockader,DestinationId:target.Id),now,0),"not_owned");
-        Until(()=>LogisticsWorld.Distance(View(enemy.Village.OwnerId).Armies.Single(a=>a.Id==blockader).Position,target.Position)<45);
+        Until(()=>LogisticsWorld.Distance(View(enemy.Village.OwnerId).Armies.Single(a=>a.Id==blockader).Position,target.Position)<75);
         world.AdvanceEconomies(120,now,1);var available=Site().Stock!.Value.Wood;
         Order(home,CommandKind.CollectOasis,target.Id);
         var collection=View().Convoys.Single(c=>c.Kind==ConvoyKind.Oasis);

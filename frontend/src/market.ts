@@ -6,11 +6,17 @@ export interface MarketDraft { offerResource: string; offerAmount: number; askRe
 interface MarketEconomy { villageId: string; capacity: number; resources: { wood:number; iron:number; stone:number; wheat:number }; reservedTradeWagons: number; garrison: Record<string,number>; targets: {name:string;level:number}[]; besieged:boolean }
 const resources = ['Wood','Iron','Stone','Wheat'];
 const icon = (name:string) => `<svg aria-hidden="true"><use href="#i-${name.toLowerCase()}"/></svg>`;
+export function estimateTradeWagons(economy: MarketEconomy, world: WorldView, amount: number): number {
+    const city = world.warfare?.settlements.find(c => c.id === economy.villageId);
+    const wagonId = `${city?.tribe.toLowerCase() ?? 'romans'}-wagon`;
+    const stats = unitCatalog.get(wagonId)?.stats;
+    return stats ? Math.ceil(amount / Math.max(1, stats.carryCapacity - Math.ceil(stats.wheatUpkeep / 60 * (2 * Math.SQRT2 * 4410 / stats.speed + 60)))) : 0;
+}
 export function marketOffersSection(world: WorldView, economy: MarketEconomy, you: string, owner: (id:string|null)=>string, running:boolean) {
     const city=world.warfare?.settlements.find(c=>c.id===economy.villageId);
-    const wagonId=`${city?.tribe.toLowerCase()??'romans'}-wagon`, stats=unitCatalog.get(wagonId)?.stats;
+    const wagonId=`${city?.tribe.toLowerCase()??'romans'}-wagon`;
     const available=economy.garrison[wagonId]??0;
-    const wagonsFor=(amount:number)=>stats?Math.ceil(amount/Math.max(1,stats.carryCapacity-Math.ceil(stats.wheatUpkeep/60*(2*Math.SQRT2*1940/stats.speed+60)))):0;
+    const wagonsFor=(amount:number)=>estimateTradeWagons(economy,world,amount);
     const offers=world.marketOffers??[], blocked=!running||economy.besieged;
     return `<h3>Open offers</h3><div class="market-offers">${offers.map(o=>{
         const mine=o.ownerId===you, amount=o.askAmount, payment=economy.resources[o.askResource.toLowerCase() as keyof typeof economy.resources];
@@ -19,9 +25,9 @@ export function marketOffersSection(world: WorldView, economy: MarketEconomy, yo
 }
 export function marketPanel(world: WorldView, economy: MarketEconomy, you: string, draft: MarketDraft, owner: (id:string|null)=>string, running:boolean) {
     const city=world.warfare?.settlements.find(c=>c.id===economy.villageId);
-    const wagonId=`${city?.tribe.toLowerCase()??'romans'}-wagon`, stats=unitCatalog.get(wagonId)?.stats;
+    const wagonId=`${city?.tribe.toLowerCase()??'romans'}-wagon`;
     const available=economy.garrison[wagonId]??0;
-    const wagonsFor=(amount:number)=>stats?Math.ceil(amount/Math.max(1,stats.carryCapacity-Math.ceil(stats.wheatUpkeep/60*(2*Math.SQRT2*1940/stats.speed+60)))):0;
+    const wagonsFor=(amount:number)=>estimateTradeWagons(economy,world,amount);
     const offers=world.marketOffers??[], own=offers.filter(o=>o.villageId===economy.villageId), slots=economy.targets.find(t=>t.name==='Market')?.level??1;
     const selector=(id:string,labelText:string,value:string)=>`<select id="${id}" aria-label="${labelText}">${resources.map(r=>`<option value="${r}" ${r===value?'selected':''}>${r}</option>`).join('')}</select>`;
     const blocked=!running||economy.besieged;

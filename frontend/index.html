@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Warzonee — Sunmeadow Valley | لعبة حرب الممالك الاستراتيجية</title>
-  <meta name="description" content="Warzonee (warzonee.com) — لعبة استراتيجية حربية فورية (RTS) في المتصفح. ابنِ قريتك، درّب جيوشك من خمس حضارات، سيطر على الواحات، واغزُ قلعة التاج أونلاين ضد اللاعبين أو الذكاء الاصطناعي." />
-  <meta name="keywords" content="Warzonee, warzonee.com, RTS, browser strategy game, multiplayer war game, لعبة حرب استراتيجية, لعبة ملوك, قلعة التاج, حرب الممالك, ألعاب متصفح" />
+  <title>Warzonee — Sunmeadow Valley | Free Browser RTS Kingdom Strategy Game</title>
+  <meta name="description" content="Warzonee (warzonee.com) — Free real-time browser strategy game (RTS) in Sunmeadow Valley. Build your village, command 5 civilizations & 70 units, capture oases, and conquer the Crown Keep online or vs AI with zero pay-to-win." />
+  <meta name="keywords" content="Warzonee, warzonee.com, free browser RTS, browser strategy game, multiplayer war game, Travian alternative, no download strategy game, لعبة حرب استراتيجية, لعبة ملوك, قلعة التاج, حرب الممالك, ألعاب متصفح, بديل ترافيان" />
   <meta name="author" content="Warzonee" />
   <meta name="application-name" content="Warzonee" />
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
@@ -14,6 +14,9 @@
   <meta name="apple-mobile-web-app-title" content="Warzonee" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="canonical" href="https://warzonee.com/" />
+  <link rel="alternate" hreflang="x-default" href="https://warzonee.com/" />
+  <link rel="alternate" hreflang="en" href="https://warzonee.com/en/" />
+  <link rel="alternate" hreflang="ar" href="https://warzonee.com/ar/" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
@@ -23,16 +26,16 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://warzonee.com/" />
   <meta property="og:site_name" content="Warzonee" />
-  <meta property="og:title" content="Warzonee — Sunmeadow Valley | لعبة حرب استراتيجية فورية" />
-  <meta property="og:description" content="ابنِ مملكتك، قُد جيوش الرومان والجرمان والإغريق والمغول والفرس، واستولِ على الواحات وقلعة التاج في معارك جماعية مباشرة عبر المتصفح." />
+  <meta property="og:title" content="Warzonee — Sunmeadow Valley | Free Browser RTS War Game" />
+  <meta property="og:description" content="Build your kingdom, command armies across five civilizations (Romans, Germans, Greeks, Mongols, Persians), capture oases, and conquer the Crown Keep live in your browser." />
   <meta property="og:image" content="https://warzonee.com/og-image.jpg" />
   <meta property="og:image:secure_url" content="https://warzonee.com/og-image.jpg" />
   <meta property="og:image:type" content="image/jpeg" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Warzonee — Real-Time Strategy Battlefield & Crown Keep" />
-  <meta property="og:locale" content="ar_SA" />
-  <meta property="og:locale:alternate" content="en_US" />
+  <meta property="og:locale" content="en_US" />
+  <meta property="og:locale:alternate" content="ar_SA" />
 
   <!-- Twitter / X Card -->
   <meta name="twitter:card" content="summary_large_image" />
@@ -47,15 +50,15 @@
     "@context": "https://schema.org",
     "@type": "VideoGame",
     "name": "Warzonee",
-    "alternateName": "Warzonee — Sunmeadow Valley",
+    "alternateName": ["Warzonee — Sunmeadow Valley", "وارزوني — لعبة حرب الممالك الاستراتيجية"],
     "url": "https://warzonee.com/",
     "image": "https://warzonee.com/og-image.jpg",
-    "description": "Real-time multiplayer browser strategy game featuring five playable tribes, resource management, oasis control, siege warfare, and the Crown Keep endgame.",
-    "genre": ["Real-Time Strategy", "Multiplayer Online Battle", "Browser Game"],
+    "description": "Free real-time multiplayer browser strategy game featuring five playable tribes, resource management, oasis control, siege warfare, and the Crown Keep endgame.",
+    "genre": ["Real-Time Strategy", "Multiplayer Online Battle", "Browser Game", "Grand Strategy"],
     "gamePlatform": ["Web Browser", "PC", "Mobile Web"],
     "applicationCategory": "Game",
     "operatingSystem": "Any",
-    "inLanguage": ["ar", "en"],
+    "inLanguage": ["en", "ar"],
     "playMode": ["MultiPlayer", "SinglePlayer"],
     "offers": {
       "@type": "Offer",
@@ -94,8 +97,17 @@
   <div id="map-cursor-badge" class="map-cursor-badge" aria-hidden="true" hidden></div>
   <div id="notice" class="toast glass" role="status" hidden></div>
   <div id="work-queue" class="work-queue"></div>
-  <section id="command-deck" class="command-deck" hidden><div id="army-merge-bar" class="army-merge-bar" hidden></div><div class="army-shelf glass"><div id="army-strip" class="army-strip" aria-label="Command armies"></div></div><div class="building-shelf glass"><div id="building-strip" class="building-strip" aria-label="Village buildings"></div></div></section>
+  <section id="command-deck" class="command-deck" hidden><div id="army-order-bar" class="army-order-bar" data-no-translate hidden></div><div id="army-merge-bar" class="army-merge-bar" hidden></div><div class="army-shelf glass"><div id="army-strip" class="army-strip" aria-label="Command armies"></div></div><div class="building-shelf glass"><div id="building-strip" class="building-strip" aria-label="Village buildings"></div></div></section>
   <div id="spectator-bar" class="spectator-bar glass" hidden></div>
-  <div id="welcome" class="welcome-overlay"><section class="welcome-card glass"><div class="welcome-emblem"><svg><use href="#i-shield"/></svg></div><span class="eyebrow">WARZONEE.COM · REAL-TIME STRATEGY</span><h1>WARZONEE</h1><p>Build your village. Lead your people.<br/>Write your story in the valley.</p><label>Commander<input id="player-name" value="Commander" maxlength="32"/></label><div id="tribe-picker" hidden></div><button id="multiplayer" class="primary wide">العب أونلاين <span>→</span></button><button id="play-solo" class="quiet wide">العب مع الكمبيوتر</button><button id="play-tutorial" type="button" class="quiet wide">🎓 مباراة تدريبية (تيتوريال)</button><button id="welcome-guide" type="button" class="quiet wide">📖 دليل اللعبة والتعليمات</button><small>Local realm · Seven AI neighbors · Crown Keep at 30:00</small></section></div>
+  <div id="welcome" class="welcome-overlay"><section class="welcome-card glass"><div class="welcome-emblem"><svg><use href="#i-shield"/></svg></div><span class="eyebrow">WARZONEE.COM · REAL-TIME STRATEGY</span><h1>WARZONEE</h1><p>Build your village. Lead your people.<br/>Write your story in the valley.</p><div id="invite-banner" class="invite-banner" data-no-translate hidden></div><label>Commander<input id="player-name" value="Commander" maxlength="32"/></label><div id="tribe-picker" data-no-translate></div><button id="multiplayer" class="primary wide">Play Online <span>→</span></button><button id="play-blitz" type="button" class="quiet wide blitz-btn">⚡ Quick Blitz (3x · 30m)</button><button id="play-solo" class="quiet wide">Play Solo vs AI</button><button id="play-tutorial" type="button" class="quiet wide">🎓 Tutorial Match</button><button id="welcome-guide" type="button" class="quiet wide">📖 Game Guide & Wiki</button><nav class="welcome-seo-links" data-no-translate aria-label="Game overview pages"><a href="/en/" hreflang="en">Overview &amp; Tribes (EN)</a><span aria-hidden="true">·</span><a href="/ar/" hreflang="ar">نظرة عامة والحضارات (AR)</a></nav><small>Local realm · Seven AI neighbors · Crown Keep at 45:00</small></section></div>
   <div id="app-version" class="app-version" data-no-translate aria-hidden="true"></div>
-</div><script type="module" src="/src/main.ts"></script></body></html>
+</div>
+<noscript>
+  <section style="max-width:780px;margin:2rem auto;padding:1.5rem;font-family:system-ui,sans-serif;color:#f2eddb;background:#172d29;border-radius:12px;">
+    <h1>Warzonee — Sunmeadow Valley | Real-Time Browser Strategy Game</h1>
+    <p>Warzonee is a free, zero pay-to-win real-time multiplayer strategy (RTS) game played directly in your web browser. Choose from five unique civilizations (Romans, Germans, Greeks, Mongols, and Persians), upgrade your village buildings, capture resource oases, dispatch trade caravans, form alliances, and conquer the Crown Keep.</p>
+    <p lang="ar" dir="rtl">وارزوني (Warzonee) — لعبة استراتيجية حربية فورية في المتصفح بدون تحميل وبدون دفع للفوز. اختر من بين 5 حضارات (الرومان، الجرمان، الإغريق، المغول، الفرس)، طوّر قريتك، سيطر على الواحات، كوّن تحالفات، واغزُ قلعة التاج.</p>
+    <p><a href="/en/" style="color:#e3c17a;">Read the English Game Guide</a> | <a href="/ar/" style="color:#e3c17a;">اقرأ دليل اللعبة بالعربية</a></p>
+  </section>
+</noscript>
+<script type="module" src="/src/main.ts"></script></body></html>

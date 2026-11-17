@@ -24,7 +24,10 @@ export function loadUnitArt() {
         unitRoles.forEach((role, index) => textures.set(`${tribe}-${role}`, new Texture({
             source: atlas.source, frame: new Rectangle(index % 4 * size, Math.floor(index / 4) * height, size, height)
         })));
-    })).then(() => undefined);
+    })).then(() => undefined, err => {
+        loading = undefined;
+        throw err;
+    });
 }
 
 export function unitSprite(id: string, width = 52) {

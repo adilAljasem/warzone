@@ -4,7 +4,7 @@ import ts from '../frontend/node_modules/typescript/lib/typescript.js';
 
 const source=await readFile(new URL('../frontend/src/army-visual.ts',import.meta.url),'utf8');
 const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
-const {armyFigureCount,armyFigures,armyFigureLayout,isDemolishing,isSmoking}=await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const {armyFigureCount,armyFigures,armyFigureLayout,armyFlagSlots,isDemolishing,isSmoking}=await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 
 assert.deepEqual([0,1,4,9,10,11,20,25,100,400,1024,100000].map(armyFigureCount),[0,1,1,1,1,2,2,3,10,40,103,10000]);
 for(let count=1;count<=2000;count++){
@@ -29,4 +29,16 @@ for(const state of [{status:'Ended',objective:'Raze',phase:'Demolishing'},{statu
 assert(isSmoking({ruined:false,smokeSeconds:62}));
 assert(!isSmoking({ruined:true,smokeSeconds:62}));
 assert(!isSmoking({ruined:false,smokeSeconds:0}));
-console.log('Passed map visual rules: one figure per ten of each role, partial groups, uncapped balanced layouts, casualties, public figures and demolition/smoke lifecycle.');
+const bigLayout=armyFigureLayout(armyFigureCount(1000));
+const singleFlag=armyFlagSlots(1,bigLayout.points,bigLayout.rows,bigLayout.columns,1);
+assert.equal(singleFlag.length,1);
+const multiFlags=armyFlagSlots(5,bigLayout.points,bigLayout.rows,bigLayout.columns,1);
+assert.equal(multiFlags.length,5);
+assert.deepEqual(multiFlags[0],singleFlag[0],'Primary flag stays in the corner');
+for(let i=0;i<multiFlags.length;i++){
+    for(let j=i+1;j<multiFlags.length;j++){
+        const d=Math.hypot(multiFlags[i].x-multiFlags[j].x,multiFlags[i].base-multiFlags[j].base);
+        assert(d>=40,`Flags ${i} and ${j} are well distributed across the army instead of bunched (dist=${d})`);
+    }
+}
+console.log('Passed map visual rules: one figure per ten of each role, partial groups, uncapped balanced layouts, casualties, public figures, distributed flags and demolition/smoke lifecycle.');

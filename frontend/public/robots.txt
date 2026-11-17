@@ -1,5 +1,7 @@
 User-agent: *
 Allow: /
+Allow: /en/
+Allow: /ar/
 Disallow: /api/
 Disallow: /game
 

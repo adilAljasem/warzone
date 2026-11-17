@@ -47,13 +47,15 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
     const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
     const kindAt = (x: number, y: number) => biomeAt(regions, { x, y: y / .65 })?.kind;
     const palette: Record<string, number> = { Woodland: 0x536e49, Highlands: 0x939183, Grassland: 0xa8b77c, Desert: 0xdac18b };
+    const WORLD_LEFT = -6966, WORLD_TOP = -4527, TERRAIN_SCALE = 4.5, TERRAIN_W = 4096, TERRAIN_H = 2662;
+    const WORLD_W = TERRAIN_W * TERRAIN_SCALE, WORLD_H = TERRAIN_H * TERRAIN_SCALE;
     const ownedTextures: Texture[] = [];
-    const base = new TilingSprite({ texture: groundTexture(0), width: 13500, height: 8775 });
-    base.position.set(-4500, -2925); base.tileScale.set(.6); base.tint = 0xd6dfbc; root.addChild(base);
-    // Bake the feathered textures once. A single sprite avoids per-frame mask filters
-    // over the entire world, especially on mobile and software WebGL renderers.
+    const base = new TilingSprite({ texture: groundTexture(0), width: WORLD_W, height: WORLD_H });
+    base.position.set(WORLD_LEFT, WORLD_TOP); base.tileScale.set(.6); base.tint = 0xd6dfbc; root.addChild(base);
+    // Bake the feathered textures once within the universal 4096px GPU texture limit while
+    // expanding coverage across the wider surrounding horizon.
     const terrainCanvas = document.createElement('canvas');
-    terrainCanvas.width = 4500; terrainCanvas.height = 2925;
+    terrainCanvas.width = TERRAIN_W; terrainCanvas.height = TERRAIN_H;
     const terrainContext = terrainCanvas.getContext('2d')!;
     const layerCanvas = document.createElement('canvas');
     layerCanvas.width = terrainCanvas.width; layerCanvas.height = terrainCanvas.height;
@@ -64,19 +66,21 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
     for (const region of regions) {
         const texture = groundTexture(region.kind === 'Desert' ? 3 : region.kind === 'Highlands' ? 2 : 0);
         const frame = texture.frame, tile = document.createElement('canvas');
-        tile.width = Math.round(frame.width * .3); tile.height = Math.round(frame.height * .3);
+        tile.width = Math.max(64, Math.round(frame.width * .14)); tile.height = Math.max(64, Math.round(frame.height * .14));
         tile.getContext('2d')!.drawImage(texture.source.resource as CanvasImageSource, frame.x, frame.y, frame.width, frame.height, 0, 0, tile.width, tile.height);
         layerContext.clearRect(0, 0, terrainCanvas.width, terrainCanvas.height);
         layerContext.fillStyle = layerContext.createPattern(tile, 'repeat')!;
         layerContext.fillRect(0, 0, terrainCanvas.width, terrainCanvas.height);
-        layerContext.globalAlpha = region.kind === 'Woodland' ? .5 : .24;
+        layerContext.globalAlpha = region.kind === 'Woodland' ? .36 : .18;
         layerContext.fillStyle = '#' + (palette[region.kind] ?? 0xa8b77c).toString(16).padStart(6, '0');
         layerContext.fillRect(0, 0, terrainCanvas.width, terrainCanvas.height); layerContext.globalAlpha = 1;
         maskContext.clearRect(0, 0, terrainCanvas.width, terrainCanvas.height);
         maskContext.filter = 'blur(12px)'; maskContext.fillStyle = '#ffffff'; maskContext.beginPath();
         region.boundary.forEach((p, i) => {
-            const x = ((p.x === 45 ? -4500 : p.x === 4455 ? 9000 : p.x) + 4500) / 3;
-            const y = ((p.y === 45 ? -4500 : p.y === 4455 ? 9000 : p.y) * .65 + 2925) / 3;
+            const wx = p.x <= 46 ? WORLD_LEFT : p.x >= 4454 ? WORLD_LEFT + WORLD_W : p.x;
+            const wy = p.y <= 46 ? WORLD_TOP : p.y >= 4454 ? WORLD_TOP + WORLD_H : p.y * .65;
+            const x = (wx - WORLD_LEFT) / TERRAIN_SCALE;
+            const y = (wy - WORLD_TOP) / TERRAIN_SCALE;
             if (i) maskContext.lineTo(x, y); else maskContext.moveTo(x, y);
         });
         maskContext.closePath(); maskContext.fill();
@@ -84,26 +88,26 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
         layerContext.globalCompositeOperation = 'source-over'; terrainContext.drawImage(layerCanvas, 0, 0);
     }
     const terrainTexture = Texture.from(terrainCanvas); ownedTextures.push(terrainTexture);
-    const terrain = new Sprite(terrainTexture); terrain.position.set(-4500, -2925); terrain.scale.set(3); root.addChild(terrain);
+    const terrain = new Sprite(terrainTexture); terrain.position.set(WORLD_LEFT, WORLD_TOP); terrain.scale.set(TERRAIN_SCALE); root.addChild(terrain);
     layerCanvas.width = maskCanvas.width = 1;
 
     const ground = new Graphics(), details = new Graphics(); root.addChild(ground, details);
     // Low relief and ground cover establish biome identity without looking collectible.
-    for (let i = 0; i < 2400; i++) {
-        const x = -350 + random() * 5200, y = -260 + random() * 3450, kind = kindAt(x, y);
+    for (let i = 0; i < 5600; i++) {
+        const x = -2200 + random() * 8900, y = -1500 + random() * 5925, kind = kindAt(x, y);
         if (kind === 'Desert') {
             const w = 18 + random() * 62, h = 4 + random() * 11;
             ground.moveTo(x - w, y).quadraticCurveTo(x, y - h * 2, x + w, y + h)
-                .quadraticCurveTo(x, y - h, x - w, y).fill({ color: 0xb49968, alpha: .10 });
+                .quadraticCurveTo(x, y - h, x - w, y).fill({ color: 0xb49968, alpha: .09 });
             details.moveTo(x - w * .8, y - 1).quadraticCurveTo(x, y - h * 1.5, x + w * .8, y + h * .6)
-                .stroke({ color: 0xffe5ad, alpha: .24, width: 1.5 });
+                .stroke({ color: 0xffe5ad, alpha: .22, width: 1.4 });
         } else if (kind === 'Highlands') {
             ground.ellipse(x, y, 18 + random() * 35, 6 + random() * 12).fill({ color: 0x666b5c, alpha: .07 });
-            details.poly([x - 4, y, x - 2, y - 4, x + 3, y - 3, x + 5, y + 1]).fill({ color: 0x646e60, alpha: .26 });
+            details.poly([x - 4, y, x - 2, y - 4, x + 3, y - 3, x + 5, y + 1]).fill({ color: 0x646e60, alpha: .22 });
         } else {
             ground.ellipse(x, y, 12 + random() * 30, 4 + random() * 10).fill({ color: kind === 'Woodland' ? 0x3d603c : 0xd3ce92, alpha: .07 });
             details.moveTo(x - 3, y).lineTo(x - 5, y - 4).moveTo(x, y).lineTo(x, y - 6).moveTo(x + 2, y).lineTo(x + 5, y - 3)
-                .stroke({ color: 0x4e7044, alpha: .22, width: 1 });
+                .stroke({ color: 0x4e7044, alpha: .20, width: 1 });
         }
     }
 
@@ -136,7 +140,7 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
     const river = new Graphics();
     for (const [extra, color, alpha] of [[24, 0x789064, .22], [14, 0xa3ab7d, .6], [7, 0xc0b28a, 1], [2, 0x527e77, 1], [0, 0x6faaa0, 1], [-7, 0x8dbeb0, .7]] as const) {
         const left: number[] = [], right: number[] = [];
-        for (let y = -2925; y <= 5850; y += 12) {
+        for (let y = WORLD_TOP; y <= WORLD_TOP + WORLD_H; y += 16) {
             const width = riverWidth(y) + extra;
             left.push(riverX(y) - width, y); right.unshift(riverX(y) + width, y);
         }
@@ -161,36 +165,101 @@ export function drawLandscape(root: Container, regions: BiomeRegion[], settlemen
     const scenery = new Container(); scenery.sortableChildren = true; root.addChild(scenery);
     const swaying: { sprite: Sprite; phase: number }[] = [];
     const placed: { x: number; y: number; width: number }[] = [];
-    const clear = (x: number, y: number, size: number) =>
-        !towns.some(p => distance(p, { x, y }) < 135 + size * .45) &&
-        !springs.some(p => distance(p, { x, y }) < 145 + size * .5) &&
-        Math.abs(x - riverX(y)) > riverWidth(y) + 26 + size * .35 &&
-        !roadPoints.some(p => distance(p, { x, y }) < 18 + size * .4) &&
-        distance({ x, y }, { x: 2250, y: 1462.5 }) > 95 + size * .4;
+    // Keep all trees, boulders, and mountains outside/behind the village perimeter so nothing stands between villages,
+    // while maintaining wide clearings around outer settlements, oases, roads, and the river.
+    const villageOuterRadius = Math.max(1750, ...settlements.map(s => distance(s, { x: 2250, y: 2250 }))) + 260;
+    const clear = (x: number, y: number, size: number) => {
+        const visual = { x, y: y - size * .42 };
+        const outsideVillageRing = (pt: Point) => Math.hypot(pt.x - 2250, pt.y / .65 - 2250) >= villageOuterRadius;
+        const clearOf = (p: Point, r: number) => distance(p, { x, y }) >= r && distance(p, visual) >= r;
+        return outsideVillageRing({ x, y }) && outsideVillageRing(visual) &&
+            towns.every(p => clearOf(p, 260 + size * .55) &&
+                !(Math.abs(x - p.x) < 175 + size * .4 && y > p.y - 20 && y < p.y + 155 + size * .5)) &&
+            springs.every(p => clearOf(p, 230 + size * .55) &&
+                !(Math.abs(x - p.x) < 140 + size * .35 && y > p.y - 20 && y < p.y + 135 + size * .45)) &&
+            Math.abs(x - riverX(y)) > riverWidth(y) + 48 + size * .4 &&
+            !roadPoints.some(p => distance(p, { x, y }) < 34 + size * .45 || distance(p, visual) < 30 + size * .4) &&
+            clearOf({ x: 2250, y: 1462.5 }, 220 + size * .5);
+    };
     const place = (index: number, size: number, x: number, y: number, kind: string) => {
-        if (!clear(x, y, size) || kindAt(x, y) !== kind || placed.some(p => distance(p, { x, y }) < (p.width + size) * .19)) return;
+        if (!clear(x, y, size) || kindAt(x, y) !== kind || placed.some(p => distance(p, { x, y }) < (p.width + size) * .24)) return;
         const sprite = terrainSprite(index, size, x, y); sprite.zIndex = y;
-        sprite.tint = kind === 'Woodland' ? 0xa5b69b : kind === 'Highlands' ? 0xc3c3b2 : 0xd0c3a1;
+        if (random() < .5) sprite.scale.x *= -1;
+        sprite.tint = kind === 'Woodland' ? 0x9aae92 : kind === 'Highlands' ? 0xb4b6a6 : 0xcbbf9e;
+        sprite.alpha = .78;
         scenery.addChild(sprite); placed.push({ x, y, width: size });
         if (index < 2) swaying.push({ sprite, phase: random() * Math.PI * 2 });
     };
-    for (let i = 0; i < 270; i++) {
-        const x = -350 + random() * 5200, y = -240 + random() * 3400, kind = kindAt(x, y);
+    // Paint low, ground-blended boulder clusters directly into ground/details so rocks match the biome palette
+    // and form natural organic formations instead of stamped straight-line rows of alpine icons.
+    const drawOutcrop = (cx: number, cy: number, kind: string, span: number) => {
+        if (!clear(cx, cy, span * 1.4) || kindAt(cx, cy) !== kind || placed.some(p => distance(p, { x: cx, y: cy }) < (p.width + span) * .45)) return;
+        const palette = kind === 'Desert'
+            ? { base: 0xa67e49, mid: 0xc2975e, hi: 0xdbba83, rim: 0x6f512f }
+            : { base: 0x6c6e60, mid: 0x878879, hi: 0xa4a393, rim: 0x4b4e42 };
+        const count = 3 + Math.floor(random() * 4);
+        ground.ellipse(cx, cy + span * .12, span * .72, span * .34).fill({ color: palette.rim, alpha: .14 });
+        const stones = Array.from({ length: count }, (_, idx) => {
+            const a = random() * Math.PI * 2, d = Math.sqrt(random()) * span * .48;
+            return {
+                x: cx + Math.cos(a) * d,
+                y: cy + Math.sin(a) * d * .62,
+                r: (idx === 0 ? .52 : .24 + random() * .26) * span * .55,
+            };
+        }).sort((a, b) => a.y - b.y);
+        for (const s of stones) {
+            const w = s.r * (1.05 + random() * .35), h = s.r * (.62 + random() * .32);
+            ground.ellipse(s.x + w * .12, s.y + h * .28, w * .98, h * .46).fill({ color: palette.rim, alpha: .18 });
+            ground.poly([
+                s.x - w, s.y + h * .18,
+                s.x - w * .68, s.y - h * .65,
+                s.x - w * .08, s.y - h * .95,
+                s.x + w * .64, s.y - h * .58,
+                s.x + w, s.y + h * .15,
+                s.x + w * .38, s.y + h * .38,
+                s.x - w * .45, s.y + h * .35,
+            ]).fill({ color: palette.base, alpha: .85 }).stroke({ color: palette.rim, alpha: .24, width: 1.2 });
+            ground.poly([
+                s.x - w * .68, s.y - h * .65,
+                s.x - w * .08, s.y - h * .95,
+                s.x + w * .45, s.y - h * .55,
+                s.x + w * .06, s.y - h * .18,
+                s.x - w * .52, s.y - h * .22,
+            ]).fill({ color: palette.hi, alpha: .66 });
+            ground.poly([
+                s.x + w * .06, s.y - h * .18,
+                s.x + w * .64, s.y - h * .58,
+                s.x + w, s.y + h * .15,
+                s.x + w * .38, s.y + h * .38,
+            ]).fill({ color: palette.mid, alpha: .58 });
+        }
+        placed.push({ x: cx, y: cy, width: span * 1.1 });
+    };
+    for (let i = 0; i < 640; i++) {
+        const x = -2100 + random() * 8700, y = -1400 + random() * 5725, kind = kindAt(x, y);
+        const worldDist = Math.hypot(x - 2250, y / .65 - 2250);
         if (kind === 'Woodland') {
-            // Overlapping, small tree crowns read as continuous woodland, not resource nodes.
-            const span = 95 + random() * 60;
-            for (let j = 0; j < 32; j++) {
+            const span = 110 + random() * 60;
+            for (let j = 0; j < 20; j++) {
                 const angle = random() * Math.PI * 2, radius = Math.sqrt(random());
-                place(j % 4 === 0 ? 0 : 1, 58 + random() * 34, x + Math.cos(angle) * radius * span, y + Math.sin(angle) * radius * span * .65, kind);
+                place(j % 4 === 0 ? 0 : 1, 44 + random() * 26, x + Math.cos(angle) * radius * span, y + Math.sin(angle) * radius * span * .65, kind);
             }
-        } else if (kind === 'Highlands' && i % 3 === 0) {
-            const angle = random() * Math.PI;
-            for (let j = 0; j < 7; j++) {
-                const tx = x + Math.cos(angle) * (j - 3) * 53, ty = y + Math.sin(angle) * (j - 3) * 32;
-                place(2, 125 + Math.sin(j / 6 * Math.PI) * 40 + random() * 15, tx, ty, kind);
+        } else if (kind === 'Highlands') {
+            if (i % 3 === 0) {
+                const clusterCount = 2 + Math.floor(random() * 3);
+                for (let j = 0; j < clusterCount; j++) {
+                    const a = random() * Math.PI * 2, dist = 35 + random() * 85;
+                    drawOutcrop(x + Math.cos(a) * dist, y + Math.sin(a) * dist * .62, kind, 36 + random() * 28);
+                }
             }
-        } else if (kind === 'Desert' && i % 9 === 0) {
-            place(4, 80 + random() * 35, x, y, kind);
+            if (worldDist > 2650 && i % 24 === 0) {
+                place(2, 118 + random() * 36, x, y, kind);
+            }
+        } else if (kind === 'Desert' && i % 4 === 0) {
+            drawOutcrop(x, y, kind, 28 + random() * 24);
+            if (worldDist > 2450 && i % 20 === 0) {
+                place(4, 62 + random() * 22, x + (random() - .5) * 90, y + (random() - .5) * 60, kind);
+            }
         }
     }
     const names = new Container(); root.addChild(names);
