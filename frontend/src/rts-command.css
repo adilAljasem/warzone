@@ -390,7 +390,8 @@ button.disband-confirm {
 }
 
 .army-order-bar {
-  display: flex;
+  align-self: center;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;

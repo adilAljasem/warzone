@@ -286,7 +286,12 @@ const editedDrafts = new Set<string>();
 let hoveredState: { target: MapSelection | null; client: { x: number; y: number } | null } = { target: null, client: null };
 let radialState: { target: MapSelection; options: RadialOption[]; anchor: { x: number; y: number } } | null = null;
 let selection: MapSelection | null = null, busy = false, roomBusy = false, pendingActions = 0, connecting = false, page = 0, toastTimer = 0;
-let tapOrderMode = typeof window !== "undefined" && (window.matchMedia?.("(pointer: coarse)").matches ?? false);
+const isTouchUi = () => typeof window !== "undefined" && (
+    (window.matchMedia?.("(pointer: coarse)").matches ?? false)
+    || (window.matchMedia?.("(hover: none)").matches ?? false)
+    || (navigator.maxTouchPoints > 0 && window.innerWidth <= 900)
+);
+let tapOrderMode = isTouchUi();
 let multiSelectMode = false;
 let actionQueue: Promise<void> = Promise.resolve();
 let pointerPressed = false, pendingSnapshot: Snapshot | null = null;
@@ -483,7 +488,7 @@ function applyOasisUnitSelection(oasisId: string, armyId: string, units: string[
 function renderArmyOrderBar() {
     const bar = document.getElementById("army-order-bar");
     if (!bar) return;
-    if (!state?.world || state.status !== "Running" || selectedArmies.length === 0) {
+    if (!isTouchUi() || !state?.world || state.status !== "Running" || selectedArmies.length === 0) {
         bar.hidden = true;
         if (bar.dataset.key) {
             delete bar.dataset.key;
@@ -3417,19 +3422,23 @@ el("chat-form").addEventListener("submit", event => {
     event.preventDefault();
     const input = el<HTMLInputElement>("chat-input"), message = input.value.trim();
     if (!message) return;
-    if (/^\/enablecheat(?:\s|$)/i.test(message)) {
-        const password = message.replace(/^\/enablecheat\s*/i, "").trim();
+    if (message.startsWith("/")) {
         input.value = "";
-        void perform(async () => {
-            await connection.invoke<boolean>("EnableCheat", password);
-            adminEnabled = true;
-            menuChatVisible = false;
-            roomList = await connection.invoke<RoomSummary[]>("ListRooms");
-            syncAdminOverlay();
-            adminOverlay.setOpen(true);
-            renderChat();
-            notice(currentLanguage() === "ar" ? "تم تفعيل وضع الأدمن والشيت ⚡" : "Admin & Cheat mode enabled ⚡");
-        }, true);
+        if (/^\/enablecheat(?:\s|$)/i.test(message)) {
+            const password = message.replace(/^\/enablecheat\s*/i, "").trim();
+            void perform(async () => {
+                await connection.invoke<boolean>("EnableCheat", password);
+                adminEnabled = true;
+                menuChatVisible = false;
+                roomList = await connection.invoke<RoomSummary[]>("ListRooms");
+                syncAdminOverlay();
+                adminOverlay.setOpen(true);
+                renderChat();
+                notice(currentLanguage() === "ar" ? "تم تفعيل وضع الأدمن والشيت ⚡" : "Admin & Cheat mode enabled ⚡");
+            }, true);
+        } else {
+            notice(currentLanguage() === "ar" ? "الأوامر التي تبدأ بـ / لا تُرسل إلى الشات." : "Slash commands are not sent to chat.", true);
+        }
         return;
     }
     if (!state) return;

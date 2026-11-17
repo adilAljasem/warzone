@@ -49,6 +49,10 @@ internal static class SocialChecks
             "Chat is shared and replay cannot duplicate a message");
         Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.SendChat, Guid.Empty, Message: " ")).Code == "chat",
             "Blank chat messages are rejected");
+        Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.SendChat, Guid.Empty, Message: "/enablecheat secret")).Code == "chat"
+            && room.Execute(host, new(Guid.NewGuid(), CommandKind.SendChat, Guid.Empty, Message: "/unknown arg")).Code == "chat"
+            && !room.Snapshot(guest, _ => true).Chat.Any(m => m.Text.StartsWith('/')),
+            "Slash commands are rejected and never broadcast to chat");
         Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.ProposeAlliance, guest)).Accepted,
             "A player can propose an alliance");
         Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.ProposeAlliance, third)).Accepted,

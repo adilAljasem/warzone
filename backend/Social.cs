@@ -64,6 +64,8 @@ public sealed partial class GameRoom
             var text = command.Message?.Trim() ?? "";
             if (text.Length is < 1 or > 300 || text.Any(char.IsControl))
                 throw new GameRuleException("chat", "Messages must contain 1-300 visible characters.");
+            if (text.StartsWith('/'))
+                throw new GameRuleException("chat", "Slash commands cannot be sent to chat.");
             var authorName = players.TryGetValue(actor, out var p) ? p.Name
                 : spectators.TryGetValue(actor, out var sName) ? $"{sName} (Spectator)" : null;
             AddChat(actor, text, senderName: authorName);
