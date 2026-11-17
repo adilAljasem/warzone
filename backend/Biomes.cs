@@ -34,13 +34,16 @@ public static class Biomes
         Position[] NaturalEdge(Position from, Position to)
         {
             from = Rounded(from); to = Rounded(to);
+            var dx = to.X - from.X; var dy = to.Y - from.Y;
+            if (dx * dx + dy * dy <= 1e-12) return [from];
             if (from.X == to.X && from.X is 45 or 4455 || from.Y == to.Y && from.Y is 45 or 4455) return [from, to];
             var reverse = from.X > to.X || from.X == to.X && from.Y > to.Y;
             var a = reverse ? to : from; var b = reverse ? from : to;
             var key = $"{a.X:R},{a.Y:R}:{b.X:R},{b.Y:R}";
             if (!edges.TryGetValue(key, out var points))
             {
-                var dx = b.X - a.X; var dy = b.Y - a.Y; var length = Math.Sqrt(dx * dx + dy * dy);
+                dx = b.X - a.X; dy = b.Y - a.Y; var length = Math.Sqrt(dx * dx + dy * dy);
+                if (length <= 1e-6) return [from];
                 var phase = random.NextDouble() * Math.PI * 2; var amplitude = Math.Min(155, length * .10);
                 var steps = Math.Max(32, (int)Math.Ceiling(length / 36));
                 points = Enumerable.Range(0, steps + 1).Select(i => {
@@ -67,13 +70,32 @@ public static class Biomes
                 var a = 2 * (centers[j].X - centers[i].X); var b = 2 * (centers[j].Y - centers[i].Y);
                 var c = centers[j].X * centers[j].X + centers[j].Y * centers[j].Y - centers[i].X * centers[i].X - centers[i].Y * centers[i].Y;
                 var clipped = new List<Position>();
+                void AddVertex(Position vertex)
+                {
+                    if (clipped.Count > 0)
+                    {
+                        var last = clipped[^1];
+                        if (Math.Abs(last.X - vertex.X) <= 1e-6 && Math.Abs(last.Y - vertex.Y) <= 1e-6) return;
+                    }
+                    clipped.Add(vertex);
+                }
                 for (var k = 0; k < polygon.Count; k++)
                 {
                     var start = polygon[k]; var finish = polygon[(k + 1) % polygon.Count];
                     var d1 = a * start.X + b * start.Y - c; var d2 = a * finish.X + b * finish.Y - c;
-                    if (d1 <= 0) clipped.Add(start);
-                    if ((d1 <= 0) != (d2 <= 0)) { var t = d1 / (d1 - d2); clipped.Add(new(start.X + (finish.X - start.X) * t, start.Y + (finish.Y - start.Y) * t)); }
+                    if (d1 <= 0) AddVertex(start);
+                    if ((d1 <= 0) != (d2 <= 0))
+                    {
+                        var denom = d1 - d2;
+                        if (Math.Abs(denom) > 1e-12)
+                        {
+                            var t = d1 / denom;
+                            AddVertex(new(start.X + (finish.X - start.X) * t, start.Y + (finish.Y - start.Y) * t));
+                        }
+                    }
                 }
+                if (clipped.Count > 1 && Math.Abs(clipped[0].X - clipped[^1].X) <= 1e-6 && Math.Abs(clipped[0].Y - clipped[^1].Y) <= 1e-6)
+                    clipped.RemoveAt(clipped.Count - 1);
                 polygon = clipped;
             }
             var boundary = polygon.SelectMany((p, k) => NaturalEdge(p, polygon[(k + 1) % polygon.Count]).SkipLast(1)).ToArray();

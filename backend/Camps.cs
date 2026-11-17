@@ -4,8 +4,13 @@ public sealed partial class LogisticsWorld
 {
     private void JoinCampArmy(BattleState battle, Army camp, Army enemy, double now)
     {
-        if (battle.Contains(enemy) || enemy.Routing || Fighters(enemy) == 0) return;
-        var attacking = battle.Defenders.Any(m => !m.Withdrawn && m.Army == camp);
+        if (battle.Contains(enemy) || enemy.Routing || Fighters(enemy) == 0 || CampAllied(camp.OwnerId, enemy.OwnerId)) return;
+        var onDefenders = battle.Defenders.Any(m => !m.Withdrawn && m.Army == camp);
+        var onAttackers = !onDefenders && battle.Attackers.Any(m => !m.Withdrawn && m.Army == camp);
+        if (!onDefenders && !onAttackers) return;
+        var campSide = onDefenders ? battle.Defenders : battle.Attackers;
+        if (SideAlliedWith(campSide, enemy)) return;
+        var attacking = onDefenders;
         (attacking ? battle.Attackers : battle.Defenders).Add(new(enemy));
         enemy.Order = "Battle";
         AddReportArmy(reports.Single(r => r.Id == battle.Id), enemy, attacking);
@@ -14,8 +19,13 @@ public sealed partial class LogisticsWorld
     }
     private void JoinCampConvoy(BattleState battle, Army camp, Convoy convoy, double now)
     {
-        if (convoy.InBattle || battle.ConvoyMembers.Any(m => m.Convoy == convoy)) return;
-        var attacking = battle.Defenders.Any(m => m.Army == camp);
+        if (convoy.InBattle || battle.ConvoyMembers.Any(m => m.Convoy == convoy) || CampAllied(camp.OwnerId, convoy.OwnerId)) return;
+        var onDefenders = battle.Defenders.Any(m => !m.Withdrawn && m.Army == camp);
+        var onAttackers = !onDefenders && battle.Attackers.Any(m => !m.Withdrawn && m.Army == camp);
+        if (!onDefenders && !onAttackers) return;
+        var campSide = onDefenders ? battle.Defenders : battle.Attackers;
+        if (SideAlliedWith(campSide, convoy.OwnerId)) return;
+        var attacking = onDefenders;
         var force = new Army(convoy.OwnerId, convoy.Position, convoy.SourceVillageId, convoy.Troops) { Wheat = convoy.WheatCargo };
         (attacking ? battle.Attackers : battle.Defenders).Add(new(force, convoy));
         force.Order = "Battle"; convoy.InBattle = true;

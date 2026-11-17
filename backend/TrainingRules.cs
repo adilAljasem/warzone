@@ -13,9 +13,11 @@ public static class TrainingRules
 
     public static int RequiredLevel(UnitRole role) => role switch
     {
-        UnitRole.Spearman or UnitRole.LightCavalry or UnitRole.Catapult => 3,
-        UnitRole.Swordsman or UnitRole.Cavalry => 5,
-        UnitRole.HeavyCavalry => 8,
+        UnitRole.Catapult => 3,
+        UnitRole.Governor => 5,
+        UnitRole.Spearman or UnitRole.LightCavalry or UnitRole.Cavalry => 6,
+        UnitRole.Swordsman => 9,
+        UnitRole.HeavyCavalry => 10,
         _ => 1
     };
 

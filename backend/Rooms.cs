@@ -50,6 +50,7 @@ internal sealed class RoomPlayer(Guid id, string name, TribeType tribe, string f
     public double NextSocialAction { get; set; }
     public Guid? SelectedVillageId { get; set; }
     public Dictionary<Guid, (string Fingerprint, CommandResult Result)> Receipts { get; } = [];
+    public Queue<Guid> ReceiptOrder { get; } = [];
 }
 
 // Each room owns its own SyncRoot lock; GameServer runs separate rooms concurrently. No network calls occur inside it.
@@ -519,6 +520,7 @@ public sealed partial class GameRoom : IGameCommands
         if (players.Values.Where(x => !x.IsBot).Any(x => !x.Ready || !online(x.Id)))
             throw new GameRuleException("not_ready", "Every human player must be online and ready.");
         StartInternal();
+        
     }
 
     private void StartInternal()
@@ -574,8 +576,8 @@ public sealed partial class GameRoom : IGameCommands
             : string.Empty;
         if (!player.IsBot && player.Receipts.TryGetValue(command.RequestId, out var receipt))
             return receipt.Fingerprint == fingerprint ? receipt.Result : new(command.RequestId, false, "request_conflict", "Request ID was already used for another command.");
-        if (command.RequestId == Guid.Empty || (!player.IsBot && player.Receipts.Count >= 4096))
-            return new(command.RequestId, false, "request_limit", "A non-empty unique request ID is required; limit 4096 per player per match.");
+        if (command.RequestId == Guid.Empty)
+            return new(command.RequestId, false, "request_limit", "A non-empty unique request ID is required.");
         CommandResult result;
         try
         {
@@ -600,7 +602,13 @@ public sealed partial class GameRoom : IGameCommands
             result = new(command.RequestId, true, "ok", "Command accepted.");
         }
         catch (GameRuleException error) { result = new(command.RequestId, false, error.Code, error.Message); }
-        if (!player.IsBot) player.Receipts.Add(command.RequestId, (fingerprint, result));
+        if (!player.IsBot)
+        {
+            if (player.Receipts.Count >= 4096 && player.ReceiptOrder.TryDequeue(out var oldest))
+                player.Receipts.Remove(oldest);
+            player.Receipts.Add(command.RequestId, (fingerprint, result));
+            player.ReceiptOrder.Enqueue(command.RequestId);
+        }
         return result;
     }
 
@@ -627,6 +635,10 @@ public sealed partial class GameRoom : IGameCommands
             Result = world.Result(EndReason);
         }
         else
+        {
+            foreach (var p in players.Values)
+                if (p.Economy is not null && (p.Economy.Ruined || p.Economy.Village.OwnerId != p.Id))
+                    p.Economy = world.Primary(p.Id);
             foreach (var player in players.Values.Where(x => x.IsBot && x.NextBotAction <= ElapsedSeconds))
             {
                 player.Economy = world.Primary(player.Id);
@@ -637,6 +649,7 @@ public sealed partial class GameRoom : IGameCommands
                     world.BotAct(player.Id, this, player.Personality!.Value, Settings.BotDifficulty);
                 player.NextBotAction = ElapsedSeconds + (Settings.BotDifficulty switch { BotDifficulty.Easy => 8, BotDifficulty.Hard => 0.5, _ => 4 });
             }
+        }
         Revision++;
     }
 

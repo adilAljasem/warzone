@@ -60,7 +60,13 @@ public sealed record ServerDebugTelemetry(
 
 public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
 {
-    private const string CheatPassword = "aa123456";
+    private static string? ResolveCheatPassword()
+    {
+        var configured = Environment.GetEnvironmentVariable("WARZONE_ADMIN_PASSWORD")?.Trim();
+        if (!string.IsNullOrEmpty(configured)) return configured;
+        var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        return string.Equals(env, "Production", StringComparison.OrdinalIgnoreCase) ? null : "aa123456";
+    }
     // Keep 1 hardware thread reserved for Kestrel/SignalR Ping and player command latency during multi-core room ticks.
     private static readonly ParallelOptions RoomParallelOptions = new() { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) };
     // Lock hierarchy (strict acyclic order): gate -> room.SyncRoot -> connectionGate; telemetryGate is independent.
@@ -134,7 +140,14 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
 
     public bool EnableCheat(Guid actor, string password)
     {
-        if (!string.Equals(password?.Trim(), CheatPassword, StringComparison.Ordinal))
+        var expected = ResolveCheatPassword();
+        if (expected is null)
+            throw new GameRuleException("cheat", "Admin cheat mode is disabled.");
+        var candidate = password?.Trim() ?? string.Empty;
+        var expectedBytes = System.Text.Encoding.UTF8.GetBytes(expected);
+        var candidateBytes = System.Text.Encoding.UTF8.GetBytes(candidate);
+        if (expectedBytes.Length != candidateBytes.Length
+            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(expectedBytes, candidateBytes))
             throw new GameRuleException("cheat", "Invalid cheat password.");
         lock (gate)
         {
@@ -193,76 +206,71 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
     }
     public RoomSnapshot? Resume(Guid actor)
     {
-        GameRoom? room;
-        lock (gate) room = memberships.ContainsKey(actor) ? RoomFor(actor) : null;
-        if (room is null) return null;
-        lock (room.SyncRoot) return room.Snapshot(actor, Online);
+        lock (gate)
+        {
+            if (!memberships.TryGetValue(actor, out var id) || !rooms.TryGetValue(id, out var room))
+                return null;
+            lock (room.SyncRoot) return room.Contains(actor) ? room.Snapshot(actor, Online) : null;
+        }
     }
     public RoomSnapshot Create(Guid actor, string playerName, TribeType? tribe, string name, RoomSettings settings)
     {
-        GameRoom room;
+        var room = new GameRoom(actor, playerName, tribe, name, settings, time.GetUtcNow());
         lock (gate)
         {
             if (memberships.ContainsKey(actor)) LeaveLocked(actor);
-            room = new GameRoom(actor, playerName, tribe, name, settings, time.GetUtcNow());
             rooms.Add(room.Id, room);
             memberships.Add(actor, room.Id);
+            roomsDirty = true;
+            lock (room.SyncRoot) return room.Snapshot(actor, Online);
         }
-        lock (room.SyncRoot) return room.Snapshot(actor, Online);
     }
     public RoomSnapshot Join(Guid actor, string roomId, string playerName, TribeType? tribe)
     {
-        GameRoom room;
         lock (gate)
         {
-            if (string.IsNullOrWhiteSpace(roomId) || !rooms.TryGetValue(roomId.Trim(), out var target))
+            if (string.IsNullOrWhiteSpace(roomId) || !rooms.TryGetValue(roomId.Trim(), out var room))
                 throw new GameRuleException("not_found", "Room not found.");
-            room = target;
-            if (memberships.TryGetValue(actor, out var previous))
+            if (memberships.TryGetValue(actor, out var previous) && previous == room.Id)
             {
-                if (previous == room.Id)
+                lock (room.SyncRoot)
                 {
-                    lock (room.SyncRoot)
-                    {
-                        if (!room.IsSpectator(actor)) return room.Snapshot(actor, Online);
-                    }
+                    if (room.IsSpectator(actor)) room.Join(actor, playerName, tribe);
+                    return room.Snapshot(actor, Online);
                 }
-                LeaveLocked(actor);
             }
             lock (room.SyncRoot) room.Join(actor, playerName, tribe);
+            if (memberships.ContainsKey(actor)) LeaveLocked(actor);
             memberships.Add(actor, room.Id);
+            roomsDirty = true;
+            lock (room.SyncRoot) return room.Snapshot(actor, Online);
         }
-        lock (room.SyncRoot) return room.Snapshot(actor, Online);
     }
     public RoomSnapshot Spectate(Guid actor, string roomId, string playerName)
     {
-        GameRoom room;
         lock (gate)
         {
-            if (string.IsNullOrWhiteSpace(roomId) || !rooms.TryGetValue(roomId.Trim(), out var target))
+            if (string.IsNullOrWhiteSpace(roomId) || !rooms.TryGetValue(roomId.Trim(), out var room))
                 throw new GameRuleException("not_found", "Room not found.");
-            room = target;
-            if (memberships.TryGetValue(actor, out var previous))
+            if (memberships.TryGetValue(actor, out var previous) && previous == room.Id)
             {
-                if (previous == room.Id)
+                lock (room.SyncRoot)
                 {
-                    lock (room.SyncRoot)
+                    if (!room.IsSpectator(actor))
                     {
-                        if (!room.IsSpectator(actor))
-                        {
-                            if (room.Status != RoomStatus.Lobby)
-                                throw new GameRuleException("running", "You are already playing in this match.");
-                            room.SwitchSpectator(actor, true);
-                        }
-                        return room.Snapshot(actor, Online);
+                        if (room.Status != RoomStatus.Lobby)
+                            throw new GameRuleException("running", "You are already playing in this match.");
+                        room.SwitchSpectator(actor, true);
                     }
+                    return room.Snapshot(actor, Online);
                 }
-                LeaveLocked(actor);
             }
             lock (room.SyncRoot) room.JoinSpectator(actor, playerName);
+            if (memberships.ContainsKey(actor)) LeaveLocked(actor);
             memberships.Add(actor, room.Id);
+            roomsDirty = true;
+            lock (room.SyncRoot) return room.Snapshot(actor, Online);
         }
-        lock (room.SyncRoot) return room.Snapshot(actor, Online);
     }
     public RoomSnapshot SwitchSpectator(Guid actor, bool spectate, TribeType? tribe = null)
     {
@@ -346,7 +354,11 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             lock (room.SyncRoot)
             {
                 room.Abandon(actor);
-                if (!room.ViewerIds.Any() && !room.KeepAliveWhenEmpty) rooms.Remove(room.Id);
+                if (!room.ViewerIds.Any() && !room.KeepAliveWhenEmpty)
+                {
+                    rooms.Remove(room.Id);
+                    roomsDirty = true;
+                }
             }
         }
         memberships.Remove(actor);
@@ -362,47 +374,46 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
         if (allBotRooms)
         {
             GameRoom[] botRooms;
-            GameRoom? viewerRoom;
             lock (gate)
             {
                 RequireAdmin(actor);
                 botRooms = rooms.Values.Where(r => r.KeepAliveWhenEmpty).ToArray();
-                viewerRoom = memberships.ContainsKey(actor) ? RoomFor(actor) : null;
             }
             foreach (var botRoom in botRooms)
                 lock (botRoom.SyncRoot) botRoom.AdminSetSpeed(multiplier);
-            if (viewerRoom is null) return null;
-            lock (viewerRoom.SyncRoot) return viewerRoom.Snapshot(actor, Online);
+            lock (gate)
+            {
+                if (!memberships.TryGetValue(actor, out var id) || !rooms.TryGetValue(id, out var viewerRoom))
+                    return null;
+                lock (viewerRoom.SyncRoot) return viewerRoom.Contains(actor) ? viewerRoom.Snapshot(actor, Online) : null;
+            }
         }
-        GameRoom room;
         lock (gate)
         {
             RequireAdmin(actor);
-            room = RoomFor(actor);
+            var room = RoomFor(actor);
+            lock (room.SyncRoot) { room.AdminSetSpeed(multiplier); return room.Snapshot(actor, Online); }
         }
-        lock (room.SyncRoot) { room.AdminSetSpeed(multiplier); return room.Snapshot(actor, Online); }
     }
 
     public RoomSnapshot AdminGiveResources(Guid actor, Guid targetPlayerId, long wood, long iron, long stone, long wheat)
     {
-        GameRoom room;
         lock (gate)
         {
             RequireAdmin(actor);
-            room = RoomFor(actor);
+            var room = RoomFor(actor);
+            lock (room.SyncRoot) { room.AdminGiveResources(targetPlayerId, wood, iron, stone, wheat); return room.Snapshot(actor, Online); }
         }
-        lock (room.SyncRoot) { room.AdminGiveResources(targetPlayerId, wood, iron, stone, wheat); return room.Snapshot(actor, Online); }
     }
 
     public RoomSnapshot AdminGiveTroops(Guid actor, Guid targetPlayerId, string unitId, int count)
     {
-        GameRoom room;
         lock (gate)
         {
             RequireAdmin(actor);
-            room = RoomFor(actor);
+            var room = RoomFor(actor);
+            lock (room.SyncRoot) { room.AdminGiveTroops(targetPlayerId, unitId, count); return room.Snapshot(actor, Online); }
         }
-        lock (room.SyncRoot) { room.AdminGiveTroops(targetPlayerId, unitId, count); return room.Snapshot(actor, Online); }
     }
 
     public RoomSummary[] AdminSpawnBotRooms(Guid actor, int count, int botsPerRoom, BotDifficulty difficulty, double speedMultiplier, int shieldMinutes = 5)
@@ -410,8 +421,10 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
         GameRoom[] snapshot;
         lock (gate)
         {
+            const int MaxActiveRooms = 100;
             RequireAdmin(actor);
             if (count is < 1 or > 50) throw new GameRuleException("count", "Bot room count must be between 1 and 50.");
+            if (rooms.Count + count > MaxActiveRooms) throw new GameRuleException("count", $"Total active room limit ({MaxActiveRooms}) exceeded.");
             if (botsPerRoom is < 8 or > 16) throw new GameRuleException("capacity", "Bots per room must be between 8 and 16.");
             if (!Enum.IsDefined(difficulty)) throw new GameRuleException("difficulty", "Invalid bot difficulty.");
             if (shieldMinutes is not (0 or 5 or 10)) shieldMinutes = 5;
@@ -521,7 +534,7 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             }
         }
     }
-    public SnapshotDelivery[] Deliveries()
+    public SnapshotDelivery[] Deliveries(bool markFinalBroadcastSent = true)
     {
         Dictionary<GameRoom, List<(Guid PlayerId, string[] All, string[] Compressed)>> byRoom = [];
         HashSet<Guid> onlineIds;
@@ -548,7 +561,7 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             var (room, viewers) = byRoom.First();
             lock (room.SyncRoot)
             {
-                if (room.Status is RoomStatus.Finished or RoomStatus.Faulted) room.FinalBroadcastSent = true;
+                if (markFinalBroadcastSent && room.Status is RoomStatus.Finished or RoomStatus.Faulted) room.FinalBroadcastSent = true;
                 return viewers.Select(v => new SnapshotDelivery(v.All, room.Snapshot(v.PlayerId, onlineIds.Contains), v.Compressed)).ToArray();
             }
         }
@@ -558,12 +571,28 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             var (room, viewers) = entry;
             lock (room.SyncRoot)
             {
-                if (room.Status is RoomStatus.Finished or RoomStatus.Faulted) room.FinalBroadcastSent = true;
+                if (markFinalBroadcastSent && room.Status is RoomStatus.Finished or RoomStatus.Faulted) room.FinalBroadcastSent = true;
                 foreach (var v in viewers)
                     output.Add(new SnapshotDelivery(v.All, room.Snapshot(v.PlayerId, onlineIds.Contains), v.Compressed));
             }
         });
         return [.. output];
+    }
+
+    internal void MarkFinalBroadcastSent(IEnumerable<string> roomIds)
+    {
+        lock (gate)
+        {
+            foreach (var id in roomIds)
+            {
+                if (!rooms.TryGetValue(id, out var room)) continue;
+                lock (room.SyncRoot)
+                {
+                    if (room.Status is RoomStatus.Finished or RoomStatus.Faulted)
+                        room.FinalBroadcastSent = true;
+                }
+            }
+        }
     }
 
     public void RecordLoopTick(double elapsedSeconds, double tickMs, int steps)
@@ -638,6 +667,12 @@ public sealed class GameLoop(GameServer server, IHubContext<GameHub> hub, TimePr
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(2));
             await Task.WhenAll(deliveries.Select(x => SnapshotCodec.SendDeliveryAsync(hub.Clients, x, cancellationToken: timeout.Token)));
+            var finalRooms = deliveries
+                .Where(x => x.Snapshot.Status is RoomStatus.Finished or RoomStatus.Faulted)
+                .Select(x => x.Snapshot.Id)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (finalRooms.Length > 0) server.MarkFinalBroadcastSent(finalRooms);
         }
         catch (Exception error) when (!stoppingToken.IsCancellationRequested)
         {
@@ -682,7 +717,7 @@ public sealed class GameLoop(GameServer server, IHubContext<GameHub> hub, TimePr
                 ticksSinceBroadcast %= 4;
                 if (Interlocked.CompareExchange(ref broadcastInFlight, 1, 0) != 0) continue;
                 var broadcastStart = time.GetTimestamp();
-                var deliveries = server.Deliveries();
+                var deliveries = server.Deliveries(markFinalBroadcastSent: false);
                 if (deliveries.Length == 0)
                 {
                     server.RecordBroadcast(time.GetElapsedTime(broadcastStart, time.GetTimestamp()).TotalMilliseconds);

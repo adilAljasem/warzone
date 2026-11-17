@@ -13,8 +13,20 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+    options.ForwardLimit = 2;
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
+    foreach (var cidr in new[] { "127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7" })
+        options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(cidr));
+    var extra = builder.Configuration["WARZONE_TRUSTED_PROXIES"];
+    if (!string.IsNullOrWhiteSpace(extra))
+    {
+        foreach (var item in extra.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (System.Net.IPNetwork.TryParse(item, out var net)) options.KnownIPNetworks.Add(net);
+            else if (System.Net.IPAddress.TryParse(item, out var addr)) options.KnownProxies.Add(addr);
+        }
+    }
 });
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<GameServer>();
@@ -95,6 +107,17 @@ app.MapHub<GameHub>("/game", options => options.CloseOnAuthenticationExpiration 
 var clientPath = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "../frontend/dist"));
 if (Directory.Exists(clientPath))
 {
+    app.Use(async (context, next) =>
+    {
+        var path = context.Request.Path.Value;
+        if (path is not null && (string.Equals(path, "/en", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(path, "/ar", StringComparison.OrdinalIgnoreCase)))
+        {
+            context.Response.Redirect($"{path.ToLowerInvariant()}/{context.Request.QueryString}", permanent: true);
+            return;
+        }
+        await next(context);
+    });
     var files = new PhysicalFileProvider(clientPath);
     var contentTypes = new FileExtensionContentTypeProvider();
     contentTypes.Mappings[".webmanifest"] = "application/manifest+json";

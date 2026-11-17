@@ -137,7 +137,7 @@ internal sealed class ResourceOasis(Position position, ResourceType resource)
 public sealed partial class LogisticsWorld
 {
     private bool OasisUnderAttack(ResourceOasis oasis) => armies.Any(a => a.OwnerId != oasis.OwnerId &&
-        (a.Order is "Occupying" or "Blockading" && a.TargetId == oasis.Id || a.Order == "Battle" && Distance(a.Position, oasis.Position) < 20));
+        (a.Order is "Occupying" or "Blockading" or "Burning" && a.TargetId == oasis.Id || a.Order == "Battle" && (a.TargetId == oasis.Id || OasisReached(a, oasis))));
     private OasisSnapshot OasisView(ResourceOasis oasis, Guid viewer, bool omniscient = false)
     {
         var mine = oasis.OwnerId == viewer;
@@ -285,9 +285,10 @@ public sealed partial class LogisticsWorld
     }
     private void MergeOasisGuards(Guid siteId)
     {
-        if (!oases.Any(o => o.Id == siteId && o.BurnedUntil <= warTime)) return;
+        if (oases.FirstOrDefault(o => o.Id == siteId && o.BurnedUntil <= warTime) is not { } oasis) return;
         var groups = armies
-            .Where(a => a.DefendingSiteId == siteId && a.Order == "Guarding" && !Engaged(a) && !a.Routing && Count(a) > 0)
+            .Where(a => a.DefendingSiteId == siteId && a.Order == "Guarding" && !Engaged(a) && !a.Routing && Count(a) > 0
+                && Distance(a.Position, oasis.Position) <= 4)
             .GroupBy(a => a.OwnerId)
             .Where(g => g.Count() > 1)
             .ToArray();
@@ -331,7 +332,8 @@ public sealed partial class LogisticsWorld
             if (site.Owner != army.SupportedOwnerId) { Route(army); return; }
             army.Destination = site.Position;
             var citySiege = sieges.Find(s=>s.City.Village.Id==army.DefendingSiteId && s.Status=="Active");
-            if (citySiege is not null && citySiege.Attacker.OwnerId!=army.OwnerId && Distance(army.Position,site.Position)<=65)
+            if (citySiege is not null && citySiege.Attacker.OwnerId != army.OwnerId && !CampAllied(citySiege.Attacker.OwnerId, army.OwnerId)
+                && (ArmiesCollide(army, citySiege.Attacker) || Distance(army.Position, site.Position) <= 65))
             {
                 // Relief meets the surrounding army outside the gates; it cannot deliver troops through a blockade.
                 if (now>=shieldUntil) StartBattle(army,citySiege.Attacker,now);
@@ -350,9 +352,18 @@ public sealed partial class LogisticsWorld
             if(newlyArrived&&oasisSiege is not null&&now>=shieldUntil){var besieger=oasisSiege.Attackers.FirstOrDefault(a=>ValidOasisArmy(oasisSiege,a));if(besieger is not null)StartBattle(army,besieger,now);}
             if (army.Order == "Guarding" && army.DefendingSiteId is { } guardSiteId && !Engaged(army)) MergeOasisGuards(guardSiteId);
         }
-        if (army.Order is not ("Occupying" or "Blockading" or "Burning") || Distance(army.Position, army.Destination) > 4) return;
+        if (army.Order is not ("Occupying" or "Blockading" or "Burning")) return;
         var oasis = oases.Find(o => o.Id == army.TargetId);
         if (oasis is null || oasis.BurnedUntil > now) { CompleteAttack(army); return; }
+        if (!OasisReached(army, oasis)) return;
+        if (oasis.OwnerId is { } allyOwner && allyOwner != army.OwnerId && CampAllied(army.OwnerId, allyOwner))
+        {
+            army.ActionSeconds = 0;
+            if (army.OasisMode == OasisMode.Capture && army.AfterAttack != AfterAttack.Return)
+            { army.Order = "Guarding"; army.DefendingSiteId = oasis.Id; army.SupportedOwnerId = allyOwner; MergeOasisGuards(oasis.Id); }
+            else CompleteAttack(army);
+            return;
+        }
         if (oasis.OwnerId is { } owner && owner != army.OwnerId && now < shieldUntil)
         { army.ActionSeconds = 0; return; }
         if(oasis.OwnerId is not null&&oasis.OwnerId!=army.OwnerId) BeginOasisSiege(army,oasis,now);
@@ -365,8 +376,12 @@ public sealed partial class LogisticsWorld
                 Note(defender, now, "Your oasis wall has been breached.", "oasis-attack", targetId: oasis.Id);
             return;
         }
-        var ongoingBattle=battles.Find(b=>b.Status=="Active"&&b.Members.Any(m=>m.Army.DefendingSiteId==oasis.Id));
-        if(ongoingBattle is not null){var defender=ongoingBattle.Members.First(m=>m.Army.DefendingSiteId==oasis.Id).Army;StartBattle(army,defender,now);return;}
+        bool ActiveOasisDefenderMember(BattleMember m) => !m.Withdrawn && !m.Army.Routing && Count(m.Army) > 0
+            && m.Army.DefendingSiteId == oasis.Id && (Distance(m.Army.Position, oasis.Position) <= 45 || OasisReached(m.Army, oasis))
+            && m.Army.OwnerId != army.OwnerId && !CampAllied(m.Army.OwnerId, army.OwnerId)
+            && (m.Army.SupportedOwnerId is null || (m.Army.SupportedOwnerId != army.OwnerId && !CampAllied(m.Army.SupportedOwnerId.Value, army.OwnerId)));
+        var ongoingBattle = battles.Find(b => b.Status == "Active" && b.Members.Any(ActiveOasisDefenderMember));
+        if (ongoingBattle is not null) { var defender = ongoingBattle.Members.First(ActiveOasisDefenderMember).Army; StartBattle(army, defender, now); return; }
         var guard = Guards(oasis.Id, army.OwnerId).FirstOrDefault();
         if (guard is not null) { army.ActionSeconds = 0; StartBattle(army, guard, now); return; }
         if (armies.Any(a => a.DefendingSiteId == oasis.Id && a.OwnerId != army.OwnerId && a.Order == "Battle")) return;
@@ -410,7 +425,7 @@ public sealed partial class LogisticsWorld
         if (formerOwner2 != army.OwnerId && oasisStock.Total > 0)
         {
             var captors = armies.Where(a => armies.Contains(a) && Fighters(a) > 0 && (a == army
-                || (CampAllied(army.OwnerId, a.OwnerId) && a.TargetId == oasis.Id && a.Order == "Occupying" && Distance(a.Position, oasis.Position) <= 20))).ToArray();
+                || (CampAllied(army.OwnerId, a.OwnerId) && a.TargetId == oasis.Id && a.Order == "Occupying" && OasisReached(a, oasis)))).ToArray();
             oasisCaptured = DistributeLoot(captors, oasisStock);
             if (oasisCaptured.Total > 0)
             {
@@ -435,9 +450,9 @@ public sealed partial class LogisticsWorld
         army.ActionSeconds = 0;
         if (army.AfterAttack == AfterAttack.Return) CompleteAttack(army);
         else { army.Order = "Guarding"; army.DefendingSiteId = oasis.Id; army.SupportedOwnerId = army.OwnerId; }
-        foreach(var support in armies.Where(a=>a!=army&&a.OwnerId==army.OwnerId&&a.TargetId==oasis.Id&&a.Order=="Occupying"&&Distance(a.Position,oasis.Position)<=20))
+        foreach(var support in armies.Where(a=>a!=army&&(a.OwnerId==army.OwnerId||CampAllied(army.OwnerId,a.OwnerId))&&a.TargetId==oasis.Id&&a.Order=="Occupying"&&OasisReached(a,oasis)))
         {
-            if(support.AfterAttack==AfterAttack.Return)CompleteAttack(support);
+            if(support.AfterAttack==AfterAttack.Return||support.OasisMode!=OasisMode.Capture)CompleteAttack(support);
             else{support.Order="Guarding";support.DefendingSiteId=oasis.Id;support.SupportedOwnerId=army.OwnerId;support.ActionSeconds=0;}
         }
         MergeOasisGuards(oasis.Id);

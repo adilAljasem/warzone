@@ -92,7 +92,8 @@ public sealed partial class LogisticsWorld
         var leftBehind = new Army(army.OwnerId, army.Position, army.HomeVillageId, remainder)
         {
             Wheat = army.Wheat - wheat, Loot = army.Loot - loot, Destination = army.Destination, Order = army.Order,
-            TargetId = army.TargetId, DefendingSiteId = army.DefendingSiteId, SupportedOwnerId = army.SupportedOwnerId,
+            TargetId = army.TargetId, MergeGroupId = army.MergeGroupId, MergeVillageId = army.MergeVillageId,
+            DefendingSiteId = army.DefendingSiteId, SupportedOwnerId = army.SupportedOwnerId,
             CampRadius = army.CampRadius, CampLoadedOnly = army.CampLoadedOnly, ActionSeconds = army.ActionSeconds, AttackOrderedAt = army.AttackOrderedAt,
             AfterAttack = army.AfterAttack, OasisMode = army.OasisMode, Objective = army.Objective,
             SupplyVillageId = army.SupplyVillageId, NextSupplyAt = now, SupplyWagons = army.SupplyWagons,
@@ -103,10 +104,19 @@ public sealed partial class LogisticsWorld
         foreach (var os in oasisSieges.Where(s => s.Status == "Active"))
         {
             var idx = os.Attackers.IndexOf(army);
-            if (idx >= 0) os.Attackers[idx] = leftBehind;
+            if (idx >= 0)
+            {
+                os.Attackers[idx] = leftBehind;
+                var report = reports.Find(r => r.Id == os.Id);
+                if (report is not null)
+                {
+                    report.Forces.RemoveAll(f => f.Army == army);
+                    AddReportArmy(report, leftBehind, true);
+                }
+            }
         }
         army.Troops = Array.AsReadOnly(selected); army.Wheat = wheat; army.Loot = loot; army.CampRadius = null;
-        army.DefendingSiteId = null; army.SupportedOwnerId = null; army.TargetId = null; army.ActionSeconds = 0; army.AttackOrderedAt = 0;
+        army.DefendingSiteId = null; army.SupportedOwnerId = null; army.TargetId = null; army.MergeGroupId = null; army.MergeVillageId = null; army.ActionSeconds = 0; army.AttackOrderedAt = 0;
         army.NextSupplyAt = now;
         return army;
     }
@@ -151,7 +161,7 @@ public sealed partial class LogisticsWorld
             if (cityTarget is not null) ValidateCityAttack(actor, cityTarget, command.Objective, requested, now, shieldUntil);
             var castleTarget = !command.Reinforcement && cityTarget is null && command.DestinationId == castle.Id ? castle : null;
             if (castleTarget is not null && !castleTarget.Active)
-                throw new GameRuleException("castle", "The central castle opens at 30 minutes.");
+                throw new GameRuleException("castle", $"The central castle opens at {Math.Round(castleUnlockSeconds / 60)} minutes.");
             var target = !command.Reinforcement && cityTarget is null && castleTarget is null && command.DestinationId is { } oasisId ? oases.FirstOrDefault(x => x.Id == oasisId)
                 ?? throw new GameRuleException("target", "Oasis not found.") : null;
             var destination = command.Reinforcement ? DefenseSite(command.DestinationId ?? Guid.Empty).Position
@@ -162,6 +172,10 @@ public sealed partial class LogisticsWorld
                 throw new GameRuleException("troops", "Fighting troops are required to establish a camp.");
             if (target is not null && target.BurnedUntil > now)
                 throw new GameRuleException("burned", "This oasis is burned and in ruins.");
+            if (command.OasisMode == OasisMode.Burn && target is not null && target.OwnerId == actor)
+                throw new GameRuleException("target", "You cannot burn your own oasis.");
+            if (target is not null && target.OwnerId is { } oasisOwner && oasisOwner != actor && CampAllied(actor, oasisOwner))
+                throw new GameRuleException("ally", "You cannot attack an allied oasis.");
             if (target is not null && target.OwnerId != actor && target.OwnerId is not null && now < shieldUntil)
                 throw new GameRuleException("protected", "Wait until the protection shield expires.");
             if (command.OasisMode==OasisMode.Blockade&&(target?.OwnerId is null||target.OwnerId==actor))
@@ -260,6 +274,10 @@ public sealed partial class LogisticsWorld
             case CommandKind.BurnOasis:
                 var oasis = oases.FirstOrDefault(x => x.Id == command.DestinationId) ?? throw new GameRuleException("target", "Oasis not found.");
                 if (oasis.BurnedUntil > now) throw new GameRuleException("burned", "This oasis is burned and in ruins.");
+                if (command.Kind == CommandKind.BurnOasis && oasis.OwnerId == actor)
+                    throw new GameRuleException("target", "You cannot burn your own oasis.");
+                if (oasis.OwnerId is { } oasisOwner && oasisOwner != actor && CampAllied(actor, oasisOwner))
+                    throw new GameRuleException("ally", "You cannot attack an allied oasis.");
                 if (OrderFighters(selected, command.Formation) == 0) throw new GameRuleException("troops", "Fighting troops are required.");
                 if (oasis.OwnerId is not null && oasis.OwnerId != actor && now < shieldUntil) throw new GameRuleException("protected", "Wait until the protection shield expires.");
                 if(command.Kind==CommandKind.BesiegeOasis&&(oasis.OwnerId is null||oasis.OwnerId==actor))throw new GameRuleException("target","Choose another player's oasis to blockade.");
@@ -279,6 +297,8 @@ public sealed partial class LogisticsWorld
                 if (now < shieldUntil) throw new GameRuleException("protected", "Player convoys are protected until the room shield expires.");
                 var convoy = convoys.FirstOrDefault(x => x.Id == command.DestinationId && x.OwnerId != actor && !x.InBattle)
                     ?? throw new GameRuleException("target", "Select an enemy convoy that is not already in battle.");
+                if (CampAllied(actor, convoy.OwnerId))
+                    throw new GameRuleException("ally", "You cannot intercept an allied caravan.");
                 if (OrderFighters(selected, command.Formation) == 0) throw new GameRuleException("troops", "Fighting troops are required.");
                 selected = Detach(selected, command.Formation, now);
                 selected.TargetId = convoy.Id; selected.DefendingSiteId = null; selected.SupportedOwnerId = null; selected.Order = "Intercepting"; selected.ActionSeconds = 0; selected.CampRadius = null;
@@ -316,11 +336,13 @@ public sealed partial class LogisticsWorld
             if (army.Order == "Intercepting")
             {
                 var target = convoys.FirstOrDefault(x => x.Id == army.TargetId);
-                if (target is null || now < shieldUntil) { army.Order = "Idle"; army.TargetId = null; army.Destination = army.Position; }
+                if (target is null || now < shieldUntil || target.OwnerId == army.OwnerId || CampAllied(army.OwnerId, target.OwnerId)) { army.Order = "Idle"; army.TargetId = null; army.Destination = army.Position; }
                 else army.Destination = target.Position;
             }
             UpdateWarDestination(army);
-            var engaged = army.Order is "Battle" or "Sieging";
+            var engaged = army.Order is "Battle" or "Sieging" or "Blockading" or "Burning"
+                || (army.Order == "Approaching" && villages.GetValueOrDefault(army.TargetId ?? Guid.Empty) is { Ruined: false } targetCity && CityReached(army, targetCity))
+                || (army.Order == "Occupying" && oases.Find(o => o.Id == army.TargetId) is { } targetOasis && OasisReached(army, targetOasis));
             var blockedReturn = army.Order=="Returning" && home.Besieged && Distance(army.Position,home.Village.Position)<=65;
             var distance = engaged || blockedReturn ? 0 : Move(army, army.Destination, army.Speed * seconds * (army.Routing ? 1.25 : 1));
             var demand = army.Upkeep * seconds;
@@ -341,8 +363,8 @@ public sealed partial class LogisticsWorld
                 }
                 if (!army.Troops.Any(t => t.Unit is not SupplyWagon))
                 {
-                    if (Count(army) == 0) { armies.Remove(army); continue; }
-                    if (army.Order != "Returning" && army.Order != "Battle") Route(army);
+                    if (Count(army) == 0) { WithdrawFromSieges(army, now, army.TargetId, army.Order); armies.Remove(army); continue; }
+                    if (army.Order != "Returning" && army.Order != "Battle") { WithdrawFromSieges(army, now, army.TargetId, army.Order); Route(army); }
                 }
             }
             else
@@ -366,9 +388,11 @@ public sealed partial class LogisticsWorld
                 Note(army.OwnerId, now, $"Your camp is established. Hostile armies and caravans within {CampRadius:0} map units will be engaged automatically.");
             }
             AdvanceOasisAndReinforcements(army, seconds, now, shieldUntil);
-            if (army.Order == "Intercepting" && Distance(army.Position, army.Destination) < 12)
+            if (army.Order == "Intercepting"
+                && convoys.FirstOrDefault(x => x.Id == army.TargetId && !x.InBattle) is { } targetConvoy
+                && (ArmyConvoyCollide(army, targetConvoy) || Distance(army.Position, targetConvoy.Position) < 12))
             {
-                StartConvoyBattle(army, now);
+                StartConvoyBattle(army, targetConvoy, now);
             }
             else if (army.Order == "Intercepting") army.ActionSeconds = 0;
             Supply(army, now);
@@ -494,7 +518,7 @@ public sealed partial class LogisticsWorld
         var wheatToDeliver = needsFood ? (long)Math.Floor(Math.Min(desiredFood, Math.Max(0.0, Math.Min(count * wagonCapacity - convoyTripProvisions, (double)(home.Resources.Wheat - convoyTripProvisions))))) : 0L;
         var cargo = Math.Min(convoyTripProvisions + wheatToDeliver, home.Resources.Wheat);
 
-        if (cargo < 1) { army.SupplyStatus = "Waiting for wheat"; army.NextSupplyAt = now + 5; return; }
+        if (cargo < 1 || (!lootFull && wheatToDeliver < 1)) { army.SupplyStatus = "Waiting for wheat"; army.NextSupplyAt = now + 5; return; }
 
         var requested = new Dictionary<string, int> { [wagonId] = count };
         if (army.Escorts > 0) requested[escortId] = army.Escorts;
@@ -711,15 +735,15 @@ public sealed partial class LogisticsWorld
                 (Type: ResourceType.Stone, Value: home.Resources.Stone),
                 (Type: ResourceType.Wheat, Value: home.Resources.Wheat)
             };
-            var overflow = stocksNow.Where(x => x.Value >= home.Capacity * 0.90).OrderByDescending(x => x.Value).FirstOrDefault();
-            var needy = stocksNow.Where(x => x.Type != overflow.Type && x.Value <= home.Capacity * 0.45).OrderBy(x => x.Value).FirstOrDefault();
-            if (overflow.Value > 0 && needy.Type != overflow.Type)
+            var overflow = stocksNow.Where(x => x.Value >= home.Capacity * 0.90).OrderByDescending(x => x.Value).Cast<(ResourceType Type, long Value)?>().FirstOrDefault();
+            var needy = overflow is { } ov ? stocksNow.Where(x => x.Type != ov.Type && x.Value <= home.Capacity * 0.45).OrderBy(x => x.Value).Cast<(ResourceType Type, long Value)?>().FirstOrDefault() : null;
+            if (overflow is { } over && needy is { } need)
             {
-                var gain = Math.Min((overflow.Value - (long)(home.Capacity * 0.65)) / 2, (long)(home.Capacity * 0.70) - needy.Value);
-                if (gain >= 100 && (overflow.Type != ResourceType.Wheat || home.Resources.Wheat - gain * 2 >= wheatGoal))
+                var gain = Math.Min((over.Value - (long)(home.Capacity * 0.65)) / 2, (long)(home.Capacity * 0.70) - need.Value);
+                if (gain >= 100 && (over.Type != ResourceType.Wheat || home.Resources.Wheat - gain * 2 >= wheatGoal))
                 {
                     commands.Execute(actor, new(Guid.NewGuid(), CommandKind.SwapMarket, home.Village.Id,
-                        OfferResource: overflow.Type, AskResource: needy.Type, AskAmount: gain));
+                        OfferResource: over.Type, AskResource: need.Type, AskAmount: gain));
                 }
             }
         }
@@ -959,9 +983,13 @@ public sealed partial class LogisticsWorld
             if (difficulty != BotDifficulty.Easy && !extra.Besieged && extra.Resources.Total > extra.Capacity * 0.58
                 && extra.Available(UnitId(extra, UnitRole.Wagon)) >= 2 && convoys.Count(c => c.OwnerId == actor && c.Kind is ConvoyKind.Trade or ConvoyKind.Shipment) < 3)
             {
-                var ship = new Resources(Math.Max(0, extra.Resources.Wood - 600), Math.Max(0, extra.Resources.Iron - 600),
-                    Math.Max(0, extra.Resources.Stone - 600), Math.Max(0, extra.Resources.Wheat - 900));
-                if (ship.Total >= 1200 && home.Resources.Total + ship.Total <= home.Capacity * 1.1)
+                var roomCap = (long)(home.Capacity * 1.1);
+                var ship = new Resources(
+                    Math.Min(Math.Max(0, extra.Resources.Wood - 600), Math.Max(0, roomCap - home.Resources.Wood)),
+                    Math.Min(Math.Max(0, extra.Resources.Iron - 600), Math.Max(0, roomCap - home.Resources.Iron)),
+                    Math.Min(Math.Max(0, extra.Resources.Stone - 600), Math.Max(0, roomCap - home.Resources.Stone)),
+                    Math.Min(Math.Max(0, extra.Resources.Wheat - 900), Math.Max(0, roomCap - home.Resources.Wheat)));
+                if (ship.Total >= 1200)
                     commands.Execute(actor, new(Guid.NewGuid(), CommandKind.SendResources, extra.Village.Id, DestinationId: home.Village.Id, Shipment: ship));
             }
             if (difficulty != BotDifficulty.Easy && warTime >= protectionUntil && HomeCombatTroops(extra) >= (difficulty == BotDifficulty.Hard ? 36 : 20)
@@ -1304,8 +1332,21 @@ public sealed partial class LogisticsWorld
         notices.Where(x => omniscient || x.Owner == viewer).Select(x => x.Notice).ToArray(), WarfareSnapshot(viewer),
         armies.Where(x => !omniscient && x.OwnerId != viewer && (x.Order == "Approaching" && villages.GetValueOrDefault(x.TargetId ?? Guid.Empty)?.Village.OwnerId == viewer
             || x.Order == "Attacking" && armies.Any(a => a.Id == x.TargetId && a.OwnerId == viewer)))
-            .Select(x => new IncomingThreat(x.Id, x.OwnerId, x.TargetId!.Value, warTime + Math.Max(0, Distance(x.Position, x.Destination) - (x.Order == "Approaching" ? 2 : 16))
-                / Math.Max(.1, x.Speed))).ToArray(), Muster(viewer),
+            .Select(x => {
+                double gap;
+                if (x.Order == "Approaching")
+                {
+                    var threatCity = villages.GetValueOrDefault(x.TargetId ?? Guid.Empty);
+                    gap = threatCity is null ? 40.0 : CityReached(x, threatCity) ? Distance(x.Position, x.Destination) : CityContactGap(x, threatCity);
+                }
+                else
+                {
+                    var targetArmy = armies.FirstOrDefault(a => a.Id == x.TargetId && a.OwnerId == viewer);
+                    gap = targetArmy is null ? 16.0 : ArmiesCollide(x, targetArmy) ? Distance(x.Position, x.Destination) : SelectionContactGap(x, targetArmy);
+                }
+                return new IncomingThreat(x.Id, x.OwnerId, x.TargetId!.Value, warTime + Math.Max(0, Distance(x.Position, x.Destination) - gap)
+                    / Math.Max(.1, x.Speed));
+            }).ToArray(), Muster(viewer),
         reports.Where(r => omniscient || r.Attacker == viewer || r.Defender == viewer || r.Forces.Any(f => f.Army.OwnerId == viewer)).OrderByDescending(r => r.Status == "Active").ThenByDescending(r => r.UpdatedAt).Take(Math.Max(40, reports.Count(r => r.Status == "Active"))).Select(r => r.Snapshot(omniscient ? null : viewer)).ToArray(), regions, MarketSnapshot(), importantAlerts.Where(a => omniscient || a.Owner == viewer).Select(a => a.Notice).ToArray(), OasisSiegeViews(),
         villages.Values.Where(v => (omniscient || v.Village.OwnerId == viewer) && !v.Ruined).ToDictionary(v => v.Village.Id, v => (IReadOnlyDictionary<string, int>)v.Garrison().ToDictionary(t => t.Unit.UnitId, t => t.Count)));
     private void CompleteAttack(Army army)
@@ -1360,10 +1401,10 @@ public sealed partial class LogisticsWorld
 
         if (surviving.Count == 0)
         {
-            if (army.Order == "Burning") WithdrawFromSieges(army, now, army.TargetId, army.Order);
+            WithdrawFromSieges(army, now, army.TargetId, army.Order);
             armies.Remove(army);
         }
-        else if (Fighters(army) == 0 && army.Order is "Burning" or "Occupying" or "Blockading" or "Capturing")
+        else if (Fighters(army) == 0 && army.Order is "Burning" or "Occupying" or "Blockading" or "Capturing" or "Attacking" or "Approaching" or "Intercepting")
         {
             WithdrawFromSieges(army, now, army.TargetId, army.Order);
             Route(army);
@@ -1390,6 +1431,8 @@ public sealed partial class LogisticsWorld
             var vGroupId = Guid.NewGuid();
             foreach (var candidate in candidates)
             {
+                var prevTargetId = candidate.TargetId;
+                var prevOrder = candidate.Order;
                 candidate.MergeGroupId = vGroupId;
                 candidate.MergeVillageId = destVillage.Village.Id;
                 candidate.Order = "Merging";
@@ -1400,6 +1443,7 @@ public sealed partial class LogisticsWorld
                 candidate.ActionSeconds = 0;
                 candidate.AttackOrderedAt = 0;
                 candidate.Destination = destVillage.Village.Position;
+                WithdrawFromSieges(candidate, now, prevTargetId, prevOrder);
             }
             AdvanceMerges(now);
             var stillMarching = candidates.Any(c => armies.Contains(c));
@@ -1462,6 +1506,8 @@ public sealed partial class LogisticsWorld
                 candidate.Destination = meetingPoint;
                 continue;
             }
+            var prevTargetId = candidate.TargetId;
+            var prevOrder = candidate.Order;
             candidate.Order = "Merging";
             candidate.Destination = meetingPoint;
             candidate.TargetId = null;
@@ -1470,6 +1516,7 @@ public sealed partial class LogisticsWorld
             candidate.CampRadius = null;
             candidate.ActionSeconds = 0;
             candidate.AttackOrderedAt = 0;
+            WithdrawFromSieges(candidate, now, prevTargetId, prevOrder);
         }
 
         var beforeCount = armies.Count;
@@ -1522,6 +1569,16 @@ public sealed partial class LogisticsWorld
         foreach (var group in fieldGroups)
         {
             var members = group.ToList();
+            if (members.FirstOrDefault(m => m.Order == "Guarding" && m.DefendingSiteId is not null) is { DefendingSiteId: { } guardSiteId })
+            {
+                try
+                {
+                    var guardPos = DefenseSite(guardSiteId).Position;
+                    foreach (var m in members.Where(m => m.Order == "Merging"))
+                        m.Destination = guardPos;
+                }
+                catch (GameRuleException) { }
+            }
             var mergedAny = false;
             var keepMerging = true;
             while (keepMerging && members.Count > 1)

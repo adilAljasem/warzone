@@ -46,6 +46,7 @@ internal sealed class SiegeState(Army attacker, VillageEconomy city, double now)
     public AttackObjective Objective { get; set; } = attacker.Objective;
     public string Phase { get; set; } = attacker.Objective == AttackObjective.Blockade ? "Blockading" : "Fighting";
     public int InitialBuildingLevels { get; set; }
+    public long DemolishedBuildingValue { get; set; }
     public double DemolitionCredit { get; set; }
     public double Progress { get; set; }
 }
@@ -66,7 +67,8 @@ public sealed partial class LogisticsWorld
     private static int RoleCount(Army army, UnitRole role) => army.Troops.Where(x => x.Unit.Definition.Role == role).Sum(x => x.Count);
     private static int Fighters(Army army) => army.Troops.Where(x => x.Unit is not SupplyWagon && x.Unit.Definition.Role != UnitRole.Governor).Sum(x => x.Count);
     private bool Engaged(Army army) => battles.Any(x => x.Status == "Active" && x.ActiveContains(army))
-        || sieges.Any(x => x.Attackers.Contains(army) && x.Status == "Active");
+        || sieges.Any(x => x.Attackers.Contains(army) && x.Status == "Active")
+        || oasisSieges.Any(x => x.Attackers.Contains(army) && x.Status == "Active");
 
     private bool ApplyWarfare(Guid actor, GameCommand command, double now, double shieldUntil)
     {
@@ -117,6 +119,8 @@ public sealed partial class LogisticsWorld
         {
             var city = villages.Values.FirstOrDefault(x => x.Village.Id == command.DestinationId && x.Village.OwnerId != actor && !x.Ruined)
                 ?? throw new GameRuleException("target", "Select an enemy settlement.");
+            if (CampAllied(city.Village.OwnerId, actor))
+                throw new GameRuleException("ally", "You cannot besiege an allied settlement.");
             if (sieges.Any(s => s.City == city && s.Status == "Active" && !CampAllied(s.Attacker.OwnerId, actor))) throw new GameRuleException("siege", "A rival commander is already besieging this city.");
             ValidateCityAttack(actor, city, command.Objective, OrderFormation(army, command.Formation), now, shieldUntil);
             army = Detach(army, command.Formation, now);
@@ -152,8 +156,7 @@ public sealed partial class LogisticsWorld
             var city = villages.GetValueOrDefault(army.TargetId ?? Guid.Empty);
             if (city is null || city.Ruined || city.Village.OwnerId == army.OwnerId)
             { army.Order = "Idle"; army.TargetId = null; army.Destination = army.Position; return; }
-            var angle = Math.Atan2(army.Position.Y - city.Village.Position.Y, army.Position.X - city.Village.Position.X);
-            army.Destination = new(city.Village.Position.X + Math.Cos(angle) * 38, city.Village.Position.Y + Math.Sin(angle) * 38);
+            army.Destination = city.Village.Position;
         }
     }
     private void StartBattle(Army attacker, Army defender, double now, Convoy? convoy = null)
@@ -180,6 +183,201 @@ public sealed partial class LogisticsWorld
         var defender = new Army(convoy.OwnerId, convoy.Position, convoy.SourceVillageId, convoy.Troops)
         { Wheat = convoy.WheatCargo };
         StartBattle(army, defender, now, convoy);
+    }
+
+    internal readonly record struct SelectionEllipse(double CenterX, double ScreenY, double Rx, double RyScreen);
+    private readonly record struct FigureLayout(int Columns, int Rows, int Width, (double X, double Y)[] Points);
+    private static int FigureCount(int units) => units > 0 ? (int)Math.Ceiling(units / 10.0) : 0;
+
+    // Mirror frontend/src/army-visual.ts armyFigureLayout so engagement distance matches the rendered selection ellipse.
+    private static FigureLayout BuildFigureLayout(int count)
+    {
+        if (count <= 0) return new(0, 0, 54, []);
+        var columns = (int)Math.Ceiling(Math.Sqrt(count * 1.3));
+        var rows = (int)Math.Ceiling(count / (double)Math.Max(1, columns));
+        var width = count <= 2 ? 54 : count <= 8 ? 46 : 40;
+        var points = new (double X, double Y)[count];
+        for (var i = 0; i < count; i++)
+        {
+            var row = i / columns;
+            var size = Math.Min(columns, count - row * columns);
+            points[i] = ((i % columns - (size - 1) / 2.0) * 23.0 + (row % 2 != 0 ? 4.0 : 0.0), (row - rows + 1) * 17.0);
+        }
+        return new(columns, rows, width, points);
+    }
+
+    private static SelectionEllipse BuildSelectionEllipse(Position pos, IReadOnlyList<TroopStack> troops, bool isArmy)
+    {
+        var soldiers = troops.Where(t => t.Unit is not SupplyWagon).Sum(t => t.Count);
+        var wagons = troops.Where(t => t.Unit is SupplyWagon).Sum(t => t.Count);
+        var formationIds = new List<string>();
+        if (isArmy && soldiers > 0)
+        {
+            foreach (var stack in troops.Where(t => t.Count > 0 && t.Unit is not SupplyWagon).OrderBy(t => t.Unit.UnitId, StringComparer.Ordinal))
+            {
+                var figs = FigureCount(stack.Count);
+                for (var i = 0; i < figs; i++) formationIds.Add(stack.Unit.UnitId);
+            }
+        }
+        var layout = BuildFigureLayout(formationIds.Count);
+        var wagonCount = FigureCount(wagons);
+        var wagonLayout = BuildFigureLayout(wagonCount);
+        var escortCount = isArmy ? 0 : FigureCount(soldiers);
+
+        var minX = double.PositiveInfinity;
+        var maxX = double.NegativeInfinity;
+        var minY = double.PositiveInfinity;
+        var maxY = double.NegativeInfinity;
+        void Include(double x0, double y0, double x1, double y1)
+        {
+            if (x0 < minX) minX = x0;
+            if (x1 > maxX) maxX = x1;
+            if (y0 < minY) minY = y0;
+            if (y1 > maxY) maxY = y1;
+        }
+
+        // Base shadow ellipse
+        var shadowCy = 5.0 - Math.Max(0, layout.Rows - 1) * 8.0;
+        var shadowRx = Math.Max(26.0, layout.Columns * 13.0);
+        var shadowRy = 12.0 + layout.Rows * 7.0;
+        Include(-shadowRx, shadowCy - shadowRy, shadowRx, shadowCy + shadowRy);
+
+        // Flags and pennants (matches armyFlagSlots + unitFlagShaft/Pennant)
+        var flagCount = isArmy ? Math.Min(12, 1 + Math.Max(0, soldiers) / 250) : 1;
+        var cornerX = -13.0 - Math.Max(0, Math.Max(layout.Columns, wagonLayout.Columns) - 1) * 9.0;
+        var cornerRowY = -Math.Max(0, layout.Rows - 1) * 17.0;
+        var flagSlots = new List<(double X, double Top, double Base)> { (cornerX, cornerRowY - 50.0, cornerRowY - 12.0) };
+        if (flagCount > 1)
+        {
+            if (layout.Points.Length == 0)
+            {
+                for (var i = 1; i < flagCount; i++)
+                    flagSlots.Add((cornerX + i * 12.0, cornerRowY - 50.0 - (i % 2) * 4.0, cornerRowY - 12.0 - (i % 2) * 4.0));
+            }
+            else
+            {
+                var used = new HashSet<int>();
+                for (var i = 1; i < flagCount; i++)
+                {
+                    var bestIdx = -1;
+                    var bestDist = -1.0;
+                    for (var idx = 0; idx < layout.Points.Length; idx++)
+                    {
+                        if (used.Contains(idx)) continue;
+                        var pt = layout.Points[idx];
+                        var minDist = double.PositiveInfinity;
+                        foreach (var s in flagSlots)
+                        {
+                            var fdx = pt.X - s.X;
+                            var fdy = pt.Y - (s.Base + 12.0);
+                            var dist = Math.Sqrt(fdx * fdx + fdy * fdy);
+                            if (dist < minDist) minDist = dist;
+                        }
+                        if (minDist > bestDist) { bestDist = minDist; bestIdx = idx; }
+                    }
+                    if (bestIdx < 0) break;
+                    used.Add(bestIdx);
+                    var bestPt = layout.Points[bestIdx];
+                    flagSlots.Add((bestPt.X + 6.0, bestPt.Y - 50.0 - (i % 2) * 3.0, bestPt.Y - 12.0 - (i % 2) * 3.0));
+                }
+            }
+        }
+        foreach (var s in flagSlots)
+            Include(s.X - 21.0, s.Top - 5.0, s.X + 2.5, s.Base);
+
+        // Soldier sprites
+        for (var i = 0; i < formationIds.Count; i++)
+        {
+            var size = formationIds[i] == "persians-cavalry" ? Math.Round(layout.Width * 1.35) : layout.Width;
+            var pt = layout.Points[i];
+            Include(pt.X - size * 0.5, pt.Y - size * 0.9, pt.X + size * 0.5, pt.Y + size * 0.1);
+        }
+
+        // Supply wagon sprites
+        var wagonSize = isArmy ? 40.0 : 55.0;
+        for (var i = 0; i < wagonCount; i++)
+        {
+            var pt = wagonLayout.Points[i];
+            var wy = pt.Y + Math.Max(0, wagonLayout.Rows - 1) * 17.0 + (formationIds.Count > 0 ? 22.0 : 0.0);
+            Include(pt.X - wagonSize * 0.5, wy - wagonSize * 0.9, pt.X + wagonSize * 0.5, wy + wagonSize * 0.1);
+        }
+
+        // Convoy escort sprites
+        for (var i = 0; i < escortCount; i++)
+        {
+            var ex = (i - (escortCount - 1) / 2.0) * 22.0;
+            Include(ex - 18.0, 18.0 - 32.4, ex + 18.0, 18.0 + 3.6);
+        }
+
+        var w = (maxX - minX) * 1.25;
+        var d = Math.Max(18.0, (maxY - minY - 35.0) * 1.25);
+        return new(pos.X, pos.Y * 0.65 - d / 2.0 + 12.0, w / 2.0 + 7.0, d / 2.0 + 13.0);
+    }
+
+    internal static SelectionEllipse ArmySelectionEllipse(Army army) => BuildSelectionEllipse(army.Position, army.Troops, isArmy: true);
+    internal static SelectionEllipse ConvoySelectionEllipse(Convoy convoy) => BuildSelectionEllipse(convoy.Position, convoy.Troops, isArmy: false);
+    private static SelectionEllipse MemberSelectionEllipse(BattleMember member) =>
+        member.Convoy is not null ? ConvoySelectionEllipse(member.Convoy) : ArmySelectionEllipse(member.Army);
+
+    private static SelectionEllipse VillageSelectionEllipse(Position pos) => new(pos.X, pos.Y * 0.65 + 5.0, 78.0, 39.0);
+    private static SelectionEllipse OasisSelectionEllipse(Position pos) => new(pos.X, pos.Y * 0.65 + 12.0, 65.0, 29.0);
+
+    private static (double Rx, double RyScreen) SiteReachRadii(Army army, SelectionEllipse site)
+    {
+        var a = ArmySelectionEllipse(army);
+        return (site.Rx * 0.55 + Math.Min(18.0, a.Rx * 0.18),
+                site.RyScreen * 0.55 + Math.Min(10.0, a.RyScreen * 0.18));
+    }
+
+    private static bool EllipsesOverlap(SelectionEllipse a, SelectionEllipse b, double rx, double ryScreen)
+    {
+        var dx = (a.CenterX - b.CenterX) / rx;
+        var dy = (a.ScreenY - b.ScreenY) / ryScreen;
+        return dx * dx + dy * dy <= 1.0;
+    }
+
+    private static bool GroundReachesSite(Army army, Position sitePos, SelectionEllipse site)
+    {
+        var (rx, ry) = SiteReachRadii(army, site);
+        var dx = (army.Position.X - sitePos.X) / rx;
+        var dy = (army.Position.Y - sitePos.Y) * 0.65 / ry;
+        return dx * dx + dy * dy <= 1.0;
+    }
+
+    private static bool EllipsesCollide(SelectionEllipse a, SelectionEllipse b) =>
+        EllipsesOverlap(a, b, a.Rx + b.Rx, a.RyScreen + b.RyScreen);
+
+    internal static bool ArmiesCollide(Army a, Army b) => EllipsesCollide(ArmySelectionEllipse(a), ArmySelectionEllipse(b));
+    internal static bool ArmyConvoyCollide(Army army, Convoy convoy) => EllipsesCollide(ArmySelectionEllipse(army), ConvoySelectionEllipse(convoy));
+
+    // Armies step slightly inside a village/oasis circle before siege or combat starts.
+    internal static bool CityReached(Army army, VillageEconomy city) =>
+        GroundReachesSite(army, city.Village.Position, VillageSelectionEllipse(city.Village.Position));
+
+    internal static bool OasisReached(Army army, ResourceOasis oasis) =>
+        GroundReachesSite(army, oasis.Position, OasisSelectionEllipse(oasis.Position));
+
+    private static double EllipsesContactGap(Position from, Position to, double rx, double ryScreen)
+    {
+        var worldDist = Distance(from, to);
+        if (worldDist <= 1e-6) return 0;
+        var ux = (to.X - from.X) / worldDist;
+        var uyScreen = (to.Y - from.Y) * 0.65 / worldDist;
+        var denom = Math.Sqrt(Math.Pow(ux / rx, 2) + Math.Pow(uyScreen / ryScreen, 2));
+        return denom > 1e-6 ? 1.0 / denom : 0;
+    }
+
+    private static double SelectionContactGap(Army attacker, Army target)
+    {
+        var a = ArmySelectionEllipse(attacker);
+        var b = ArmySelectionEllipse(target);
+        return EllipsesContactGap(attacker.Position, target.Position, a.Rx + b.Rx, a.RyScreen + b.RyScreen);
+    }
+
+    private static double CityContactGap(Army attacker, VillageEconomy city)
+    {
+        var (rx, ry) = SiteReachRadii(attacker, VillageSelectionEllipse(city.Village.Position));
+        return EllipsesContactGap(attacker.Position, city.Village.Position, rx, ry);
     }
     private double ForceModifier(Army force)
     {
@@ -262,7 +460,8 @@ public sealed partial class LogisticsWorld
             var defLoss = Math.Clamp((int)Math.Ceiling(attackerScouts * (double)attackerScouts / defenderScouts), 1, Math.Min(attackerScouts, defenderScouts - 1));
             DamageDefenderScouts(defLoss);
             KillScouts(scoutArmy, Count(scoutArmy), defenderOwner ?? scoutArmy.OwnerId, true);
-            armies.Remove(scoutArmy);
+            if (Count(scoutArmy) > 0) Route(scoutArmy);
+            else armies.Remove(scoutArmy);
             ReportEvent(report.Id, now, "Enemy counter-scouts outnumbered your scouts. All your scouts were killed and no intelligence was gathered.", "Intercepted", defenderOwner);
             Note(scoutArmy.OwnerId, now, "Your scouts were intercepted and killed by superior enemy counter-scouts.", "war", targetId: report.Id);
             if (defenderOwner is { } defId) Note(defId, now, "Your scouts intercepted and eliminated enemy spies, suffering minor losses.", "war", targetId: report.Id);
@@ -342,12 +541,18 @@ public sealed partial class LogisticsWorld
             {
                 var site = DefenseSite(siteId);
                 if (site.Owner == winner.SupportedOwnerId)
-                { winner.Order = "Guarding"; winner.TargetId = siteId; winner.Destination = site.Position; MergeOasisGuards(siteId); return; }
+                {
+                    if (order == "Reinforcing" && Distance(winner.Position, site.Position) > 4)
+                    { winner.Order = "Reinforcing"; winner.TargetId = siteId; winner.Destination = site.Position; return; }
+                    winner.Order = "Guarding"; winner.TargetId = siteId; winner.Destination = site.Position; MergeOasisGuards(siteId); return;
+                }
             }
             catch (GameRuleException) { }
             Route(winner); return;
         }
-        if (order is "Occupying" or "Blockading" && oases.Find(o => o.Id == target) is { } oasis)
+        if (order == "Capturing" && target == castle.Id && castle.Active)
+        { winner.Order = "Capturing"; winner.TargetId = castle.Id; winner.Destination = castle.Position; return; }
+        if (order is "Occupying" or "Blockading" or "Burning" && oases.Find(o => o.Id == target) is { } oasis && oasis.BurnedUntil <= warTime)
         { winner.Order = order; winner.TargetId = target; winner.Destination = oasis.Position; winner.ActionSeconds = 0; return; }
         if (order is "Approaching" or "Sieging" && villages.GetValueOrDefault(target ?? Guid.Empty) is { Ruined: false } city && city.Village.OwnerId != winner.OwnerId)
         { winner.Order = sieges.Any(s=>s.City==city&&s.Status=="Active"&&s.Attackers.Contains(winner))?"Sieging":"Approaching"; winner.TargetId = target; UpdateWarDestination(winner); return; }
@@ -368,7 +573,7 @@ public sealed partial class LogisticsWorld
             if (army.Order == "Attacking" && now >= shieldUntil)
             {
                 var enemy = armies.FirstOrDefault(x => x.Id == army.TargetId);
-                if (enemy is not null && Distance(army.Position, enemy.Position) <= 16)
+                if (enemy is not null && ArmiesCollide(army, enemy))
                 {
                     if (!CanAttackIntoActiveBattle(army, enemy))
                     {
@@ -383,7 +588,7 @@ public sealed partial class LogisticsWorld
                 }
             }
             if (army.Order == "Approaching" && now >= shieldUntil && villages.GetValueOrDefault(army.TargetId ?? Guid.Empty) is { } city
-                && Distance(army.Position, city.Village.Position) <= 40)
+                && CityReached(army, city))
             {
                 var ongoing=sieges.Find(s=>s.City==city&&s.Status=="Active");
                 if (ongoing is not null)
@@ -464,7 +669,7 @@ public sealed partial class LogisticsWorld
             city.ReplaceGarrison(defenders.Troops);
         }
         ReportEvent(siege.Id, now, $"Round {siege.Round}: gate {siege.Gate:0}%, wall {siege.Wall:0}%, garrison {city.Garrison().Sum(x => x.Count)}.");
-        if (attackers.All(a => Count(a) == 0))
+        if (attackers.All(a => Fighters(a) == 0))
         {
             EndSiege(siege, "Defended", now);
             foreach (var force in attackers) { if (Count(force) > 0) Route(force); else armies.Remove(force); }

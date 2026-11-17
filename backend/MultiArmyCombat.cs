@@ -55,7 +55,7 @@ public sealed partial class LogisticsWorld
             var defense=SideAlliedWith(battle.Defenders,army);
             if(attack==defense)continue;
             var side=attack?battle.Attackers:battle.Defenders;
-            if(side.Any(m=>!m.Withdrawn&&Distance(army.Position,m.Army.Position)<=45))JoinBattle(battle,army,attack,now);
+            if(side.Any(m=>!m.Withdrawn&&(Distance(army.Position,m.Army.Position)<=45||EllipsesCollide(ArmySelectionEllipse(army),MemberSelectionEllipse(m)))))JoinBattle(battle,army,attack,now);
         }
     }
     private readonly record struct TierSlot(Army Army, int StackIndex, TroopStack Stack);
@@ -231,7 +231,7 @@ public sealed partial class LogisticsWorld
         CommitSideRoundPlan(attackers, attPlan, battle.DamagePool, now, defenders[0].OwnerId, true);
         CommitSideRoundPlan(defenders, defPlan, battle.DamagePool, now, attackers[0].OwnerId, true);
 
-        foreach (var member in battle.ConvoyMembers) { var carrier = member.Convoy!; carrier.Troops = member.Army.Troops; carrier.WheatCargo = Math.Min(carrier.WheatCargo, carrier.WheatCapacity); }
+        foreach (var member in battle.ConvoyMembers) { member.Convoy!.Troops = member.Army.Troops; }
         ReportEvent(battle.Id, now, $"Round {battle.Round}: attackers {attackers.Sum(Count)} remaining; defenders {defenders.Sum(Count)} remaining.");
         attackers = Fighting(battle.Attackers); defenders = Fighting(battle.Defenders);
         if (attackers.Length == 0 || defenders.Length == 0)
@@ -303,14 +303,20 @@ public sealed partial class LogisticsWorld
         foreach(var member in battle.ConvoyMembers)
         {
             var convoy=member.Convoy!;convoy.InBattle=false;
+            convoy.Troops=member.Army.Troops;
             if(lost.Contains(member.Army))
             {
                 var cargo=convoy.Cargo+new Resources(0,0,0,(long)convoy.WheatCargo);
                 totalSpoils+=cargo;
                 DestroyWagons(member.Army,1,now,winner.OwnerId);convoy.Cargo=new();convoy.WheatCargo=0;convoy.Returning=true;
                 Note(convoy.OwnerId,now,"Your caravan was intercepted and its cargo was lost.","convoy-loss",targetId:convoy.Id);
+                convoy.Troops=member.Army.Troops;
             }
-            convoy.Troops=member.Army.Troops;if(convoy.Troops.Count==0)convoys.Remove(convoy);
+            else
+            {
+                convoy.WheatCargo=Math.Min(convoy.WheatCargo,convoy.WheatCapacity);
+            }
+            if(convoy.Troops.Count==0)convoys.Remove(convoy);
         }
         foreach(var force in lost)
         {

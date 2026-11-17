@@ -14,6 +14,7 @@ public sealed partial class LogisticsWorld
     {
         if (!Enum.IsDefined(objective)) throw new GameRuleException("objective", "Choose a valid attack objective.");
         if (city.Ruined || city.Village.OwnerId == actor) throw new GameRuleException("target", "Select an enemy settlement.");
+        if (CampAllied(city.Village.OwnerId, actor)) throw new GameRuleException("ally", "You cannot attack an allied settlement.");
         if (now < shieldUntil) throw new GameRuleException("protected", "Wait until the protection shield expires.");
         bool Has(UnitRole role) => formation.Any(t=>t.Value>0 && GameCatalog.Units[t.Key].Role==role);
         if (!formation.Any(t=>t.Value>0 && GameCatalog.Units[t.Key].Role is not (UnitRole.Wagon or UnitRole.Governor)))
@@ -40,7 +41,7 @@ public sealed partial class LogisticsWorld
         var leader=forces.FirstOrDefault(a=>RoleCount(a,neededRole)>0);
         if (leader is null)
         {
-            var specialistApproaching = siege.Phase == "Fighting" && armies.Any(a => a.Order == "Approaching" && a.TargetId == siege.City.Village.Id
+            var specialistApproaching = siege.Phase is "Persuading" or "Demolishing" && armies.Any(a => a.Order == "Approaching" && a.TargetId == siege.City.Village.Id
                 && !a.Routing && CampAllied(a.OwnerId, siege.Attacker.OwnerId) && a.Objective == siege.Objective
                 && Distance(a.Position, siege.City.Village.Position) <= 350 && RoleCount(a, neededRole) > 0);
             if (specialistApproaching) return;
@@ -65,7 +66,9 @@ public sealed partial class LogisticsWorld
             var building=siege.City.Village.Buildings.Where(b=>b.Level>0)
                 .OrderBy(b=>b.Type==BuildingType.MainHall).ThenByDescending(b=>b.Level).ThenBy(b=>b.Type).FirstOrDefault();
             if (building is null) break;
+            var removedLevel = building.Level;
             siege.City.DamageBuilding(building.Type,building.Level==1);
+            siege.DemolishedBuildingValue += removedLevel * 45L;
             siege.DemolitionCredit=Math.Max(0,siege.DemolitionCredit-1);
             ReportEvent(siege.Id,now,$"Demolition: {building.Type} is now level {building.Level}.");
         }

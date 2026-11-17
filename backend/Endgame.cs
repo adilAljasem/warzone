@@ -110,7 +110,11 @@ public sealed partial class LogisticsWorld
             }
             else
             {
-                var salvage = city.Raze();
+                var salvage = city.Raze() + new Resources(
+                    siege.DemolishedBuildingValue / 2,
+                    siege.DemolishedBuildingValue / 2,
+                    siege.DemolishedBuildingValue / 2,
+                    siege.DemolishedBuildingValue / 4);
                 var recipients = siege.Attackers.Where(a => armies.Contains(a) && Count(a) > 0).ToArray();
                 if (recipients.Length == 0) recipients = [attacker];
                 var captured = DistributeLoot(recipients, salvage);
@@ -126,27 +130,55 @@ public sealed partial class LogisticsWorld
     }
     private void Rehome(Guid formerOwner, VillageEconomy lost, VillageEconomy? fallback, double now)
     {
-        foreach (var battle in battles.Where(x => x.Status == "Active" && (x.Attacker.OwnerId == formerOwner || x.Defender.OwnerId == formerOwner)).ToArray())
-            if (fallback is null) EndBattle(battle, battle.Attacker.OwnerId == formerOwner ? battle.Defender : battle.Attacker, now);
+        if (fallback is null)
+        {
+            foreach (var army in armies.Where(x => x.OwnerId == formerOwner).ToArray())
+            {
+                WithdrawFromSieges(army, now, army.TargetId, army.Order);
+                villages[army.HomeVillageId].LoseDeployed(Count(army));
+                armies.Remove(army);
+            }
+            foreach (var convoy in convoys.Where(x => x.OwnerId == formerOwner).ToArray())
+            {
+                villages[convoy.SourceVillageId].LoseDeployed(convoy.Troops.Sum(x => x.Count));
+                convoys.Remove(convoy);
+            }
+            foreach (var battle in battles.Where(x => x.Status == "Active").ToArray())
+            {
+                var touched = false;
+                foreach (var member in battle.Members.Where(m => !m.Withdrawn && m.Army.OwnerId == formerOwner))
+                {
+                    member.Withdrawn = true;
+                    touched = true;
+                }
+                if (!touched) continue;
+                var att = Fighting(battle.Attackers);
+                var def = Fighting(battle.Defenders);
+                if (att.Length == 0 || def.Length == 0)
+                {
+                    var winner = att.Length == 0
+                        ? (def.FirstOrDefault() ?? (battle.Defender.OwnerId != formerOwner ? battle.Defender : battle.Attacker))
+                        : (att.FirstOrDefault() ?? (battle.Attacker.OwnerId != formerOwner ? battle.Attacker : battle.Defender));
+                    EndBattle(battle, winner, now);
+                }
+            }
+            economies.Remove(formerOwner);
+            Note(formerOwner, now, "Your last settlement has fallen. You can follow the remaining match as a spectator.");
+            return;
+        }
+
         foreach (var army in armies.Where(x => x.OwnerId == formerOwner).ToArray())
         {
-            if (fallback is null) { villages[army.HomeVillageId].LoseDeployed(Count(army)); armies.Remove(army); continue; }
             if (army.HomeVillageId == lost.Village.Id)
             { lost.Rebase(fallback, Count(army)); army.HomeVillageId = fallback.Village.Id; }
             if (army.SupplyVillageId == lost.Village.Id) army.SupplyVillageId = fallback.Village.Id;
         }
         foreach (var convoy in convoys.Where(x => x.OwnerId == formerOwner).ToArray())
         {
-            if (fallback is null) { villages[convoy.SourceVillageId].LoseDeployed(convoy.Troops.Sum(x => x.Count)); convoys.Remove(convoy); continue; }
             if (convoy.SourceVillageId == lost.Village.Id)
             { lost.Rebase(fallback, convoy.Troops.Sum(x => x.Count)); convoy.SourceVillageId = fallback.Village.Id; convoy.Returning = true; }
         }
-        if (fallback is null)
-        {
-            economies.Remove(formerOwner);
-            Note(formerOwner, now, "Your last settlement has fallen. You can follow the remaining match as a spectator.");
-        }
-        else economies[formerOwner] = fallback;
+        economies[formerOwner] = fallback;
     }
     private Position ConvoyDestination(Convoy convoy) => convoy.Returning ? ConvoyCityDestination(convoy,villages[convoy.SourceVillageId])
         : convoy.OasisId is { } oasisId && oases.Find(o => o.Id == oasisId) is { } oasis ? oasis.Position

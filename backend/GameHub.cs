@@ -35,8 +35,12 @@ public sealed class GameHub(GameServer server) : Hub
 
     public async Task<RoomSnapshot> CreateRoom(string playerName, string tribe, string roomName, RoomSettings settings)
     {
+        var previousRoomId = server.RoomIdFor(Actor);
         var snapshot = server.Create(Actor, playerName, ParseTribe(tribe), roomName, settings);
         await Clients.All.SendAsync("RoomsUpdated", server.ListRooms());
+        if (previousRoomId is not null && previousRoomId != snapshot.Id)
+            await BroadcastRoomAsync(previousRoomId);
+        await BroadcastRoomAsync(snapshot.Id, Context.ConnectionId);
         return snapshot;
     }
 
@@ -49,16 +53,22 @@ public sealed class GameHub(GameServer server) : Hub
 
     public async Task<RoomSnapshot> JoinRoom(string roomId, string playerName, string tribe)
     {
+        var previousRoomId = server.RoomIdFor(Actor);
         var snapshot = server.Join(Actor, roomId, playerName, ParseTribe(tribe));
         await Clients.All.SendAsync("RoomsUpdated", server.ListRooms());
+        if (previousRoomId is not null && previousRoomId != snapshot.Id)
+            await BroadcastRoomAsync(previousRoomId);
         await BroadcastRoomAsync(snapshot.Id, Context.ConnectionId);
         return snapshot;
     }
 
     public async Task<RoomSnapshot> SpectateRoom(string roomId, string playerName)
     {
+        var previousRoomId = server.RoomIdFor(Actor);
         var snapshot = server.Spectate(Actor, roomId, playerName);
         await Clients.All.SendAsync("RoomsUpdated", server.ListRooms());
+        if (previousRoomId is not null && previousRoomId != snapshot.Id)
+            await BroadcastRoomAsync(previousRoomId);
         await BroadcastRoomAsync(snapshot.Id, Context.ConnectionId);
         return snapshot;
     }

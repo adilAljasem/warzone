@@ -19,7 +19,7 @@ internal sealed class OasisSiegeState(Army army, ResourceOasis oasis, double now
 public sealed partial class LogisticsWorld
 {
     private readonly List<OasisSiegeState> oasisSieges=[];
-    private bool ValidOasisArmy(OasisSiegeState s,Army a)=>armies.Contains(a)&&!a.Routing&&Fighters(a)>0&&a.Order is "Occupying" or "Blockading" or "Burning" or "Battle"&&a.TargetId==s.Oasis.Id&&a.OwnerId!=s.Defender&&Distance(a.Position,s.Oasis.Position)<=20;
+    private bool ValidOasisArmy(OasisSiegeState s,Army a)=>armies.Contains(a)&&!a.Routing&&Fighters(a)>0&&a.Order is "Occupying" or "Blockading" or "Burning" or "Battle"&&a.TargetId==s.Oasis.Id&&a.OwnerId!=s.Defender&&OasisReached(a,s.Oasis);
     private bool ValidOasisSiege(OasisSiegeState s)=>s.Status=="Active"&&s.Oasis.OwnerId==s.Defender&&s.Attackers.Any(a=>ValidOasisArmy(s,a));
     private bool OasisBlockaded(ResourceOasis oasis)=>oasisSieges.Any(s=>s.Oasis==oasis&&ValidOasisSiege(s));
     private void BeginOasisSiege(Army army,ResourceOasis oasis,double now)
@@ -36,13 +36,14 @@ public sealed partial class LogisticsWorld
     }
     private void TrackOasisDefenders(OasisSiegeState siege,ReportState report)
     {
-        foreach(var guard in armies.Where(a=>a.DefendingSiteId==siege.Oasis.Id&&a.SupportedOwnerId==siege.Defender&&Distance(a.Position,siege.Oasis.Position)<=45))AddReportArmy(report,guard,false);
+        foreach(var guard in armies.Where(a=>a.DefendingSiteId==siege.Oasis.Id&&a.SupportedOwnerId==siege.Defender&&(Distance(a.Position,siege.Oasis.Position)<=45||OasisReached(a,siege.Oasis))))AddReportArmy(report,guard,false);
         RefreshReportForces(report);
     }
     private void EndOasisSiege(OasisSiegeState siege,string status,double now,Guid? winner=null)
     {
         if(siege.Status!="Active")return;
         siege.Status=status;
+        siege.Oasis.BurningSeconds=0;
         var report=reports.Find(r=>r.Id==siege.Id);
         if(report is not null) report.OasisDefense=new(siege.Oasis.Id,siege.Oasis.WallLevel,siege.Oasis.WallHealth,siege.Oasis.WallMaximum,false,siege.Mode,siege.Round);
         ReportEvent(siege.Id,now,status=="Captured"?"Oasis captured. Its wall is destroyed.":"The oasis siege has ended. Collection and production bonuses resume.",status,winner);
@@ -62,8 +63,8 @@ public sealed partial class LogisticsWorld
         RefreshOasisBonuses();
     }
     private OasisSiegeSnapshot[] OasisSiegeViews()=>oasisSieges.Where(ValidOasisSiege).Select(s=>new OasisSiegeSnapshot(s.Id,s.Attacker.Id,s.Oasis.Id,s.Attacker.OwnerId,s.Defender,s.Oasis.Position,warTime-s.Started,s.Mode,s.Oasis.WallHealth,s.Oasis.WallMaximum,s.Round,s.Attackers.Where(a=>ValidOasisArmy(s,a)).Select(a=>a.Id).ToArray(),s.Attackers.Where(a=>ValidOasisArmy(s,a)).Select(a=>a.OwnerId).Distinct().ToArray())).ToArray();
-    private ResourceOasis? OasisFoodSource(Army army)=>army.Order is "Guarding" or "Battle" or "Reinforcing"
-        ? oases.Find(o=>o.Id==army.DefendingSiteId&&o.OwnerId==army.OwnerId&&army.SupportedOwnerId==o.OwnerId&&Distance(o.Position,army.Position)<=4):null;
+    private ResourceOasis? OasisFoodSource(Army army)=>army.Order is "Guarding" or "Battle"
+        ? oases.Find(o=>o.Id==army.DefendingSiteId&&o.OwnerId==army.OwnerId&&army.SupportedOwnerId==o.OwnerId&&OasisReached(army,o)):null;
     private double FeedArmy(Army army,double demand)
     {
         if(OasisFoodSource(army) is { } oasis)
