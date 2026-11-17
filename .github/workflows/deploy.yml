@@ -59,12 +59,13 @@ jobs:
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WARZONE_ADMIN_PASSWORD: ${{ secrets.WARZONE_ADMIN_PASSWORD }}
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 2222
-          envs: GHCR_USER,GHCR_TOKEN
+          envs: GHCR_USER,GHCR_TOKEN,WARZONE_ADMIN_PASSWORD
           script: |
             set -e
             cd /home/adil/

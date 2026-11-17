@@ -14,6 +14,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
+      - WARZONE_ADMIN_PASSWORD=${WARZONE_ADMIN_PASSWORD}
     networks:
       - traefik_public
     deploy:
