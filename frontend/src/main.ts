@@ -821,7 +821,7 @@ async function perform(action: () => Promise<void>, exclusive = false) {
         busy = true;
         try {
             if (connection.state === HubConnectionState.Disconnected)
-                await connect(true);
+                await connect(!returnedToMenu, returnedToMenu);
             if (connection.state !== HubConnectionState.Connected)
                 throw Error("Reconnect to give orders.");
             await action();
@@ -1226,7 +1226,7 @@ function render(snapshot: Snapshot | null) {
     if (snapshot && snapshot.id === state?.id && snapshot.revision < state.revision) {
         debugOverlay.recordStaleDrop();
         return;
-    } const previous = state; state = snapshot; gameAudio.update(snapshot); clockReceived = performance.now(); el("welcome").hidden = !!snapshot || panel === "rooms"; if (!snapshot) {
+    } const previous = state; state = snapshot; if (snapshot && returnedToMenu) setReturnedToMenu(false); gameAudio.update(snapshot); clockReceived = performance.now(); el("welcome").hidden = !!snapshot || panel === "rooms"; if (!snapshot) {
             pendingSnapshot = null;
             selectedArmies = []; oasisUnitSelection = null; focusedMatchId = ""; dismissedVictoryMatchId = ""; renderVictoryOverlay(null);
             closeRadial(); renderCursorBadge(el("map-cursor-badge"), "none", null); map.setSelectedArmies([], []);
@@ -3640,7 +3640,7 @@ async function handleDeepLinks() {
     }
 }
 
-async function connect(resumeReserved = false) {
+async function connect(resumeReserved = false, keepMenu = false) {
     if (connecting || connection.state !== HubConnectionState.Disconnected)
         return; connecting = true; el<HTMLButtonElement>('resume-game').disabled = true; try {
             const response = await fetch("/api/session", { method: "POST", credentials: "same-origin" });
@@ -3654,9 +3654,10 @@ async function connect(resumeReserved = false) {
             const snapshot = await connection.invoke<Snapshot | null>('Resume');
             debugOverlay.recordInbound("Resume", snapshot);
             if (returnedToMenu && !resumeReserved && snapshot?.status === 'Running') {
-                await connection.stop(); render(null);
+                if (!keepMenu) await connection.stop();
+                render(null);
             } else { setReturnedToMenu(false); render(snapshot); }
-            if (!snapshot) await handleDeepLinks();
+            if (!snapshot || (returnedToMenu && !resumeReserved)) await handleDeepLinks();
             syncAdminOverlay();
             status();
         }
@@ -3670,7 +3671,18 @@ async function connect(resumeReserved = false) {
     }
 }
 el("reconnect").onclick = () => void connect();
-el('resume-game').onclick = () => void connect(true);
+el('resume-game').onclick = () => {
+    if (connection.state === HubConnectionState.Connected) {
+        void perform(async () => {
+            const snapshot = await connection.invoke<Snapshot | null>('Resume');
+            setReturnedToMenu(false);
+            render(snapshot);
+            status();
+        }, true);
+        return;
+    }
+    void connect(true);
+};
 window.addEventListener("selectstart", event => {
     const target = event.target instanceof Element ? event.target : (event.target as Node | null)?.parentElement;
     if (!target?.closest("input, textarea, [contenteditable='true']")) event.preventDefault();
