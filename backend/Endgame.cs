@@ -190,7 +190,7 @@ public sealed partial class LogisticsWorld
         AdvanceNomadRelocations(seconds, now);
         castle.Active = now >= castleUnlockSeconds;
         if (!castle.Active) return;
-        var present = armies.Where(x => Distance(x.Position, castle.Position) < 45 && !x.Routing && Fighters(x) > 0).ToArray();
+        var present = armies.Where(x => Distance(x.Position, castle.Position) < 45 && !x.Routing && x.Order != "Returning" && Fighters(x) > 0).ToArray();
         var owners = present.Select(x => x.OwnerId).Distinct().ToArray();
         var alliedHolders = owners.Length > 0 && owners.All(o => CampAllied(owners[0], o));
         castle.Contested = owners.Length > 1 && !alliedHolders;
@@ -219,16 +219,11 @@ public sealed partial class LogisticsWorld
             return;
         }
         if (owners.Length == 0) { castle.Progress = 0; castle.Claimant = null; castle.Controller = null; return; }
-        var keptByHolderOrAlly = castle.Controller is { } prior && owners.Any(o => o == prior || CampAllied(o, prior));
         var owner = castle.Controller is { } existing && owners.Contains(existing) ? existing : owners[0];
-        if (!keptByHolderOrAlly)
+        if (castle.Controller != owner)
         {
             castle.Controller = owner; castle.Claimant = owner; castle.TransferTo(owner); castle.Progress = 0;
             foreach (var player in statistics.Keys) Note(player, now, "The central castle has a new ruler. Hold it for 5 continuous minutes to win the match.");
-        }
-        else if (castle.Controller != owner)
-        {
-            castle.Controller = owner; castle.Claimant = owner; castle.TransferTo(owner);
         }
         castle.Progress = Math.Min(300, castle.Progress + seconds);
         statistics[owner].CastleSeconds += seconds;

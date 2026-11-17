@@ -417,6 +417,39 @@ internal static class BugFixChecks
             Check(c2.Resources.Wheat > 0, "Bot used instant 2:1 market swap to convert surplus Wood/Iron into Wheat immediately");
         }
 
+        // 10. Crown Keep requires the current controller to hold for a full 5 continuous minutes (no inheriting prior ally's elapsed hold time).
+        {
+            var p1 = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(2200, 2250));
+            var p2 = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(2300, 2250));
+            var world = new LogisticsWorld([p1, p2], 1111, castleUnlockSeconds: 0);
+            world.SetAlliances([new(p1.Village.OwnerId, p2.Village.OwnerId, 0)]);
+            p1.AddResources(new(10000, 10000, 10000, 20000));
+            p1.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 40), new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 4)]);
+            p2.AddResources(new(10000, 10000, 10000, 20000));
+            p2.ReceiveGift([new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]), 40), new(BaseUnit.Create(GameCatalog.Units["greeks-wagon"]), 4)]);
+            world.Advance(.25, .25, 0, 3600); // activate castle
+            var keepId = world.Snapshot(p1.Village.OwnerId).Warfare.Castle.Id;
+            world.Apply(p1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, p1.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 40, ["romans-wagon"] = 4 }, Wagons: 4, DestinationId: keepId,
+                X: LogisticsWorld.MapCenter, Y: LogisticsWorld.MapCenter), .25, 0);
+            var now = .25d;
+            for (var i = 0; i < 245; i++) { now += 1; world.Advance(1, now, 0, 3600); }
+            var mid = world.Snapshot(p1.Village.OwnerId).Warfare.Castle;
+            Check(mid.ControllerId == p1.Village.OwnerId && mid.CaptureProgress >= 220, $"First ally held Crown Keep near 4 minutes (controller={mid.ControllerId}, progress={mid.CaptureProgress})");
+
+            // Ally p2 moves in and p1 recalls: p2 becomes the new ruler and timer must reset to 0!
+            world.Apply(p2.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, p2.Village.Id,
+                Formation: new Dictionary<string, int> { ["greeks-infantry"] = 40, ["greeks-wagon"] = 4 }, Wagons: 4, DestinationId: keepId,
+                X: LogisticsWorld.MapCenter, Y: LogisticsWorld.MapCenter), now, 0);
+            for (var i = 0; i < 20; i++) { now += 1; world.Advance(1, now, 0, 3600); }
+            var p1Army = world.Snapshot(p1.Village.OwnerId).Armies.Single(a => a.OwnerId == p1.Village.OwnerId).Id;
+            world.Apply(p1.Village.OwnerId, new(Guid.NewGuid(), CommandKind.RecallArmy, p1Army), now, 0);
+            for (var i = 0; i < 45; i++) { now += 1; world.Advance(1, now, 0, 3600); }
+            var handoff = world.Snapshot(p2.Village.OwnerId).Warfare.Castle;
+            Check(world.CrownWinner is null && handoff.ControllerId == p2.Village.OwnerId && handoff.CaptureProgress < 60,
+                $"Crown Keep reset timer on ruler change instead of letting ally win in < 1 minute (progress={handoff.CaptureProgress})");
+        }
+
         return checks;
     }
 
