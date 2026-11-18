@@ -951,6 +951,78 @@ internal static class BugFixChecks
                 $"Oasis action begins slightly inside the oasis circle (dist={oasisEngageDist:0.1})");
         }
 
+        // 14. Nearby allied (and own idle) armies never auto-join battles; players and bots join manually as support.
+        {
+            var friend = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var defenderOwner = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(500, 620));
+            var botAlly = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 740));
+            var enemy = new VillageEconomy(Guid.NewGuid(), TribeType.Germans, new(750, 560));
+            var world = new LogisticsWorld([friend, defenderOwner, botAlly, enemy], 808);
+            world.SetAlliances([
+                new(friend.Village.OwnerId, defenderOwner.Village.OwnerId, 0),
+                new(friend.Village.OwnerId, botAlly.Village.OwnerId, 0),
+                new(defenderOwner.Village.OwnerId, botAlly.Village.OwnerId, 0)
+            ]);
+            foreach (var c in new[] { friend, defenderOwner, botAlly, enemy })
+            {
+                c.AddResources(new(10000, 10000, 10000, 15000));
+                c.ReceiveGift([
+                    new(BaseUnit.Create(GameCatalog.Units["romans-infantry"]), 120),
+                    new(BaseUnit.Create(GameCatalog.Units["greeks-infantry"]), 120),
+                    new(BaseUnit.Create(GameCatalog.Units["germans-infantry"]), 120),
+                    new(BaseUnit.Create(GameCatalog.Units["romans-wagon"]), 4)
+                ]);
+            }
+
+            // Place friend's attacker, defenderOwner's defensive army, and botAlly's army right at the same battle point (620, 560),
+            // plus a second idle army owned by friend right next to them.
+            world.Apply(friend.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, friend.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 50 }, Wagons: 0, X: 620, Y: 560), 0, 0);
+            world.Apply(friend.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, friend.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 25 }, Wagons: 0, X: 625, Y: 560), 0, 0);
+            world.Apply(defenderOwner.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, defenderOwner.Village.Id,
+                Formation: new Dictionary<string, int> { ["greeks-infantry"] = 60 }, Wagons: 0, X: 620, Y: 565), 0, 0);
+            world.Apply(botAlly.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, botAlly.Village.Id,
+                Formation: new Dictionary<string, int> { ["romans-infantry"] = 40 }, Wagons: 0, X: 615, Y: 560), 0, 0);
+            world.Apply(enemy.Village.OwnerId, new(Guid.NewGuid(), CommandKind.DispatchArmy, enemy.Village.Id,
+                Formation: new Dictionary<string, int> { ["germans-infantry"] = 100 }, Wagons: 0, X: 640, Y: 560), 0, 0);
+
+            var friendAtk = world.Snapshot(friend.Village.OwnerId).Armies.Where(a => a.OwnerId == friend.Village.OwnerId).First().Id;
+            var friendReserve = world.Snapshot(friend.Village.OwnerId).Armies.Where(a => a.OwnerId == friend.Village.OwnerId).Last().Id;
+            var defArmy = world.Snapshot(defenderOwner.Village.OwnerId).Armies.Single(a => a.OwnerId == defenderOwner.Village.OwnerId).Id;
+            var botArmy = world.Snapshot(botAlly.Village.OwnerId).Armies.Single(a => a.OwnerId == botAlly.Village.OwnerId).Id;
+            var enemyArmy = world.Snapshot(enemy.Village.OwnerId).Armies.Single(a => a.OwnerId == enemy.Village.OwnerId).Id;
+
+            double now = 0;
+            for (var i = 0; i < 160 && world.Snapshot(friend.Village.OwnerId).Armies.Any(a => a.Order != "Idle"); i++)
+            { now += .25; world.Advance(.25, now, 0, 3600); }
+
+            // Friend attacks enemy right next to defenderOwner's defensive army, friendReserve, and botArmy.
+            world.Apply(friend.Village.OwnerId, new(Guid.NewGuid(), CommandKind.AttackArmy, friendAtk, DestinationId: enemyArmy), now, 0);
+            for (var i = 0; i < 60 && !world.Snapshot(friend.Village.OwnerId).Warfare.Battles.Any(b => b.Status == "Active"); i++)
+            { now += .25; world.Advance(.25, now, 0, 3600); }
+            for (var i = 0; i < 8; i++) { now += .25; world.Advance(.25, now, 0, 3600); }
+
+            var activeBattle = world.Snapshot(friend.Village.OwnerId).Warfare.Battles.Single(b => b.Status == "Active");
+            Check(activeBattle.AttackerArmyIds.SequenceEqual([friendAtk]) && activeBattle.DefenderArmyIds.SequenceEqual([enemyArmy]),
+                "Nearby allied defensive armies and own idle reserves do NOT auto-join a nearby battle");
+            Check(world.Snapshot(defenderOwner.Village.OwnerId).Armies.Single(a => a.Id == defArmy).Order == "Idle"
+                && world.Snapshot(friend.Village.OwnerId).Armies.Single(a => a.Id == friendReserve).Order == "Idle"
+                && world.Snapshot(botAlly.Village.OwnerId).Armies.Single(a => a.Id == botArmy).Order == "Idle",
+                "Uncommanded nearby allied and reserve armies keep Idle status during nearby combat");
+
+            // Player manually orders defArmy to join as support, and bot manually joins via BotAct.
+            world.Apply(defenderOwner.Village.OwnerId, new(Guid.NewGuid(), CommandKind.AttackArmy, defArmy, DestinationId: enemyArmy), now, 0);
+            var botCmds = new WorldTestCommands(world, () => now);
+            world.BotAct(botAlly.Village.OwnerId, botCmds, BotPersonality.Defensive, BotDifficulty.Normal);
+            for (var i = 0; i < 40; i++) { now += .25; world.Advance(.25, now, 0, 3600); }
+
+            var joinedBattle = world.Snapshot(friend.Village.OwnerId).Warfare.Battles.Single(b => b.Id == activeBattle.Id);
+            Check(joinedBattle.AttackerArmyIds.Contains(defArmy) && joinedBattle.AttackerArmyIds.Contains(botArmy)
+                && !joinedBattle.AttackerArmyIds.Contains(friendReserve),
+                "Manually commanded player and bot allies join the active battle while uncommanded reserve stays out");
+        }
+
         return checks;
     }
 

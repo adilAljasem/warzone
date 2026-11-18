@@ -2158,12 +2158,18 @@ function armyPanel() {
             wheat: Math.floor(a.wheat ?? 0)
         };
         if (isAllyPlayer(a.ownerId)) {
+            const joinBehavior = resolveTargetBehavior({ id: a.id, kind: "army", name: a.id, position: a.position, ownerId: a.ownerId }, buildTargetContext());
+            const joinAction = joinBehavior.directAction;
+            const joinFooter = joinAction
+                ? `<div class="panel-footer">${button(joinAction.label, "join-ally-battle", a.id, joinAction.tone === "danger" ? "danger wide" : "primary wide", !running() || !!joinAction.disabled)}</div>`
+                : "";
             return `${armyCountBanner(totalUnits, isAr, `${esc(t(a.order))} · ${a.soldiers.toLocaleString()} ${isAr ? "جندي" : "troops"} · ${a.wagons.toLocaleString()} ${isAr ? "عربة" : "wagons"}`)}
                 <div class="stat-line"><span>${isAr ? "القائد الحليف" : "Allied commander"}</span><b>${esc(owner(a.ownerId))}</b></div>
                 <div><div class="stat-line"><span>${isAr ? "المؤونة" : "Food"}</span><b>${Math.floor(a.wheat ?? 0).toLocaleString()} / ${Math.floor(a.capacity).toLocaleString()}</b></div><div class="meter food"><i style="width:${Math.min(100, (a.wheat ?? 0) / Math.max(1, a.capacity) * 100)}%"></i></div></div>
                 ${renderLootRow(carried, isAr ? "الموارد المحمولة" : "Carried resources")}
                 ${renderCasualtiesGrid(a.wounded ?? 0, a.dead ?? 0, a.fled ?? 0, isAr)}
-                ${formationPortraits(a.formation, isAr ? "تشكيلة جيش الحليف" : "Allied army", "friendly")}`;
+                ${formationPortraits(a.formation, isAr ? "تشكيلة جيش الحليف" : "Allied army", "friendly")}
+                ${joinFooter}`;
         }
         const scoutActive = isArmyScouted(a);
         const attackBlocked = !running() || state!.shieldRemainingSeconds > 0 || !canAttackArmyInBattle(a.id, buildTargetContext());
@@ -3159,6 +3165,17 @@ document.addEventListener("click", event => {
         return;
     }
     if (action === "plan-attack") { openDispatch(); return; }
+    if (action === "join-ally-battle") {
+        const allyArmy = state?.world?.armies.find(a => a.id === id);
+        if (!allyArmy) return;
+        const joinBehavior = resolveTargetBehavior({ id: allyArmy.id, kind: "army", name: allyArmy.id, position: allyArmy.position, ownerId: allyArmy.ownerId }, buildTargetContext());
+        const joinAction = joinBehavior.directAction;
+        if (!joinAction || joinAction.disabled) return;
+        if (joinAction.targetOverride) selection = joinAction.targetOverride;
+        const mission = joinAction.id === "reinforce" ? "reinforce" : joinAction.id === "besiege-oasis" || joinAction.id === "blockade-city" ? "blockade" : joinAction.id === "burn-oasis" ? "burn" : "attack";
+        openDispatch(mission);
+        return;
+    }
     if (action === "army-destination") {
         preferredDispatchArmy = id; showMap();
         notice("Choose a destination on the world map.");

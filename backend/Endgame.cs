@@ -471,6 +471,48 @@ public sealed partial class LogisticsWorld
             return AttackObjective.Blockade;
         return AttackObjective.Raid;
     }
+    private bool TryJoinActiveBattleAsAssistant(Guid actor, Army[] ownArmies, IGameCommands commands, BotPersonality personality, BotDifficulty difficulty, bool alliedOnly)
+    {
+        var candidates = ownArmies.Where(a => IsReassignableArmy(actor, a, personality) && Fighters(a) >= 10).ToArray();
+        if (candidates.Length == 0) return false;
+
+        foreach (var battle in battles.Where(b => b.Status == "Active"))
+        {
+            var onAttackers = SideAlliedWith(battle.Attackers, actor);
+            var onDefenders = SideAlliedWith(battle.Defenders, actor);
+            if (onAttackers == onDefenders) continue;
+
+            var alreadyParticipating = battle.Members.Any(m => !m.Withdrawn && m.Army.OwnerId == actor);
+            if (alliedOnly && alreadyParticipating) continue;
+            if (!alliedOnly && !alreadyParticipating) continue;
+
+            var ownSide = onAttackers ? battle.Attackers : battle.Defenders;
+            var opposingSide = onAttackers ? battle.Defenders : battle.Attackers;
+            var enemyInBattle = opposingSide
+                .Where(m => !m.Withdrawn && m.Convoy is null && armies.Contains(m.Army) && !m.Army.Routing && Count(m.Army) > 0 && !CampAllied(actor, m.Army.OwnerId))
+                .Select(m => m.Army)
+                .FirstOrDefault();
+            if (enemyInBattle is null || !CanAttackIntoActiveBattle(actor, enemyInBattle)) continue;
+
+            var maxRange = alliedOnly
+                ? (difficulty == BotDifficulty.Hard ? 1150 : 750)
+                : (difficulty == BotDifficulty.Hard ? 750 : 450);
+            var ownFighters = ownSide.Where(m => !m.Withdrawn && !m.Army.Routing).Sum(m => Fighters(m.Army));
+            var oppFighters = opposingSide.Where(m => !m.Withdrawn && !m.Army.Routing).Sum(m => Fighters(m.Army));
+
+            var helper = candidates
+                .Where(h => Distance(h.Position, enemyInBattle.Position) <= maxRange
+                    && (alliedOnly || ownFighters < oppFighters * 1.5 || Distance(h.Position, enemyInBattle.Position) <= 120))
+                .OrderByDescending(Fighters)
+                .FirstOrDefault();
+            if (helper is null) continue;
+
+            if (commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, helper.Id, DestinationId: enemyInBattle.Id)).Accepted)
+                return true;
+        }
+        return false;
+    }
+
     private bool HelpAlliedBots(Guid actor, VillageEconomy home, Army[] ownArmies, IGameCommands commands, BotPersonality personality, BotDifficulty difficulty, int maxArmies)
     {
         var allies = economies.Keys.Where(id => id != actor && CampAllied(actor, id) && Primary(id) is not null).ToArray();
@@ -481,23 +523,9 @@ public sealed partial class LogisticsWorld
         var homeTroops = HomeCombatTroops(home);
 
         var fieldCount = ActiveFieldArmyCount(ownArmies);
-        // 1. Join nearby active allied field battles
-        var allyBattle = battles.FirstOrDefault(b => b.Status == "Active"
-            && (SideAlliedWith(b.Attackers, actor) ^ SideAlliedWith(b.Defenders, actor))
-            && !b.Members.Any(m => !m.Withdrawn && m.Army.OwnerId == actor));
-        if (allyBattle is not null && helper is not null)
-        {
-            var opposingSide = SideAlliedWith(allyBattle.Attackers, actor) ? allyBattle.Defenders : allyBattle.Attackers;
-            var enemyInBattle = opposingSide
-                .Where(m => !m.Withdrawn && !m.Army.Routing && Count(m.Army) > 0 && !CampAllied(actor, m.Army.OwnerId))
-                .Select(m => m.Army).FirstOrDefault();
-            if (enemyInBattle is not null && CanAttackIntoActiveBattle(actor, enemyInBattle)
-                && Distance(helper.Position, enemyInBattle.Position) <= (difficulty == BotDifficulty.Hard ? 1150 : 750))
-            {
-                commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, helper.Id, DestinationId: enemyInBattle.Id));
-                return true;
-            }
-        }
+        // 1. Join nearby active allied field battles explicitly
+        if (TryJoinActiveBattleAsAssistant(actor, ownArmies, commands, personality, difficulty, alliedOnly: true))
+            return true;
 
         // 2. Reinforce or relieve allied settlements under siege or approaching threat
         var threatenedCity = villages.Values
@@ -636,7 +664,9 @@ public sealed partial class LogisticsWorld
                 }
             }
 
-            // 1b. Allied defense & team reinforcements
+            // 1b. Reinforce own nearby active battles and allied defense & team reinforcements
+            if (TryJoinActiveBattleAsAssistant(actor, ownArmies, commands, personality, difficulty, alliedOnly: false))
+                return true;
             if (HelpAlliedBots(actor, home, ownArmies, commands, personality, difficulty, maxArmies))
                 return true;
         }

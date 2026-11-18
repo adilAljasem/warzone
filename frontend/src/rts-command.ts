@@ -471,7 +471,17 @@ export function resolveTargetBehavior(target: MapSelection, ctx: TargetRuleConte
     const a = ctx.armies.find(x => x.id === target.id);
     if (!a) return { intent: "none", options: [] };
     if (ctx.isAlly(a.ownerId)) return resolveAllyArmyJoinBehavior(a, ctx, L);
-    if (a.ownerId === ctx.you) return { intent: "none", options: [] };
+    if (a.ownerId === ctx.you) {
+      if (!ctx.selectedIds.includes(a.id)) {
+        const inActiveBattle = (ctx.battles ?? []).some(
+          b => b.status === "Active" && (b.attackerArmyIds.includes(a.id) || b.defenderArmyIds.includes(a.id))
+        );
+        const inActiveSiege = (ctx.sieges ?? []).some(s => s.status === "Active" && s.armyIds.includes(a.id))
+          || (ctx.oasisSieges ?? []).some(s => s.armyIds.includes(a.id));
+        if (inActiveBattle || inActiveSiege) return resolveAllyArmyJoinBehavior(a, ctx, L);
+      }
+      return { intent: "none", options: [] };
+    }
     const attackBlocked = ctx.protectedEnemy || !canAttackArmyInBattle(a.id, ctx);
     return {
       intent: "attack",

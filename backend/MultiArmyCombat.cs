@@ -46,16 +46,63 @@ public sealed partial class LogisticsWorld
         AddReportArmy(reports.Single(r=>r.Id==battle.Id),army,attacking);
         ReportEvent(battle.Id,now,"Another army joined the battle.");
     }
-    private void JoinNearbyForces(BattleState battle,double now)
+    private void JoinSiteEncounterForces(BattleState battle, double now)
     {
-        foreach(var army in armies.Where(a=>!a.Routing&&a.Order is "Idle" or "Guarding" or "Reinforcing" or "Occupying" or "Blockading" or "Capturing" or "Attacking" or "Approaching" or "Sieging").ToArray())
+        // Only armies explicitly stationed to guard the contested site or co-besieging the relieved site join automatically;
+        // field and allied armies must be ordered into active battles manually.
+        var defendedSites = battle.Members
+            .Where(m => !m.Withdrawn && !m.Army.Routing && Count(m.Army) > 0
+                && m.Army.DefendingSiteId is not null
+                && m.Order is "Guarding" or "Reinforcing")
+            .Select(m => (SiteId: m.Army.DefendingSiteId!.Value, m.Army.SupportedOwnerId, m.Army.Position,
+                Attacking: battle.Attackers.Contains(m)))
+            .ToArray();
+
+        if (defendedSites.Length > 0)
         {
-            if(battle.Contains(army))continue;
-            var attack=SideAlliedWith(battle.Attackers,army);
-            var defense=SideAlliedWith(battle.Defenders,army);
-            if(attack==defense)continue;
-            var side=attack?battle.Attackers:battle.Defenders;
-            if(side.Any(m=>!m.Withdrawn&&(Distance(army.Position,m.Army.Position)<=45||EllipsesCollide(ArmySelectionEllipse(army),MemberSelectionEllipse(m)))))JoinBattle(battle,army,attack,now);
+            foreach (var army in armies.Where(a => !a.Routing && a.Order == "Guarding" && a.DefendingSiteId is not null && Fighters(a) > 0).ToArray())
+            {
+                if (battle.Contains(army) || InActiveBattle(army)) continue;
+                var match = defendedSites.FirstOrDefault(s =>
+                    s.SiteId == army.DefendingSiteId
+                    && (s.SupportedOwnerId == army.SupportedOwnerId
+                        || (s.SupportedOwnerId is not null && army.SupportedOwnerId is not null && CampAllied(s.SupportedOwnerId.Value, army.SupportedOwnerId.Value)))
+                    && Distance(army.Position, s.Position) <= 45);
+                if (match.SiteId != Guid.Empty)
+                    JoinBattle(battle, army, match.Attacking, now);
+            }
+        }
+
+        foreach (var siege in sieges.Where(s => s.Status == "Active"))
+        {
+            var member = battle.Members.FirstOrDefault(m => !m.Withdrawn && siege.Attackers.Contains(m.Army));
+            if (member is null) continue;
+            var attacking = battle.Attackers.Contains(member);
+            var opposingSide = attacking ? battle.Defenders : battle.Attackers;
+            var isSiteDefenseBattle = opposingSide.Any(m => !m.Withdrawn && (m.Army.DefendingSiteId == siege.City.Village.Id
+                || m.Army.OwnerId == siege.DefenderOwner || CampAllied(m.Army.OwnerId, siege.DefenderOwner)));
+            if (!isSiteDefenseBattle) continue;
+            foreach (var coAttacker in siege.Attackers.Where(a => armies.Contains(a) && a.Order == "Sieging" && !a.Routing && Fighters(a) > 0).ToArray())
+            {
+                if (!battle.Contains(coAttacker) && !InActiveBattle(coAttacker))
+                    JoinBattle(battle, coAttacker, attacking, now);
+            }
+        }
+
+        foreach (var oasisSiege in oasisSieges.Where(ValidOasisSiege))
+        {
+            var member = battle.Members.FirstOrDefault(m => !m.Withdrawn && oasisSiege.Attackers.Contains(m.Army));
+            if (member is null) continue;
+            var attacking = battle.Attackers.Contains(member);
+            var opposingSide = attacking ? battle.Defenders : battle.Attackers;
+            var isSiteDefenseBattle = opposingSide.Any(m => !m.Withdrawn && (m.Army.DefendingSiteId == oasisSiege.Oasis.Id
+                || m.Army.OwnerId == oasisSiege.Defender || CampAllied(m.Army.OwnerId, oasisSiege.Defender)));
+            if (!isSiteDefenseBattle) continue;
+            foreach (var coAttacker in oasisSiege.Attackers.Where(a => ValidOasisArmy(oasisSiege, a)).ToArray())
+            {
+                if (!battle.Contains(coAttacker) && !InActiveBattle(coAttacker))
+                    JoinBattle(battle, coAttacker, attacking, now);
+            }
         }
     }
     private readonly record struct TierSlot(Army Army, int StackIndex, TroopStack Stack);
@@ -218,7 +265,7 @@ public sealed partial class LogisticsWorld
 
     private void AdvanceBattle(BattleState battle, double now)
     {
-        JoinNearbyForces(battle, now);
+        JoinSiteEncounterForces(battle, now);
         var attackers = Fighting(battle.Attackers); var defenders = Fighting(battle.Defenders);
         if (attackers.Length == 0 || defenders.Length == 0) { EndBattle(battle, attackers.Length == 0 ? battle.Defender : battle.Attacker, now); return; }
         if (now < battle.NextRound) return;

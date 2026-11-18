@@ -29,8 +29,11 @@ internal static class MultiArmyChecks
         void Order(VillageEconomy city,CommandKind kind,Guid id,Guid? target=null)=>world.Apply(city.Village.OwnerId,new(Guid.NewGuid(),kind,id,DestinationId:target),now,0);
         var a1=Send(world,a,"infantry",40);var a2=Send(world,a,"infantry",40);var b1=Send(world,b,"infantry",40);var b2=Send(world,b,"infantry",40);
         Until(()=>View().Armies.All(a=>a.Order=="Idle"));Order(a,CommandKind.AttackArmy,a1,b1);Order(a,CommandKind.AttackArmy,a2,b1);Tick();
+        var preAssist=View().Warfare.Battles.Single(x=>x.Status=="Active");
+        Check(preAssist.AttackerArmyIds.Length==2&&preAssist.DefenderArmyIds.Length==1&&View().Armies.Single(x=>x.Id==b2).Order=="Idle","Uncommanded nearby idle army does not automatically join an active battle");
+        Order(b,CommandKind.AttackArmy,b2,a1);Tick();
         var battle=View().Warfare.Battles.Single(x=>x.Status=="Active");var report=View().Reports.Single(r=>r.Id==battle.Id);
-        Check(battle.AttackerArmyIds.Length==2&&battle.DefenderArmyIds.Length==2&&battle.AttackerTroops==80&&battle.DefenderTroops==80,"Two armies on each side fight one shared battle");
+        Check(battle.AttackerArmyIds.Length==2&&battle.DefenderArmyIds.Length==2&&battle.AttackerTroops==80&&battle.DefenderTroops==80,"Two armies on each side fight one shared battle once ordered to join");
         Check(report.Armies.Length==4&&report.AttackerUnits.Sum(t=>t.Sent)==80&&report.DefenderUnits.Sum(t=>t.Sent)==80,"Reports count every army and aggregate equal unit types without overwriting them");
         Until(()=>View().Warfare.Battles.Single().Round>=2);report=View().Reports.Single(r=>r.Id==battle.Id);
         Check(report.Armies.All(force=>force.Units.Sum(u=>u.Dead+u.Wounded+u.Fled)>0),"Casualties are distributed across actual armies on both sides");

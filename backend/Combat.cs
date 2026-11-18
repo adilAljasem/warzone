@@ -171,7 +171,7 @@ public sealed partial class LogisticsWorld
         ReportEvent(battle.Id,now,"Battle joined. Army composition determines each combat round.");
         Note(attacker.OwnerId,now,"Battle joined. Open the live report to follow every army.");
         Note(defender.OwnerId,now,convoy is null?"Your army is under attack. Send reinforcements or follow the live report.":"A caravan is under attack. Its escorts are defending it.");
-        JoinNearbyForces(battle,now);
+        JoinSiteEncounterForces(battle,now);
     }
     private void StartConvoyBattle(Army army, double now)
     {
@@ -616,7 +616,12 @@ public sealed partial class LogisticsWorld
                 }
                 var guard = Guards(city.Village.Id, army.OwnerId).FirstOrDefault();
                 if (guard is not null) { StartBattle(army, guard, now); continue; }
-                if (armies.Any(a => a.DefendingSiteId == city.Village.Id && a.OwnerId != army.OwnerId && a.Order == "Battle")) continue;
+                var activeGuard = armies.FirstOrDefault(a => a.DefendingSiteId == city.Village.Id && a.OwnerId != army.OwnerId && !CampAllied(a.OwnerId, army.OwnerId) && a.Order == "Battle");
+                if (activeGuard is not null)
+                {
+                    if (CanAttackIntoActiveBattle(army, activeGuard)) StartBattle(army, activeGuard, now);
+                    continue;
+                }
                 army.Order = "Sieging"; city.Besieged = true;
                 var siege = new SiegeState(army, city, now); sieges.Add(siege);
                 BeginReport(siege.Id, "Siege", now, army, city.Village.OwnerId, city.Village.Id, city.Village.Position);
