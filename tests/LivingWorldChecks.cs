@@ -229,6 +229,30 @@ internal static class LivingWorldChecks
             Check(botNames.SequenceEqual(["Bot 1", "Bot 2", "Bot 3"]), $"Manual room keeps classic Bot 1..3 names (got {string.Join(", ", botNames)})");
         }
 
+        // 8. Flag colors and spawn slots vary across matches instead of binding the same color to the same map spot
+        {
+            var slot0Colors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var hostSlots = new HashSet<int>();
+            for (var i = 0; i < 12; i++)
+            {
+                var h = Guid.NewGuid();
+                var r = new GameRoom(h, $"Host{i}", TribeType.Romans, $"Var{i}",
+                    new(Capacity: 8, DurationMinutes: 60, ShieldMinutes: 5, ResourceSpeed: 1, BotCount: 7, BotDifficulty: BotDifficulty.Mixed),
+                    DateTimeOffset.UtcNow);
+                var snap = r.Snapshot(h, _ => true);
+                var atSlot0 = snap.Players.Single(p => p.EffectiveSpawnSlot == 0);
+                slot0Colors.Add(atSlot0.FlagColor);
+                hostSlots.Add(snap.Players.Single(p => p.Id == h).EffectiveSpawnSlot!.Value);
+
+                // Lobby effective slots remain stable between repeated snapshot polls
+                var snap2 = r.Snapshot(h, _ => true);
+                Check(snap.Players.All(p => p.EffectiveSpawnSlot == snap2.Players.Single(q => q.Id == p.Id).EffectiveSpawnSlot),
+                    "Lobby spawn slots remain stable across polls");
+            }
+            Check(slot0Colors.Count >= 3, $"Flag color at slot 0 varies across rooms (got {slot0Colors.Count} distinct colors)");
+            Check(hostSlots.Count >= 3, $"Host spawn position varies across rooms (got {hostSlots.Count} distinct slots)");
+        }
+
         return checks;
     }
 }

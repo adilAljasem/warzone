@@ -142,12 +142,21 @@ interface RoomSummary {
     maskBots?: boolean;
     isAmbient?: boolean;
 }
+interface AdminOnlinePlayer {
+    playerId: string;
+    name: string;
+    location: string;
+    roomId?: string | null;
+    roomName?: string | null;
+    connections: number;
+    isAdmin: boolean;
+}
 interface CommandResult {
     accepted: boolean;
     code: string;
     message: string;
 }
-type Panel = "alerts" | "biome" | "muster" | "reports" | "report" | "production" | "building" | "village" | "army" | "armies" | "dispatch" | "standings" | "lobby" | "rooms" | "oasis" | "ground" | "convoy" | "castle";
+type Panel = "alerts" | "biome" | "muster" | "reports" | "report" | "production" | "building" | "village" | "army" | "armies" | "dispatch" | "standings" | "lobby" | "rooms" | "online-players" | "oasis" | "ground" | "convoy" | "castle";
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id)! as T;
 const esc = (text: unknown) => String(text ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const icon = (name: string) => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -159,6 +168,7 @@ const facility = (id: string) => unitCatalog.get(id)?.trainingBuilding ?? ({ inf
 const connection = new HubConnectionBuilder().withUrl("/game").withAutomaticReconnect([0, 2000, 5000, 10000]).configureLogging(LogLevel.Warning).build();
 let deferredSnapshotsCount = 0;
 let adminEnabled = false;
+let onlinePlayersList: AdminOnlinePlayer[] = [];
 let menuChatVisible = false;
 const syncDebugButton = (open: boolean) => document.getElementById("toggle-debug")?.setAttribute("aria-pressed", String(open));
 const adminOverlay = new AdminOverlay({
@@ -205,6 +215,17 @@ const adminOverlay = new AdminOverlay({
 function syncAdminOverlay() {
     const hudAdmin = document.getElementById("view-admin");
     if (hudAdmin) hudAdmin.hidden = !adminEnabled;
+    const hudPlayers = document.getElementById("view-players");
+    if (hudPlayers) {
+        hudPlayers.hidden = !adminEnabled;
+        hudPlayers.setAttribute("aria-pressed", String(panel === "online-players"));
+    }
+    const playersCount = document.getElementById("online-players-count");
+    if (playersCount) {
+        const showCount = adminEnabled && onlinePlayersList.length > 0;
+        playersCount.hidden = !showCount;
+        playersCount.textContent = showCount ? String(onlinePlayersList.length) : "";
+    }
     let welcomeAdmin = document.getElementById("welcome-admin-btn") as HTMLButtonElement | null;
     if (adminEnabled && !welcomeAdmin) {
         welcomeAdmin = document.createElement("button");
@@ -1381,7 +1402,7 @@ function render(snapshot: Snapshot | null) {
     if (snapshot && snapshot.id === state?.id && snapshot.revision < state.revision) {
         debugOverlay.recordStaleDrop();
         return;
-    } const previous = state; state = snapshot; if (snapshot && returnedToMenu) setReturnedToMenu(false); gameAudio.update(snapshot); clockReceived = performance.now(); el("welcome").hidden = !!snapshot || panel === "rooms"; if (!snapshot) {
+    } const previous = state; state = snapshot; if (snapshot && returnedToMenu) setReturnedToMenu(false); gameAudio.update(snapshot); clockReceived = performance.now(); el("welcome").hidden = !!snapshot || panel === "rooms" || panel === "online-players"; if (!snapshot) {
             pendingSnapshot = null;
             selectedArmies = []; oasisUnitSelection = null; focusedMatchId = ""; dismissedVictoryMatchId = ""; renderVictoryOverlay(null);
             closeRadial(); renderCursorBadge(el("map-cursor-badge"), "none", null); map.setSelectedArmies([], []);
@@ -2603,7 +2624,7 @@ function renderDrawer(force = false) {
         }
         return;
     }
-    if (!state && panel !== "rooms") {
+    if (!state && panel !== "rooms" && panel !== "online-players") {
         closePanel();
         return;
     }
@@ -2804,6 +2825,45 @@ function renderDrawer(force = false) {
                 ${button(isAr ? "تحديث" : "Refresh", "refresh", "", "quiet")}
             </div>
             <div class="rooms-list">${roomCards}</div>
+        </div>`;
+    }
+    else if (panel === "online-players") {
+        const isAr = currentLanguage() === "ar";
+        title = isAr ? "اللاعبون الحقيقيون المتصلون" : "Online Real Players";
+        kicker = isAr ? "مراقبة الأدمن" : "ADMIN MONITOR";
+        const locLabel = (loc: string) => {
+            if (loc === "InMatch") return { cls: "match", text: isAr ? "🟢 داخل مباراة" : "🟢 In Match" };
+            if (loc === "InLobby") return { cls: "lobby", text: isAr ? "🟡 في اللوبي" : "🟡 In Lobby" };
+            if (loc === "Matchmaking") return { cls: "matchmaking", text: isAr ? "🔍 يبحث عن جيم" : "🔍 Searching" };
+            if (loc === "Spectating") return { cls: "spectating", text: isAr ? "👁 يشاهد" : "👁 Spectating" };
+            return { cls: "menu", text: isAr ? "🏠 القائمة الرئيسية" : "🏠 Main Menu" };
+        };
+        const cards = onlinePlayersList.map(p => {
+            const loc = locLabel(p.location);
+            const displayName = p.name ? esc(p.name) : (isAr ? "لاعب في القائمة" : "Player in Menu");
+            const isSelf = state?.you === p.playerId;
+            const canWatch = !!p.roomId && state?.id !== p.roomId;
+            return `<article class="online-player-card">
+                <div class="online-player-main">
+                    <div class="online-player-name">
+                        <span>${p.isAdmin ? "⚡ " : "👤 "}${displayName}${isSelf ? (isAr ? " (أنت)" : " (You)") : ""}</span>
+                    </div>
+                    <div class="online-player-meta">
+                        <span class="online-player-loc ${loc.cls}">${loc.text}</span>
+                        ${p.roomName ? `<span>⚔ ${esc(p.roomName)}</span>` : ""}
+                        ${p.connections > 1 ? `<span>· ${p.connections}×</span>` : ""}
+                        <span class="muted" dir="ltr">#${esc(p.playerId.slice(0, 6))}</span>
+                    </div>
+                </div>
+                ${p.roomId ? button(isAr ? "👁 مشاهدة" : "👁 Watch", "spectate", p.roomId, "quiet", !canWatch) : ""}
+            </article>`;
+        }).join("") || `<div class="rooms-empty">${isAr ? "لا يوجد لاعبون متصلون حالياً." : "No online players right now."}</div>`;
+        html = `<div class="online-players-panel">
+            <div class="rooms-list-header">
+                <span class="rooms-list-title">${isAr ? "إجمالي اللاعبين الحقيقيين" : "Real players online"} <span class="rooms-count-badge">${onlinePlayersList.length}</span></span>
+                ${button(isAr ? "تحديث" : "Refresh", "refresh-online-players", "", "quiet")}
+            </div>
+            <div class="online-players-list">${cards}</div>
         </div>`;
     }
     else {
@@ -3449,6 +3509,13 @@ document.addEventListener("click", event => {
             syncLiveGamesBadge();
             renderDrawer(true);
         }
+        else if (action === "refresh-online-players") {
+            if (adminEnabled) {
+                onlinePlayersList = await connection.invoke<AdminOnlinePlayer[]>("AdminListOnlinePlayers");
+                syncAdminOverlay();
+                renderDrawer(true);
+            }
+        }
         else if (action === "create") {
             const initialTribe = el("tribe-picker").hidden ? "Random" : el<HTMLInputElement>("tribe").value;
             const rawBots = (document.getElementById("create-bots") as HTMLInputElement | null)?.value;
@@ -3501,7 +3568,7 @@ document.addEventListener("click", event => {
             render(null);
             roomList = await connection.invoke<RoomSummary[]>("ListRooms");
         }
-    }, !!action && ["quick-match", "refresh", "create", "join", "spectate", "switch-to-spectator", "switch-to-player", "ready", "lobby-slot", "lobby-color", "start", "settings", "copy-invite", "leave"].includes(action));
+    }, !!action && ["quick-match", "refresh", "refresh-online-players", "create", "join", "spectate", "switch-to-spectator", "switch-to-player", "ready", "lobby-slot", "lobby-color", "start", "settings", "copy-invite", "leave"].includes(action));
 });
 el('language-picker').innerHTML = select('language-select', '', [{ value: 'ar', label: 'AR' }, { value: 'en', label: 'EN' }], currentLanguage());
 
@@ -3599,6 +3666,21 @@ el("map-home").onclick = () => map.home();
 el("map-biomes").onclick = () => { el("map-biomes").setAttribute("aria-pressed", String(map.toggleBoundaries())); };
 el("toggle-debug").onclick = () => { debugOverlay.toggle(); };
 document.getElementById("view-admin")?.addEventListener("click", () => { adminOverlay.toggle(); });
+document.getElementById("view-players")?.addEventListener("click", () => {
+    if (!adminEnabled) return;
+    if (panel === "online-players") {
+        closePanel();
+        if (!state) el("welcome").hidden = false;
+        syncAdminOverlay();
+        return;
+    }
+    void perform(async () => {
+        onlinePlayersList = await connection.invoke<AdminOnlinePlayer[]>("AdminListOnlinePlayers");
+        if (!state) el("welcome").hidden = true;
+        openPanel("online-players");
+        syncAdminOverlay();
+    }, true);
+});
 el("chat-toggle").onclick = () => { chatOpen = !chatOpen; renderChat(); };
 el("chat-form").addEventListener("submit", event => {
     event.preventDefault();
@@ -3613,6 +3695,7 @@ el("chat-form").addEventListener("submit", event => {
                 adminEnabled = true;
                 menuChatVisible = false;
                 roomList = await connection.invoke<RoomSummary[]>("ListRooms");
+                onlinePlayersList = await connection.invoke<AdminOnlinePlayer[]>("AdminListOnlinePlayers");
                 syncAdminOverlay();
                 adminOverlay.setOpen(true);
                 renderChat();
@@ -3737,12 +3820,20 @@ connection.on("RoomsUpdated", (rooms: RoomSummary[]) => {
     if (panel === "rooms") renderDrawer();
 });
 window.setInterval(async () => {
-    if ((panel === "rooms" || adminOverlay.isOpen()) && connection.state === HubConnectionState.Connected && !busy) {
+    if (connection.state !== HubConnectionState.Connected || busy) return;
+    if (panel === "rooms" || adminOverlay.isOpen()) {
         try {
             roomList = (await connection.invoke<RoomSummary[]>("ListRooms")).filter(r => r.status === "Lobby" || r.status === "Running");
             syncLiveGamesBadge();
             syncAdminOverlay();
             if (panel === "rooms") renderDrawer();
+        } catch { /* ignore background polling errors */ }
+    }
+    if (adminEnabled) {
+        try {
+            onlinePlayersList = await connection.invoke<AdminOnlinePlayer[]>("AdminListOnlinePlayers");
+            syncAdminOverlay();
+            if (panel === "online-players") renderDrawer();
         } catch { /* ignore background polling errors */ }
     }
 }, 3000);
@@ -3872,6 +3963,7 @@ async function connect(resumeReserved = false, keepMenu = false) {
             await connection.start();
             if (supportsGzipDecompress) await connection.invoke("SetSnapshotCompression", true).catch(() => { /* Fall back to plain JSON snapshots. */ });
             adminEnabled = await connection.invoke<boolean>("CheckAdmin");
+            if (adminEnabled) onlinePlayersList = await connection.invoke<AdminOnlinePlayer[]>("AdminListOnlinePlayers").catch(() => []);
             roomList = await connection.invoke<RoomSummary[]>("ListRooms");
             syncLiveGamesBadge();
             const snapshot = await connection.invoke<Snapshot | null>('Resume');

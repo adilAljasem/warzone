@@ -8,6 +8,7 @@ namespace Warzone;
 
 public sealed record SnapshotDelivery(string[] Connections, RoomSnapshot Snapshot, string[]? CompressedConnections = null);
 public sealed record MatchmakingStatus(bool InQueue, int QueuedPlayers);
+public sealed record AdminOnlinePlayer(Guid PlayerId, string Name, string Location, string? RoomId, string? RoomName, int Connections, bool IsAdmin);
 
 internal sealed class MatchmakingEntry(Guid playerId, string name, TribeType? tribe, DateTimeOffset joinedAt, DateTimeOffset fillAt)
 {
@@ -496,6 +497,68 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             snapshot = [.. rooms.Values];
         }
         return SummarizeVisible(snapshot);
+    }
+
+    public AdminOnlinePlayer[] AdminListOnlinePlayers(Guid actor)
+    {
+        lock (gate)
+        {
+            RequireAdmin(actor);
+            Dictionary<Guid, int> onlineCounts;
+            lock (connectionGate)
+            {
+                onlineCounts = connections.Values
+                    .GroupBy(id => id)
+                    .ToDictionary(g => g.Key, g => g.Count());
+            }
+
+            var list = new List<AdminOnlinePlayer>(onlineCounts.Count);
+            foreach (var (playerId, connCount) in onlineCounts)
+            {
+                var isAdmin = admins.Contains(playerId);
+                if (memberships.TryGetValue(playerId, out var roomId) && rooms.TryGetValue(roomId, out var room))
+                {
+                    lock (room.SyncRoot)
+                    {
+                        if (room.SpectatorName(playerId) is { } specName)
+                        {
+                            list.Add(new(playerId, specName, "Spectating", room.Id, room.Name, connCount, isAdmin));
+                            continue;
+                        }
+                        if (room.Players.TryGetValue(playerId, out var rp) && !rp.IsBot)
+                        {
+                            var loc = room.Status == RoomStatus.Running ? "InMatch" : "InLobby";
+                            list.Add(new(playerId, rp.Name, loc, room.Id, room.Name, connCount, isAdmin));
+                            continue;
+                        }
+                    }
+                }
+
+                var queued = matchmakingQueue.FirstOrDefault(e => e.PlayerId == playerId);
+                if (queued is not null)
+                {
+                    list.Add(new(playerId, queued.Name, "Matchmaking", null, null, connCount, isAdmin));
+                    continue;
+                }
+
+                list.Add(new(playerId, string.Empty, "Menu", null, null, connCount, isAdmin));
+            }
+
+            static int LocationRank(string loc) => loc switch
+            {
+                "InMatch" => 0,
+                "InLobby" => 1,
+                "Matchmaking" => 2,
+                "Spectating" => 3,
+                _ => 4
+            };
+
+            return list
+                .OrderBy(p => LocationRank(p.Location))
+                .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(p => p.PlayerId)
+                .ToArray();
+        }
     }
 
     private void ProcessRoomTick(GameRoom room, double seconds, DateTimeOffset now, HashSet<Guid> onlineIds, ConcurrentBag<GameRoom> toRemove, ref int finishedTransition)

@@ -195,6 +195,8 @@ public sealed class GameHub(GameServer server) : Hub
         await Clients.All.SendAsync("RoomsUpdated", rooms);
         return rooms;
     }
+
+    public AdminOnlinePlayer[] AdminListOnlinePlayers() => server.AdminListOnlinePlayers(Actor);
 }
 
 public sealed class GameHubFilter(GameServer server) : IHubFilter

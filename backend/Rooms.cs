@@ -41,6 +41,7 @@ internal sealed class RoomPlayer(Guid id, string name, TribeType tribe, string f
     public bool RandomTribe { get; set; }
     public int Team { get; set; } = 0;
     public int? SpawnSlot { get; set; }
+    public int SpawnTieBreaker { get; } = Random.Shared.Next();
     public string FlagColor { get; set; } = flagColor;
     public BotPersonality? Personality { get; set; } = personality;
     public BotDifficulty? Difficulty { get; set; } = difficulty;
@@ -64,8 +65,15 @@ public sealed partial class GameRoom : IGameCommands
     private static readonly string[] FlagPalette = ["#e11d48", "#2563eb", "#facc15", "#9333ea", "#06b6d4", "#f97316", "#f8fafc", "#18181b", "#ec4899", "#10b981", "#78350f", "#84cc16", "#1e3a8a", "#0f766e", "#f43f5e", "#d97706"];
     private readonly Dictionary<Guid, RoomPlayer> players = [];
     private readonly Dictionary<Guid, string> spectators = [];
+    private readonly int slotRotation = Random.Shared.Next(1024);
     private LogisticsWorld? world;
-    private string NextFlagColor() => FlagPalette.FirstOrDefault(color => players.Values.All(player => player.FlagColor != color)) ?? FlagPalette[players.Count % FlagPalette.Length];
+    private string NextFlagColor()
+    {
+        var unused = FlagPalette.Where(color => players.Values.All(player => player.FlagColor != color)).ToArray();
+        return unused.Length > 0
+            ? unused[Random.Shared.Next(unused.Length)]
+            : FlagPalette[Random.Shared.Next(FlagPalette.Length)];
+    }
     public string Id { get; } = Guid.NewGuid().ToString("N")[..10].ToUpperInvariant();
     public string Name { get; }
     public Guid HostId { get; private set; }
@@ -85,6 +93,7 @@ public sealed partial class GameRoom : IGameCommands
     public IEnumerable<Guid> HumanIds => players.Values.Where(x => !x.IsBot).Select(x => x.Id);
     public IEnumerable<Guid> ViewerIds => HumanIds.Concat(spectators.Keys);
     public bool IsSpectator(Guid actor) => spectators.ContainsKey(actor);
+    internal string? SpectatorName(Guid actor) => spectators.GetValueOrDefault(actor);
     public bool Contains(Guid playerId) => players.ContainsKey(playerId) || spectators.ContainsKey(playerId);
     public BotDifficulty? BotDifficultyFor(Guid playerId) => players.TryGetValue(playerId, out var p) && p.IsBot
         ? p.EffectiveDifficulty(Settings.BotDifficulty) : null;
@@ -379,7 +388,7 @@ public sealed partial class GameRoom : IGameCommands
             var occupant = occupantId != Guid.Empty ? players.GetValueOrDefault(occupantId) : null;
             if (occupant is not null)
             {
-                if (!occupant.IsBot)
+                if (!occupant.IsBot && occupant.SpawnSlot == chosen)
                     throw new GameRuleException("spawn_slot", "That map position is already taken by another player.");
                 occupant.SpawnSlot = null;
             }
@@ -444,11 +453,11 @@ public sealed partial class GameRoom : IGameCommands
         {
             if (group.Key == int.MaxValue)
             {
-                ordered.AddRange(group.OrderBy(x => x.IsBot));
+                ordered.AddRange(group.OrderBy(x => x.SpawnTieBreaker));
                 continue;
             }
-            var humans = group.Where(x => !x.IsBot).ToList();
-            var bots = group.Where(x => x.IsBot).ToList();
+            var humans = group.Where(x => !x.IsBot).OrderBy(x => x.SpawnTieBreaker).ToList();
+            var bots = group.Where(x => x.IsBot).OrderBy(x => x.SpawnTieBreaker).ToList();
             // Place human commanders inside the center of their team arc so bots buffer their flanks fairly.
             var firstHalf = bots.Count / 2;
             ordered.AddRange(bots.Take(firstHalf));
@@ -510,7 +519,7 @@ public sealed partial class GameRoom : IGameCommands
 
         (int Start, int Length) LargestEmptyGap()
         {
-            if (slots.All(s => s is null)) return (0, ringSize);
+            if (slots.All(s => s is null)) return (slotRotation % ringSize, ringSize);
             var bestStart = 0;
             var bestLen = 0;
             for (var i = 0; i < ringSize; i++)
@@ -572,6 +581,12 @@ public sealed partial class GameRoom : IGameCommands
 
         var unaligned = ArrangeSpawnOrder(players.Values.Where(p => !placed.Contains(p)));
         var openSlots = Enumerable.Range(0, ringSize).Where(i => slots[i] is null).ToList();
+        if (openSlots.Count > 1)
+        {
+            var shift = slotRotation % openSlots.Count;
+            if (shift > 0)
+                openSlots = [.. openSlots.Skip(shift), .. openSlots.Take(shift)];
+        }
         for (var i = 0; i < unaligned.Count && openSlots.Count > 0; i++)
         {
             var idx = openSlots[i * openSlots.Count / unaligned.Count];

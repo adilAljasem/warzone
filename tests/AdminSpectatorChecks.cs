@@ -158,8 +158,32 @@ static class AdminSpectatorChecks
         var telemetry = server.GetTelemetry(0);
         Check(telemetry.ActiveRooms >= 26 && telemetry.RunningRooms == telemetry.ActiveRooms, "All active rooms keep Running cleanly under parallel Tick + concurrent Execute.");
         Check(server.Resume(p1)!.ElapsedSeconds >= 3.99 && server.Resume(p2)!.ElapsedSeconds >= 3.99, "Both human rooms advanced 4.0s cleanly during parallel simulation.");
+
+        // 7. AdminListOnlinePlayers: rejects non-admin, excludes bots, and reports real connected players & their locations
+        Reject(() => server.AdminListOnlinePlayers(host), "admin");
+        var mmPlayer = Guid.NewGuid();
+        var menuPlayer = Guid.NewGuid();
+        server.Connect("c-mm", mmPlayer);
+        server.Connect("c-menu", menuPlayer);
+        server.StartMatchmaking(mmPlayer, "SearchingReal", TribeType.Romans);
+        var onlineList = server.AdminListOnlinePlayers(admin);
+        Check(onlineList.Any(x => x.PlayerId == p1 && x.Name == "P1" && x.Location == "InMatch" && x.RoomId == humanRoom1.Id),
+            "Online list includes real player in a running match.");
+        Check(onlineList.Any(x => x.PlayerId == watcher && x.Name == "GuestSpec" && x.Location == "Spectating" && x.RoomId == lobby.Id),
+            "Online list includes real player spectating a room.");
+        Check(onlineList.Any(x => x.PlayerId == mmPlayer && x.Name == "SearchingReal" && x.Location == "Matchmaking"),
+            "Online list includes real player searching in matchmaking.");
+        Check(onlineList.Any(x => x.PlayerId == menuPlayer && x.Location == "Menu"),
+            "Online list includes real player connected in main menu.");
+        Check(onlineList.Any(x => x.PlayerId == admin && x.IsAdmin),
+            "Online list marks admin player.");
+        Check(onlineList.Length == 7, $"Online list excludes bots and counts only real connected humans (expected 7, got {onlineList.Length}).");
+        server.CancelMatchmaking(mmPlayer);
+        server.Disconnect("c-mm");
+        server.Disconnect("c-menu");
+
         server.AdminClearBotRooms(admin);
-        count += 3;
+        count += 10;
 
         return count;
     }
