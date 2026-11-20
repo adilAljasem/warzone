@@ -176,8 +176,19 @@ public sealed partial class GameRoom : IGameCommands
             {
                 var botIndex = currentBots.Count + i + 1;
                 var id = Guid.NewGuid();
-                var botName = BotNames.PickPlayerName(usedNames);
-                reservedNames?.Add(botName);
+                string botName;
+                if (MaskBots)
+                {
+                    botName = BotNames.PickPlayerName(usedNames);
+                    reservedNames?.Add(botName);
+                }
+                else
+                {
+                    var n = 1;
+                    while (players.Values.Any(p => string.Equals(p.Name, $"Bot {n}", StringComparison.OrdinalIgnoreCase)))
+                        n++;
+                    botName = $"Bot {n}";
+                }
                 var personality = (BotPersonality)((botIndex - 1) % 3);
                 var bot = new RoomPlayer(id, botName, (TribeType)((botIndex - 1) % 5), NextFlagColor(), personality)
                 {

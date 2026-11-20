@@ -215,6 +215,20 @@ internal static class LivingWorldChecks
             }
         }
 
+        // 7. Manual/custom room keeps classic Bot 1, Bot 2, ... names and leaves open human seats
+        {
+            var time = new ManualTime();
+            var server = new GameServer(time, NullLogger<GameServer>.Instance);
+            var host = Guid.NewGuid();
+            server.Connect("c-manual", host);
+            var manualSnap = server.Create(host, "ManualHost", TribeType.Romans, "FriendsRoom",
+                new(Capacity: 8, DurationMinutes: 60, ShieldMinutes: 5, ResourceSpeed: 1, BotCount: 3, BotDifficulty: BotDifficulty.Mixed, CastleUnlockMinutes: 45));
+            Check(!manualSnap.MaskBots, "Manual room does not mask bots");
+            Check(manualSnap.Settings.Capacity == 8 && manualSnap.Players.Length == 4, "Manual room starts with 1 human + 3 bots (4/8 seats, leaving 4 open slots)");
+            var botNames = manualSnap.Players.Where(p => p.IsBot).Select(p => p.Name).OrderBy(n => n).ToArray();
+            Check(botNames.SequenceEqual(["Bot 1", "Bot 2", "Bot 3"]), $"Manual room keeps classic Bot 1..3 names (got {string.Join(", ", botNames)})");
+        }
+
         return checks;
     }
 }

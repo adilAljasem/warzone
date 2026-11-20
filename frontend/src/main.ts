@@ -2795,7 +2795,7 @@ function renderDrawer(force = false) {
             <section class="rooms-create-card">
                 <div class="rooms-create-grid">
                     <label>${isAr ? "اسم الغرفة" : "Realm name"}<input id="room-name" maxlength="32" value="Sunmeadow friends"/></label>
-                    <label>${isAr ? "عدد البوتات (0-7)" : "AI neighbors"}<input id="create-bots" type="number" min="0" max="7" value="6"/></label>
+                    <label>${isAr ? "عدد البوتات (0-7)" : "AI neighbors"}<input id="create-bots" type="number" min="0" max="7" value="3"/></label>
                 </div>
                 ${button(isAr ? "إنشاء غرفة جديدة" : "Create realm", "create", "", "primary wide")}
             </section>
@@ -3451,7 +3451,8 @@ document.addEventListener("click", event => {
         }
         else if (action === "create") {
             const initialTribe = el("tribe-picker").hidden ? "Random" : el<HTMLInputElement>("tribe").value;
-            const createBots = Math.max(0, Math.min(7, Math.floor(Number((document.getElementById("create-bots") as HTMLInputElement | null)?.value ?? 6) || 0)));
+            const rawBots = (document.getElementById("create-bots") as HTMLInputElement | null)?.value;
+            const createBots = Math.max(0, Math.min(7, Math.floor(rawBots !== undefined && rawBots !== "" ? Number(rawBots) : 3) || 0));
             render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, initialTribe, el<HTMLInputElement>("room-name").value, { capacity: 8, durationMinutes: 60, castleUnlockMinutes: 45, shieldMinutes: 5, resourceSpeed: 1, botCount: createBots, botDifficulty: "Mixed" }));
         }
         else if (action === "join") {
