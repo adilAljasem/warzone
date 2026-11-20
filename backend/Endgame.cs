@@ -104,7 +104,7 @@ public sealed partial class LogisticsWorld
                 attacker.Troops = Array.AsReadOnly(attacker.Troops.Select(x => x == governor ? x.Count > 1 ? new TroopStack(x.Unit, x.Count - 1) : null : x)
                     .Where(x => x is not null).Cast<TroopStack>().ToArray());
                 city.ChangeOwner(attacker.OwnerId, fallback);
-                city.SetHardBotBonuses(worldBotDifficulty == BotDifficulty.Hard && hardBotOwners.Contains(attacker.OwnerId));
+                city.SetHardBotBonuses(hardBotOwners.Contains(attacker.OwnerId));
                 Note(attacker.OwnerId, now, "The city's loyalty reached zero. Your governor has established a new province.");
                 Note(former, now, "Your city has been conquered.");
             }
@@ -190,15 +190,15 @@ public sealed partial class LogisticsWorld
     private readonly HashSet<Guid> hardBotOwners = [];
     private readonly HashSet<Guid> humanOwners = [];
     private BotDifficulty worldBotDifficulty = BotDifficulty.Normal;
-    internal void ConfigureBotContext(BotDifficulty difficulty, IEnumerable<Guid> bots, IEnumerable<Guid> humans)
+    internal void ConfigureBotContext(BotDifficulty difficulty, IEnumerable<Guid> hardBots, IEnumerable<Guid> humans)
     {
         worldBotDifficulty = difficulty;
         hardBotOwners.Clear();
-        foreach (var id in bots) hardBotOwners.Add(id);
+        foreach (var id in hardBots) hardBotOwners.Add(id);
         humanOwners.Clear();
         foreach (var id in humans) humanOwners.Add(id);
         foreach (var v in villages.Values)
-            v.SetHardBotBonuses(difficulty == BotDifficulty.Hard && hardBotOwners.Contains(v.Village.OwnerId));
+            v.SetHardBotBonuses(hardBotOwners.Contains(v.Village.OwnerId));
     }
     private void AdvanceNomadRelocations(double seconds, double now)
     {
@@ -732,6 +732,7 @@ public sealed partial class LogisticsWorld
         if (difficulty == BotDifficulty.Hard && TryHardBotKitingAndAmbush(actor, home, ownArmies, commands))
             return true;
 
+        var huntHumans = worldBotDifficulty == BotDifficulty.Hard && humanOwners.Count > 0;
         var strikeArmy = ownArmies.Where(a => IsReassignableArmy(actor, a, personality))
             .OrderByDescending(Fighters).FirstOrDefault();
 
@@ -752,7 +753,7 @@ public sealed partial class LogisticsWorld
                     .Where(v => !v.Ruined && v != targetCity && v.Village.OwnerId != actor && !CampAllied(actor, v.Village.OwnerId)
                         && !sieges.Any(s => s.City == v && s.Status == "Active")
                         && !armies.Any(a => CampAllied(actor, a.OwnerId) && a.Order is "Approaching" or "Sieging" && a.TargetId == v.Village.Id))
-                    .OrderBy(v => (humanOwners.Contains(v.Village.OwnerId) ? -1400 : 0) + EffectiveCityThreatDefense(v) * 4 + Distance(v.Village.Position, home.Village.Position))
+                    .OrderBy(v => (huntHumans && humanOwners.Contains(v.Village.OwnerId) ? -1400 : 0) + EffectiveCityThreatDefense(v) * 4 + Distance(v.Village.Position, home.Village.Position))
                     .FirstOrDefault();
                 if (altCity is not null && (EffectiveCityThreatDefense(altCity) <= HomeCombatTroops(home) * 0.95 || !ownPushingFocus))
                 {
@@ -880,7 +881,7 @@ public sealed partial class LogisticsWorld
         var enemy = armies.Where(x => x.OwnerId != actor && !CampAllied(actor, x.OwnerId) && CanAttackIntoActiveBattle(actor, x) && !x.Routing
                 && (Distance(x.Position, strikeArmy.Position) < scanRange || (focusEnemyId == x.OwnerId && Distance(x.Position, strikeArmy.Position) < scanRange + 200))
                 && Fighters(strikeArmy) >= Math.Max(10, Fighters(x) * powerRatio))
-            .OrderBy(x => (humanOwners.Contains(x.OwnerId) ? -300 : 0) + (x.OwnerId == focusEnemyId ? -150 : 0) + Distance(x.Position, strikeArmy.Position)).FirstOrDefault();
+            .OrderBy(x => (huntHumans && humanOwners.Contains(x.OwnerId) ? -300 : 0) + (x.OwnerId == focusEnemyId ? -150 : 0) + Distance(x.Position, strikeArmy.Position)).FirstOrDefault();
         if (enemy is not null)
         {
             commands.Execute(actor, new(Guid.NewGuid(), CommandKind.AttackArmy, strikeArmy.Id, DestinationId: enemy.Id));
@@ -893,7 +894,7 @@ public sealed partial class LogisticsWorld
             var convoy = convoys.Where(c => c.OwnerId != actor && !CampAllied(actor, c.OwnerId) && !c.InBattle
                     && Distance(c.Position, strikeArmy.Position) < convoyRange
                     && Fighters(strikeArmy) > c.Troops.Where(t => t.Unit is not SupplyWagon).Sum(t => t.Count) + 4)
-                .OrderBy(c => (humanOwners.Contains(c.OwnerId) ? -250 : 0) + (c.OwnerId == focusEnemyId ? -130 : 0) + Distance(c.Position, strikeArmy.Position)).FirstOrDefault();
+                .OrderBy(c => (huntHumans && humanOwners.Contains(c.OwnerId) ? -250 : 0) + (c.OwnerId == focusEnemyId ? -130 : 0) + Distance(c.Position, strikeArmy.Position)).FirstOrDefault();
             if (convoy is not null)
             {
                 commands.Execute(actor, new(Guid.NewGuid(), CommandKind.InterceptConvoy, strikeArmy.Id, DestinationId: convoy.Id));

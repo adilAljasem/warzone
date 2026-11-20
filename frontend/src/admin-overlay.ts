@@ -298,11 +298,11 @@ export class AdminOverlay {
         this.botCountInput = this.numInput(15, 1, 50);
         this.botCapacityInput = this.numInput(8, 8, 16);
         this.botDifficultySelect = document.createElement("select");
-        for (const diff of ["Easy", "Normal", "Hard"]) {
+        for (const diff of ["Mixed", "Easy", "Normal", "Hard"]) {
             const opt = document.createElement("option");
             opt.value = diff;
             opt.textContent = diff;
-            if (diff === "Normal") opt.selected = true;
+            if (diff === "Mixed") opt.selected = true;
             this.botDifficultySelect.append(opt);
         }
         this.botSpeedSelect = document.createElement("select");

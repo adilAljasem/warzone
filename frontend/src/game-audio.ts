@@ -160,6 +160,32 @@ export class GameAudio {
             if(cue==='oasis-lost')this.tone(110,at,.8,.1);
         }
     }
+    async playMatchSearchStart(){
+        await this.unlock();
+        if(!this.audible()||!this.context)return;
+        const at=this.context.currentTime+.015;
+        // Soft rising sonar/radar chime signaling matchmaking search start
+        this.tone(440,at,.18,.11,0,'sine',493.88);
+        this.tone(880,at,.14,.025,0,'triangle',987.77);
+        this.tone(587.33,at+.11,.28,.12,0,'sine',659.25);
+        this.tone(1174.66,at+.11,.22,.024,0,'sine',1318.51);
+        this.noiseSweep(at,.16,.03,0,1200,2600,2.5,'bandpass',.015);
+    }
+    async playMatchFound(){
+        await this.unlock();
+        if(!this.audible()||!this.context)return;
+        const at=this.context.currentTime+.015;
+        // Crisp war-drum pulse + bright ascending ready fanfare when match is found
+        this.impact(at,.18,0,150,.18);
+        this.tone(130.81,at,.28,.13,0,'triangle',98);
+        const chord=[523.25,659.25,783.99,1046.5];
+        chord.forEach((freq,i)=>{
+            const start=at+i*.085;
+            const dur=i===chord.length-1?.75:.32;
+            this.tone(freq,start,dur,.14,0,'triangle');
+            this.tone(freq*2,start,dur*.8,.032,0,'sine');
+        });
+    }
     async preview(){
         await this.unlock();
         if(this.audible()&&this.context)this.clash(this.context.currentTime+.01,.8,0);

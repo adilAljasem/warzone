@@ -7,6 +7,16 @@ using Microsoft.AspNetCore.SignalR;
 namespace Warzone;
 
 public sealed record SnapshotDelivery(string[] Connections, RoomSnapshot Snapshot, string[]? CompressedConnections = null);
+public sealed record MatchmakingStatus(bool InQueue, int QueuedPlayers);
+
+internal sealed class MatchmakingEntry(Guid playerId, string name, TribeType? tribe, DateTimeOffset joinedAt, DateTimeOffset fillAt)
+{
+    public Guid PlayerId { get; } = playerId;
+    public string Name { get; set; } = name;
+    public TribeType? Tribe { get; set; } = tribe;
+    public DateTimeOffset JoinedAt { get; } = joinedAt;
+    public DateTimeOffset FillAt { get; } = fillAt;
+}
 
 internal static class SnapshotCodec
 {
@@ -77,9 +87,15 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
     private readonly HashSet<string> compressedConnections = [];
     private readonly Dictionary<string, (long Started, int Count)> rates = [];
     private readonly HashSet<Guid> admins = [];
+    private readonly List<MatchmakingEntry> matchmakingQueue = [];
+    private readonly List<SnapshotDelivery> pendingMatchFound = [];
     private readonly double[] recentTickMs = new double[40];
     private int botRoomSeq;
     private bool roomsDirty;
+    private int ambientTargetCount;
+    private DateTimeOffset nextAmbientTargetShift = DateTimeOffset.MinValue;
+    private DateTimeOffset nextAmbientCheck = DateTimeOffset.MinValue;
+    public bool AmbientRoomsEnabled { get; set; }
     private int recentTickIndex;
     private int recentTickCount;
     private double lastTickMs;
@@ -102,7 +118,19 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
     }
     public void Disconnect(string connectionId)
     {
-        lock (connectionGate) { connections.Remove(connectionId); compressedConnections.Remove(connectionId); rates.Remove(connectionId); }
+        Guid disconnectedPlayer = Guid.Empty;
+        var stillOnline = false;
+        lock (connectionGate)
+        {
+            if (connections.Remove(connectionId, out disconnectedPlayer))
+                stillOnline = connections.Values.Contains(disconnectedPlayer);
+            compressedConnections.Remove(connectionId);
+            rates.Remove(connectionId);
+        }
+        if (disconnectedPlayer != Guid.Empty && !stillOnline)
+        {
+            lock (gate) matchmakingQueue.RemoveAll(e => e.PlayerId == disconnectedPlayer);
+        }
     }
     public void SetSnapshotCompression(string connectionId, bool enabled)
     {
@@ -209,11 +237,26 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             lock (room.SyncRoot) return room.Contains(actor) ? room.Snapshot(actor, Online) : null;
         }
     }
+    private HashSet<string> CollectActivePlayerNamesLocked()
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rooms.Values)
+        {
+            lock (r.SyncRoot)
+            {
+                if (r.Status is not (RoomStatus.Lobby or RoomStatus.Running)) continue;
+                foreach (var p in r.Players.Values) names.Add(p.Name);
+            }
+        }
+        return names;
+    }
+
     public RoomSnapshot Create(Guid actor, string playerName, TribeType? tribe, string name, RoomSettings settings)
     {
-        var room = new GameRoom(actor, playerName, tribe, name, settings, time.GetUtcNow());
         lock (gate)
         {
+            var activeNames = CollectActivePlayerNamesLocked();
+            var room = new GameRoom(actor, playerName, tribe, name, settings, time.GetUtcNow(), activeNames);
             if (memberships.ContainsKey(actor)) LeaveLocked(actor);
             rooms.Add(room.Id, room);
             memberships.Add(actor, room.Id);
@@ -275,8 +318,12 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
     }
     public RoomSnapshot Configure(Guid actor, RoomSettings settings)
     {
-        var room = ResolveRoom(actor);
-        lock (room.SyncRoot) { room.Configure(actor, settings); return room.Snapshot(actor, Online); }
+        lock (gate)
+        {
+            var room = RoomFor(actor);
+            var activeNames = CollectActivePlayerNamesLocked();
+            lock (room.SyncRoot) { room.Configure(actor, settings, activeNames); return room.Snapshot(actor, Online); }
+        }
     }
     public RoomSnapshot Ready(Guid actor, bool ready)
     {
@@ -426,10 +473,11 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             if (shieldMinutes is not (0 or 5 or 10)) shieldMinutes = 5;
 
             var now = time.GetUtcNow();
+            var activeNames = CollectActivePlayerNamesLocked();
             var settings = new RoomSettings(botsPerRoom, 60, shieldMinutes, 1, botsPerRoom, difficulty, 45);
             for (var i = 0; i < count; i++)
             {
-                var room = GameRoom.CreateBotMatch($"Bot Arena #{++botRoomSeq}", settings, now, speedMultiplier);
+                var room = GameRoom.CreateBotMatch($"Bot Arena #{++botRoomSeq}", settings, now, speedMultiplier, activeNames);
                 rooms.Add(room.Id, room);
             }
             snapshot = [.. rooms.Values];
@@ -485,13 +533,189 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
         }
     }
 
+    public MatchmakingStatus StartMatchmaking(Guid actor, string playerName, TribeType? tribe)
+    {
+        var cleanName = string.IsNullOrWhiteSpace(playerName) ? "Commander" : playerName.Trim();
+        if (cleanName.Length > 32 || cleanName.Any(char.IsControl))
+            throw new GameRuleException("name", "Names must contain 1-32 visible characters.");
+
+        lock (gate)
+        {
+            if (memberships.ContainsKey(actor)) LeaveLocked(actor);
+            matchmakingQueue.RemoveAll(e => e.PlayerId == actor);
+            var now = time.GetUtcNow();
+            var waitSeconds = 3.0 + Random.Shared.NextDouble() * 12.0;
+            matchmakingQueue.Add(new(actor, cleanName, tribe, now, now.AddSeconds(waitSeconds)));
+            if (matchmakingQueue.Count >= 8)
+                ProcessMatchmakingLocked(now);
+            return new(matchmakingQueue.Any(e => e.PlayerId == actor), matchmakingQueue.Count);
+        }
+    }
+
+    public void CancelMatchmaking(Guid actor)
+    {
+        lock (gate) matchmakingQueue.RemoveAll(e => e.PlayerId == actor);
+    }
+
+    public SnapshotDelivery[] ConsumeMatchFoundDeliveries()
+    {
+        lock (gate)
+        {
+            if (pendingMatchFound.Count == 0) return [];
+            var result = pendingMatchFound.ToArray();
+            pendingMatchFound.Clear();
+            return result;
+        }
+    }
+
+    private void ProcessMatchmakingLocked(DateTimeOffset now)
+    {
+        if (matchmakingQueue.Count == 0) return;
+        var onlineIds = OnlineIds();
+        matchmakingQueue.RemoveAll(e => !onlineIds.Contains(e.PlayerId));
+        if (matchmakingQueue.Count == 0) return;
+
+        while (matchmakingQueue.Count > 0)
+        {
+            var readyByCount = matchmakingQueue.Count >= 8;
+            var readyByTimer = matchmakingQueue.Any(e => e.FillAt <= now);
+            if (!readyByCount && !readyByTimer) break;
+
+            var take = Math.Min(8, matchmakingQueue.Count);
+            var batch = matchmakingQueue.Take(take).ToList();
+            matchmakingQueue.RemoveRange(0, take);
+
+            var existingNames = rooms.Values.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var roomName = BotNames.PickRoomName(existingNames);
+            var botCount = Math.Max(0, 8 - batch.Count);
+            var settings = new RoomSettings(
+                Capacity: 8,
+                DurationMinutes: 60,
+                ShieldMinutes: 5,
+                ResourceSpeed: 1,
+                BotCount: botCount,
+                BotDifficulty: BotDifficulty.Mixed,
+                CastleUnlockMinutes: 45);
+            var humans = batch.Select(e => (e.PlayerId, e.Name, e.Tribe)).ToArray();
+            var activeNames = CollectActivePlayerNamesLocked();
+            var room = GameRoom.CreateMatchmakingMatch(roomName, humans, settings, now, activeNames);
+
+            foreach (var entry in batch)
+            {
+                if (memberships.ContainsKey(entry.PlayerId)) LeaveLocked(entry.PlayerId);
+                memberships[entry.PlayerId] = room.Id;
+            }
+            rooms.Add(room.Id, room);
+            roomsDirty = true;
+
+            lock (room.SyncRoot)
+            {
+                Dictionary<Guid, (string[] All, string[] Compressed)> targets = [];
+                HashSet<Guid> currentOnline;
+                lock (connectionGate)
+                {
+                    currentOnline = [.. connections.Values];
+                    var matchedIds = batch.Select(b => b.PlayerId).ToHashSet();
+                    foreach (var group in connections.Where(c => matchedIds.Contains(c.Value)).GroupBy(c => c.Value))
+                    {
+                        var all = group.Select(c => c.Key).ToArray();
+                        var comp = all.Where(compressedConnections.Contains).ToArray();
+                        targets[group.Key] = (all, comp);
+                    }
+                }
+                foreach (var entry in targets)
+                    pendingMatchFound.Add(new(entry.Value.All, room.Snapshot(entry.Key, currentOnline.Contains), entry.Value.Compressed));
+            }
+        }
+    }
+
+    public void MaintainAmbientRooms(bool forceImmediate = false)
+    {
+        if (!AmbientRoomsEnabled && !forceImmediate) return;
+        lock (gate) MaintainAmbientRoomsLocked(time.GetUtcNow(), forceImmediate);
+    }
+
+    private void MaintainAmbientRoomsLocked(DateTimeOffset now, bool forceImmediate)
+    {
+        if (!forceImmediate && now < nextAmbientCheck) return;
+        nextAmbientCheck = now.AddSeconds(5);
+
+        if (ambientTargetCount is < 5 or > 15 || now >= nextAmbientTargetShift)
+        {
+            ambientTargetCount = Random.Shared.Next(5, 16); // Always 5..15 active games randomly
+            nextAmbientTargetShift = now.AddSeconds(120 + Random.Shared.Next(121));
+        }
+
+        var visibleCount = 0;
+        var ambientUnwatched = new List<GameRoom>();
+        foreach (var room in rooms.Values)
+        {
+            lock (room.SyncRoot)
+            {
+                if (room.Status is RoomStatus.Lobby or RoomStatus.Running)
+                {
+                    visibleCount++;
+                    if (room.IsAmbient && !room.ViewerIds.Any())
+                        ambientUnwatched.Add(room);
+                }
+            }
+        }
+
+        if (visibleCount < ambientTargetCount)
+        {
+            var needed = ambientTargetCount - visibleCount;
+            // On startup or whenever below the 5-game floor, fill immediately; otherwise add 1-2 per cycle organically.
+            var toSpawn = forceImmediate || visibleCount < 5 ? needed : Math.Min(needed, 2);
+            var existingNames = rooms.Values.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var activePlayerNames = CollectActivePlayerNamesLocked();
+
+            for (var i = 0; i < toSpawn; i++)
+            {
+                if (rooms.Count >= 90) break;
+                var capRoll = Random.Shared.Next(100);
+                var capacity = capRoll < 65 ? 8 : capRoll < 88 ? 10 : 12;
+                var durRoll = Random.Shared.Next(3);
+                var duration = durRoll == 0 ? 30 : durRoll == 1 ? 45 : 60;
+                var castleUnlock = duration == 30 ? 20 : duration == 45 ? 30 : 45;
+                var speedRoll = Random.Shared.Next(100);
+                var resourceSpeed = speedRoll < 70 ? 1.0 : speedRoll < 90 ? 2.0 : 3.0;
+
+                var settings = new RoomSettings(
+                    Capacity: capacity,
+                    DurationMinutes: duration,
+                    ShieldMinutes: 5,
+                    ResourceSpeed: resourceSpeed,
+                    BotCount: capacity,
+                    BotDifficulty: BotDifficulty.Mixed,
+                    CastleUnlockMinutes: castleUnlock);
+                var roomName = BotNames.PickRoomName(existingNames);
+                var room = GameRoom.CreateAmbientMatch(roomName, settings, now, speedMultiplier: 1, reservedNames: activePlayerNames);
+                rooms.Add(room.Id, room);
+                roomsDirty = true;
+            }
+        }
+        else if (visibleCount > 15 && ambientUnwatched.Count > 0)
+        {
+            // Keep total ambient-backed active count capped naturally within 5..15 if target drifted down and excess unwatched ambient rooms exist.
+            var excess = Math.Min(visibleCount - 15, ambientUnwatched.Count);
+            for (var i = 0; i < excess; i++)
+                RemoveRoomLocked(ambientUnwatched[i]);
+        }
+    }
+
     public void Tick(double seconds)
     {
+        var now = time.GetUtcNow();
         GameRoom[] activeRooms;
-        lock (gate) activeRooms = [.. rooms.Values];
+        lock (gate)
+        {
+            ProcessMatchmakingLocked(now);
+            if (AmbientRoomsEnabled)
+                MaintainAmbientRoomsLocked(now, forceImmediate: false);
+            activeRooms = [.. rooms.Values];
+        }
         if (activeRooms.Length == 0) return;
 
-        var now = time.GetUtcNow();
         var onlineIds = OnlineIds();
         var toRemove = new ConcurrentBag<GameRoom>();
         var finishedTransition = 0;
@@ -683,6 +907,8 @@ public sealed class GameLoop(GameServer server, IHubContext<GameHub> hub, TimePr
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (server.AmbientRoomsEnabled)
+            server.MaintainAmbientRooms(forceImmediate: true);
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(StepSeconds), time);
         var previous = time.GetTimestamp();
         var accumulator = 0d;
@@ -706,8 +932,14 @@ public sealed class GameLoop(GameServer server, IHubContext<GameHub> hub, TimePr
                 }
                 var tickMs = steps > 0 ? time.GetElapsedTime(tickStart, time.GetTimestamp()).TotalMilliseconds : 0d;
                 server.RecordLoopTick(elapsed, tickMs, steps);
-                if (steps > 0 && server.ConsumeRoomsUpdated() is { } updatedRooms)
-                    _ = hub.Clients.All.SendAsync("RoomsUpdated", updatedRooms, stoppingToken);
+                if (steps > 0)
+                {
+                    var matchFound = server.ConsumeMatchFoundDeliveries();
+                    if (matchFound.Length > 0)
+                        _ = Task.WhenAll(matchFound.Select(d => hub.Clients.Clients(d.Connections).SendAsync("MatchFound", d.Snapshot, stoppingToken)));
+                    if (server.ConsumeRoomsUpdated() is { } updatedRooms)
+                        _ = hub.Clients.All.SendAsync("RoomsUpdated", updatedRooms, stoppingToken);
+                }
                 ticksSinceBroadcast += steps;
                 if (ticksSinceBroadcast < 4) continue;
                 ticksSinceBroadcast %= 4;

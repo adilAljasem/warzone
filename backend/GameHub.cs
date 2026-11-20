@@ -128,6 +128,27 @@ public sealed class GameHub(GameServer server) : Hub
         return snapshot;
     }
 
+    public async Task<MatchmakingStatus> StartMatchmaking(string playerName, string tribe)
+    {
+        var previousRoomId = server.RoomIdFor(Actor);
+        var status = server.StartMatchmaking(Actor, playerName, ParseTribe(tribe));
+        if (previousRoomId is not null)
+            await BroadcastRoomAsync(previousRoomId);
+        var matched = server.ConsumeMatchFoundDeliveries();
+        if (matched.Length > 0)
+        {
+            await Task.WhenAll(matched.Select(d => Clients.Clients(d.Connections).SendAsync("MatchFound", d.Snapshot)));
+            await Clients.All.SendAsync("RoomsUpdated", server.ListRooms());
+        }
+        return status;
+    }
+
+    public Task CancelMatchmaking()
+    {
+        server.CancelMatchmaking(Actor);
+        return Task.CompletedTask;
+    }
+
     public async Task LeaveRoom()
     {
         var roomId = server.RoomIdFor(Actor);

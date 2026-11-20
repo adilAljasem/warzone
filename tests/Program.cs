@@ -33,6 +33,14 @@ CommandResult Command(GameRoom room, CommandKind kind, Guid target, int quantity
 void Advance(GameRoom room, int seconds) { for (var i = 0; i < seconds * 4; i++) room.Advance(.25); }
 
 GameCatalog.Validate();
+if (args.Contains("--living"))
+{
+    checks += LivingWorldChecks.Run();
+    checks += AdminSpectatorChecks.Run();
+    checks += SocialChecks.Run();
+    Console.WriteLine($"Passed {checks} living-world/social/admin checks.");
+    return;
+}
 if (args.Contains("--bugfix"))
 {
     checks += WarfareChecks.Run();
@@ -349,6 +357,7 @@ checks += CampChecks.Run();
 checks += OasisUpgradeAndBurnChecks.Run();
 checks += TribalCostChecks.Run();
 checks += AdminSpectatorChecks.Run();
+checks += LivingWorldChecks.Run();
 checks += BugFixChecks.Run();
 Console.WriteLine($"Passed {checks} deterministic game checks.");
 

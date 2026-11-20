@@ -29,7 +29,12 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     }
 });
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<GameServer>();
+builder.Services.AddSingleton(sp => new GameServer(
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILogger<GameServer>>())
+{
+    AmbientRoomsEnabled = true
+});
 builder.Services.AddHostedService<GameLoop>();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(options =>
 {

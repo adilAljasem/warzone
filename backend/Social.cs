@@ -10,6 +10,7 @@ public sealed partial class GameRoom
     private readonly List<ChatMessageSnapshot> chatMessages = [];
     private readonly List<AllianceRequest> allianceRequests = [];
     private readonly Dictionary<(Guid First, Guid Second), double> alliances = [];
+    private readonly Dictionary<(Guid First, Guid Second), double> declinedAlliances = [];
     private long chatMessageId;
 
     private static (Guid First, Guid Second) AlliancePair(Guid first, Guid second) =>
@@ -17,6 +18,12 @@ public sealed partial class GameRoom
 
     internal AllianceRequest[] PendingRequestsFor(Guid recipientId) =>
         allianceRequests.Where(r => r.RecipientId == recipientId).ToArray();
+
+    internal int PendingIncomingCount(Guid recipientId) =>
+        allianceRequests.Count(r => r.RecipientId == recipientId);
+
+    internal bool RecentlyDeclinedAlliance(Guid first, Guid second) =>
+        declinedAlliances.TryGetValue(AlliancePair(first, second), out var until) && ElapsedSeconds < until;
 
     public int AllianceCount(Guid playerId) =>
         alliances.Keys.Count(pair => pair.First == playerId || pair.Second == playerId);
@@ -89,8 +96,13 @@ public sealed partial class GameRoom
             var request = allianceRequests.FirstOrDefault(r => r.Id == command.TargetId && r.RecipientId == actor)
                 ?? throw new GameRuleException("alliance", "This alliance request is no longer available.");
             allianceRequests.Remove(request);
-            if (!command.Enabled) return true;
             var pair = AlliancePair(request.SenderId, request.RecipientId);
+            if (!command.Enabled)
+            {
+                declinedAlliances[pair] = ElapsedSeconds + 180;
+                return true;
+            }
+            declinedAlliances.Remove(pair);
             if (alliances.TryAdd(pair, ElapsedSeconds))
                 AddChat(null, $"Alliance formed between {players[request.SenderId].Name} and {players[request.RecipientId].Name}.", "Alliance");
             return true;

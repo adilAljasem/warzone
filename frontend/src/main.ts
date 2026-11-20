@@ -127,6 +127,7 @@ interface Snapshot {
     isSpectator?: boolean;
     spectators?: SpectatorInfo[];
     speedMultiplier?: number;
+    maskBots?: boolean;
 }
 interface RoomSummary {
     id: string;
@@ -138,6 +139,8 @@ interface RoomSummary {
     spectators?: number;
     speedMultiplier?: number;
     isBotOnly?: boolean;
+    maskBots?: boolean;
+    isAmbient?: boolean;
 }
 interface CommandResult {
     accepted: boolean;
@@ -212,7 +215,7 @@ function syncAdminOverlay() {
         welcomeAdmin.onclick = () => adminOverlay.toggle();
         document.querySelector(".welcome-card")?.append(welcomeAdmin);
     }
-    if (welcomeAdmin) welcomeAdmin.hidden = !adminEnabled;
+    if (welcomeAdmin) welcomeAdmin.hidden = !adminEnabled || searchingMatch;
     adminOverlay.update({
         enabled: adminEnabled,
         inRunningMatch: state?.status === "Running",
@@ -264,13 +267,158 @@ let returnedToMenu = false;
 try { returnedToMenu = sessionStorage.getItem('warzone.returned-to-menu') === 'true'; } catch {/* Session storage is optional. */ }
 const resumeMatch = document.createElement('section'); resumeMatch.id = 'resume-match'; resumeMatch.hidden = true;
 resumeMatch.innerHTML = '<p class="menu-note">Your match is still running. Return whenever you are ready.</p><button id="resume-game" class="primary wide">Resume match</button>';
-el('play-solo').before(resumeMatch);
+el('find-match').before(resumeMatch);
+let searchingMatch = false, matchReadyState = false, searchStartedAt = 0, searchTimerId = 0, matchReadyTimerId = 0;
+let pendingReadySnapshot: Snapshot | null = null;
+function formatSearchTimer(seconds: number): string {
+    const s = Math.max(0, Math.floor(seconds));
+    return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+function syncLiveGamesBadge() {
+    const badge = document.getElementById("live-games-badge");
+    if (!badge) return;
+    const liveCount = roomList.filter(r => r.status === "Running" || r.status === "Lobby").length;
+    if (liveCount <= 0) {
+        badge.hidden = true;
+        return;
+    }
+    const isAr = currentLanguage() === "ar";
+    badge.hidden = false;
+    badge.innerHTML = `<span class="live-games-dot" aria-hidden="true"></span><span>${isAr ? `${liveCount} مباريات جارية الآن` : `${liveCount} live matches right now`}</span>`;
+}
+function syncWelcomeMatchmakingUi() {
+    const isAr = currentLanguage() === "ar";
+    const findLabel = document.getElementById("find-match-label");
+    if (findLabel) findLabel.textContent = isAr ? "البحث عن جيم" : "Find Match";
+    const title = document.getElementById("matchmaking-title");
+    const sub = document.getElementById("matchmaking-sub");
+    if (matchReadyState) {
+        if (title) title.textContent = isAr ? "كل اللاعبين جاهزين" : "All players ready";
+        if (sub) sub.textContent = isAr ? "جاري الدخول إلى المعركة..." : "Entering the battlefield...";
+    } else {
+        if (title) title.textContent = isAr ? "جاري البحث عن جيم..." : "Searching for match...";
+        if (sub) sub.textContent = isAr ? "بانتظار اللاعبين للانضمام..." : "Waiting for players to join...";
+    }
+    const cancel = document.getElementById("cancel-matchmaking");
+    if (cancel) cancel.textContent = isAr ? "إلغاء البحث" : "Cancel search";
+    syncLiveGamesBadge();
+}
+function setMatchmakingUi(active: boolean) {
+    if (!active && matchReadyTimerId) {
+        window.clearTimeout(matchReadyTimerId);
+        matchReadyTimerId = 0;
+    }
+    searchingMatch = active;
+    matchReadyState = false;
+    pendingReadySnapshot = null;
+    const panelEl = el("matchmaking-state");
+    panelEl.classList.remove("ready");
+    el("welcome-actions").hidden = active;
+    panelEl.hidden = !active;
+    el("matchmaking-spinner").hidden = false;
+    el("matchmaking-ready-icon").hidden = true;
+    el("matchmaking-timer").hidden = false;
+    el("cancel-matchmaking").hidden = false;
+    const welcomeAdmin = document.getElementById("welcome-admin-btn");
+    if (welcomeAdmin) welcomeAdmin.hidden = !adminEnabled || active;
+    const nameInput = el<HTMLInputElement>("player-name");
+    nameInput.disabled = active;
+    el("tribe-picker").querySelectorAll<HTMLButtonElement>("button").forEach(btn => { btn.disabled = active; });
+    if (searchTimerId) {
+        window.clearInterval(searchTimerId);
+        searchTimerId = 0;
+    }
+    if (active) {
+        searchStartedAt = performance.now();
+        el("matchmaking-timer").textContent = "00:00";
+        searchTimerId = window.setInterval(() => {
+            el("matchmaking-timer").textContent = formatSearchTimer((performance.now() - searchStartedAt) / 1000);
+        }, 500);
+    }
+    syncWelcomeMatchmakingUi();
+}
+function showMatchReadyTransition(snapshot: Snapshot) {
+    if (searchTimerId) {
+        window.clearInterval(searchTimerId);
+        searchTimerId = 0;
+    }
+    if (matchReadyTimerId) {
+        window.clearTimeout(matchReadyTimerId);
+        matchReadyTimerId = 0;
+    }
+    searchingMatch = false;
+    matchReadyState = true;
+    pendingReadySnapshot = snapshot;
+    const panelEl = el("matchmaking-state");
+    el("welcome").hidden = false;
+    el("welcome-actions").hidden = true;
+    panelEl.hidden = false;
+    panelEl.classList.add("ready");
+    el("matchmaking-spinner").hidden = true;
+    el("matchmaking-ready-icon").hidden = false;
+    el("matchmaking-timer").hidden = true;
+    el("cancel-matchmaking").hidden = true;
+    syncWelcomeMatchmakingUi();
+    void gameAudio.playMatchFound();
+    matchReadyTimerId = window.setTimeout(() => {
+        const snap = pendingReadySnapshot ?? snapshot;
+        matchReadyTimerId = 0;
+        setMatchmakingUi(false);
+        el("welcome").hidden = true;
+        closePanel();
+        render(snap);
+    }, 1600);
+}
 function setReturnedToMenu(value: boolean) {
     returnedToMenu = value; el('welcome').classList.toggle('away', value); resumeMatch.hidden = !value;
     try { if (value) sessionStorage.setItem('warzone.returned-to-menu', 'true'); else sessionStorage.removeItem('warzone.returned-to-menu'); } catch {/* Keep the current session state. */ }
 }
 setReturnedToMenu(returnedToMenu);
-let alertBanner = "";
+let alertBanner = "", allianceInviteHtml = "";
+const seenIncomingAllianceIds = new Set<string>();
+function renderAllianceInvites() {
+    const box = document.getElementById("alliance-invites");
+    const badge = document.getElementById("alliance-count");
+    if (!state || state.status !== "Running" || state.isSpectator) {
+        if (box) { box.hidden = true; if (allianceInviteHtml) { box.innerHTML = ""; allianceInviteHtml = ""; } }
+        if (badge) { badge.hidden = true; badge.textContent = ""; }
+        if (!state) seenIncomingAllianceIds.clear();
+        return;
+    }
+    const incoming = (state.allianceRequests ?? []).filter(r => r.recipientId === state!.you);
+    const isAr = currentLanguage() === "ar";
+    if (badge) {
+        badge.hidden = incoming.length === 0;
+        badge.textContent = incoming.length > 0 ? String(incoming.length) : "";
+    }
+    for (const req of incoming) {
+        if (!seenIncomingAllianceIds.has(req.id)) {
+            seenIncomingAllianceIds.add(req.id);
+            notice(isAr ? `🤝 دعاك ${owner(req.senderId)} إلى تحالف!` : `🤝 ${owner(req.senderId)} invited you to an alliance!`);
+        }
+    }
+    if (!box) return;
+    if (incoming.length === 0) {
+        box.hidden = true;
+        if (allianceInviteHtml) { box.innerHTML = ""; allianceInviteHtml = ""; }
+        return;
+    }
+    const html = incoming.map(req => `<article class="alliance-invite-card">
+        <div class="alliance-invite-head">
+            <span aria-hidden="true">🤝</span>
+            <span>${isAr ? `دعاك <strong>${esc(owner(req.senderId))}</strong> إلى تحالف` : `<strong>${esc(owner(req.senderId))}</strong> invited you to an alliance`}</span>
+        </div>
+        <div class="alliance-invite-btns">
+            ${button(isAr ? "قبول" : "Accept", "alliance-accept", req.id, "primary", !running())}
+            ${button(isAr ? "رفض" : "Decline", "alliance-decline", req.id, "quiet", !running())}
+        </div>
+    </article>`).join("");
+    box.hidden = false;
+    if (html !== allianceInviteHtml) {
+        box.innerHTML = html;
+        allianceInviteHtml = html;
+    }
+}
 function renderImportantAlerts() {
     const box = el("important-alerts"); if (!state) { box.hidden = true; return; }
     alertInbox.use(state.id, state.you);
@@ -944,7 +1092,9 @@ function renderWorld() {
     el("world-tools").hidden = !inGame;
     el("command-deck").hidden = !inGame || isSpec;
     el("scene-title").textContent = "Sunmeadow Valley"; el("scene-eyebrow").textContent = "THE WORLD BEYOND YOUR WALLS";
-    el("scene-hint").textContent = isSpec
+    el("scene-hint").textContent = state?.status === "Lobby"
+        ? (currentLanguage() === "ar" ? "اضغط على أي قرية أو موقع متاح على الخريطة لاختيار مكان قريتك." : "Click any available spot on the map to choose your starting position.")
+        : isSpec
         ? (currentLanguage() === "ar" ? "أنت تشاهد هذه المباراة مع رؤية كاملة للخريطة." : "Spectating with full world visibility.")
         : "Select your village to manage buildings. Capture oases to increase production.";
     renderSpectatorBar();
@@ -1238,6 +1388,7 @@ function render(snapshot: Snapshot | null) {
             patchHtml(el('resources'), ''); el('muster-hud').hidden = true; el('village-biome').hidden = true;
             const armyStrip = document.getElementById('army-strip'); if (armyStrip) patchHtml(armyStrip, '');
             alertBanner = ""; el("important-alerts").innerHTML = ""; el("important-alerts").hidden = true; el("game").classList.remove("has-live-events");
+            renderAllianceInvites();
             el("work-queue").innerHTML = "";
             el("match-clock").textContent = "A new adventure";
             map.update(null, [], "preview");
@@ -1336,6 +1487,7 @@ function render(snapshot: Snapshot | null) {
         try { refreshCursorBadge(); } catch (e) { console.error("refreshCursorBadge error:", e); }
         try { renderBuildings(); refreshUpgradeCostTip(); } catch (e) { console.error("renderBuildings error:", e); }
         try { renderImportantAlerts(); } catch (e) { console.error("renderImportantAlerts error:", e); }
+        try { renderAllianceInvites(); } catch (e) { console.error("renderAllianceInvites error:", e); }
         try { renderTimers(); } catch (e) { console.error("renderTimers error:", e); }
         try { renderDrawer(); } catch (e) { console.error("renderDrawer error:", e); }
         try { renderIntelligence(); } catch (e) { console.error("renderIntelligence error:", e); }
@@ -1952,7 +2104,7 @@ function villageAlliances(playerId: string) {
     return `<section class="village-alliances"><div class="stat-line"><h3>Alliances</h3><b>${names.length}</b></div><div class="alliance-names">${names.length ? names.map(name => `<span>${esc(name)}</span>`).join("") : '<small>No alliances for this commander.</small>'}</div></section>`;
 }
 function allianceControls(playerId: string) {
-    if (!state || playerId === state.you || state.players.find(p => p.id === playerId)?.isBot) return "";
+    if (!state || playerId === state.you || state.isSpectator) return "";
     if (state.alliances.some(a => (a.firstPlayerId === state!.you && a.secondPlayerId === playerId) || (a.secondPlayerId === state!.you && a.firstPlayerId === playerId)))
         return '<small class="positive">Allied commanders</small>';
     const incoming = state.allianceRequests.find(r => r.senderId === playerId && r.recipientId === state!.you);
@@ -2279,7 +2431,16 @@ function standingsPanel() {
     const ranks = state!.result?.rankings ?? war.rankings, keep = war.castle;
     const winnerNames = state!.result ? state!.result.winnerIds.map(owner).join(isAr ? " و " : " & ") : "";
     const unlockSeconds = (state!.settings.castleUnlockMinutes ?? 45) * 60;
-    return `${pendingAllianceRequests()}${state!.result ? `<div class="victory"><h3>${state!.result.winnerIds.includes(state!.you) ? (isAr ? "انتصرت!" : "Victory!") : (isAr ? "انتهت المباراة" : "Match complete")}</h3><div class="victory-winner-inline">${isAr ? (state!.result.winnerIds.length > 1 ? `الفائزون: ${esc(winnerNames)}` : `الفائز: ${esc(winnerNames)}`) : (state!.result.winnerIds.length > 1 ? `Winners: ${esc(winnerNames)}` : `Winner: ${esc(winnerNames)}`)}</div><p class="muted">${esc(state!.result.reason)}</p></div>` : `<div class="battle-line"><strong>${isAr ? "قلعة التاج" : "Crown Keep"}</strong><p>${keep.active ? `${keep.contested ? (isAr ? "متنازع عليها (متوقف)" : "Contested (Paused)") : keep.controllerId ? (isAr ? "المسيطر: " : "Ruler: ") + esc(owner(keep.controllerId)) : (isAr ? "مفتوحة" : "Open")} · ${time(keep.captureProgress)} / 5:00` : `${isAr ? `تفتح عند ${time(unlockSeconds)}` : `Opens at ${time(unlockSeconds)}`} (${time(Math.max(0, unlockSeconds - now()))})`}</p>${keep.active ? button(isAr ? "هجوم / احتلال القلعة" : "Attack / Capture Keep", "plan-castle-attack", keep.id, "primary wide", !running()) : ""}</div>`}<div>${ranks.slice(page * 6, page * 6 + 6).map((r, i) => `<div class="rank-row ${r.playerId === state!.you ? "own" : ""}"><span>${page * 6 + i + 1}</span><span>${esc(owner(r.playerId))}<small>${r.eliminated ? "Eliminated" : `${r.settlements} provinces · ${r.kills} kills · ${r.wounded} wounded`}</small></span><strong>${r.score.toLocaleString()}</strong></div>`).join("")}</div>${pager(ranks.length)}${state!.status !== "Running" ? button("Leave realm", "leave", "", "quiet wide") : ""}`;
+    const rankAllianceControl = (playerId: string, eliminated: boolean) => {
+        if (!state || playerId === state.you || eliminated || state.isSpectator || state.status !== "Running") return "";
+        if (isAllyPlayer(playerId)) return `<span class="rank-alliance-tag">🤝 ${isAr ? "حليف" : "Ally"}</span>`;
+        const incoming = state.allianceRequests.find(req => req.senderId === playerId && req.recipientId === state!.you);
+        if (incoming) return `${button(isAr ? "قبول" : "Accept", "alliance-accept", incoming.id, "primary rank-alliance-btn", !running())}${button(isAr ? "رفض" : "Decline", "alliance-decline", incoming.id, "quiet rank-alliance-btn", !running())}`;
+        const outgoing = state.allianceRequests.find(req => req.senderId === state!.you && req.recipientId === playerId);
+        if (outgoing) return button(isAr ? "إلغاء الطلب" : "Cancel", "alliance-cancel", outgoing.id, "quiet rank-alliance-btn", !running());
+        return button(isAr ? "🤝 تحالف" : "🤝 Ally", "alliance-propose", playerId, "quiet rank-alliance-btn", !running());
+    };
+    return `${pendingAllianceRequests()}${state!.result ? `<div class="victory"><h3>${state!.result.winnerIds.includes(state!.you) ? (isAr ? "انتصرت!" : "Victory!") : (isAr ? "انتهت المباراة" : "Match complete")}</h3><div class="victory-winner-inline">${isAr ? (state!.result.winnerIds.length > 1 ? `الفائزون: ${esc(winnerNames)}` : `الفائز: ${esc(winnerNames)}`) : (state!.result.winnerIds.length > 1 ? `Winners: ${esc(winnerNames)}` : `Winner: ${esc(winnerNames)}`)}</div><p class="muted">${esc(state!.result.reason)}</p></div>` : `<div class="battle-line"><strong>${isAr ? "قلعة التاج" : "Crown Keep"}</strong><p>${keep.active ? `${keep.contested ? (isAr ? "متنازع عليها (متوقف)" : "Contested (Paused)") : keep.controllerId ? (isAr ? "المسيطر: " : "Ruler: ") + esc(owner(keep.controllerId)) : (isAr ? "مفتوحة" : "Open")} · ${time(keep.captureProgress)} / 5:00` : `${isAr ? `تفتح عند ${time(unlockSeconds)}` : `Opens at ${time(unlockSeconds)}`} (${time(Math.max(0, unlockSeconds - now()))})`}</p>${keep.active ? button(isAr ? "هجوم / احتلال القلعة" : "Attack / Capture Keep", "plan-castle-attack", keep.id, "primary wide", !running()) : ""}</div>`}<div>${ranks.slice(page * 6, page * 6 + 6).map((r, i) => `<div class="rank-row ${r.playerId === state!.you ? "own" : ""}"><span>${page * 6 + i + 1}</span><span>${esc(owner(r.playerId))}${rankAllianceControl(r.playerId, r.eliminated)}<small>${r.eliminated ? "Eliminated" : `${r.settlements} provinces · ${r.kills} kills · ${r.wounded} wounded`}</small></span><strong>${r.score.toLocaleString()}</strong></div>`).join("")}</div>${pager(ranks.length)}${state!.status !== "Running" ? button("Leave realm", "leave", "", "quiet wide") : ""}`;
 }
 function lobbyPanel() {
     const s = state!;
@@ -2301,7 +2462,7 @@ function lobbyPanel() {
                 ${select("shield", isAr ? "درع الحماية (دقائق)" : "Protection", ["0", "5", "10"], String(t.shieldMinutes), !isHost)}
                 <label>${isAr ? "سرعة الموارد" : "Resource speed"}<input id="speed" type="number" min="0.5" max="5" step="0.5" value="${t.resourceSpeed}" ${ro}/></label>
                 <label>${isAr ? "عدد البوتات" : "AI neighbors"}<input id="bots" type="number" min="0" max="15" value="${t.botCount}" ${ro}/></label>
-                ${select("difficulty", isAr ? "صعوبة البوتات" : "AI difficulty", ["Easy", "Normal", "Hard"], t.botDifficulty, !isHost)}
+                ${select("difficulty", isAr ? "صعوبة البوتات" : "AI difficulty", ["Mixed", "Easy", "Normal", "Hard"], t.botDifficulty, !isHost)}
             </div>
         </div>
         <div class="panel-footer">
@@ -2342,8 +2503,7 @@ function lobbyPanel() {
         return `<button type="button" class="lobby-swatch${isMine ? " active" : ""}${humanLocked ? " locked" : ""}" data-action="lobby-color" data-id="${hex}" ${humanLocked ? "disabled" : ""} style="--swatch:${hex}" title="${esc(title)}" data-no-translate="1">${isMine ? "✓" : humanLocked ? "×" : ""}</button>`;
     }).join("");
 
-    return `<p class="muted">${isAr ? `المقاعد: ${t.capacity} · أعضاء الفريق الواحد يبدأون متجاورين وفي نفس التحالف تلقائياً` : `Seats: ${t.capacity} · Teammates spawn adjacent and allied automatically.`}</p>
-    <div class="lobby-setup">
+    return `<div class="lobby-setup">
         <div class="lobby-map-col">
             <div class="lobby-map-head">
                 <small>${isAr ? "موقعك على الخريطة" : "Map position"}</small>
@@ -2378,22 +2538,23 @@ function lobbyPanel() {
             ...[1, 2, 3, 4].map(tm => `<option value="${tm}" ${currentTeam === tm ? "selected" : ""}>${isAr ? `فريق ${tm}` : `Team ${tm}`}</option>`)
         ].join("");
 
+        const showBotBadge = p.isBot && (!s.maskBots || adminEnabled);
         return `<div class="rank-row lobby-player-row ${p.ready ? "ready-row" : ""}">
             <span>${p.ready ? "✓" : "○"}</span>
             <div class="lobby-player-info">
-                <strong><span class="lobby-player-color" style="background:${esc(p.flagColor ?? "#94a3b8")}"></span>${p.id === s.hostId ? "👑 " : ""}${p.isBot ? "🤖 " : ""}${esc(p.name)}</strong>
+                <strong><span class="lobby-player-color" style="background:${esc(p.flagColor ?? "#94a3b8")}"></span>${p.id === s.hostId ? "👑 " : ""}${showBotBadge ? "🤖 " : ""}${esc(p.name)}</strong>
                 <div class="lobby-selectors">
                     <select data-lobby-tribe="${p.id}" ${!canEdit ? "disabled" : ""}>${tribeOptions}</select>
                     <select data-lobby-team="${p.id}" ${!canEdit ? "disabled" : ""}>${teamOptions}</select>
                 </div>
             </div>
-            <small>${p.isBot ? "بوت" : p.online ? "متصل" : "بعيد"}</small>
+            <small>${showBotBadge ? (isAr ? "بوت" : "AI") : (p.online ? (isAr ? "متصل" : "Online") : (isAr ? "بعيد" : "Away"))}</small>
         </div>`;
     }).join("")}</div>
-    ${(s.spectators?.length ?? 0) > 0 ? `<div class="muted" style="margin-top:6px;">👁 ${isAr ? "المشاهدون:" : "Spectators:"} ${s.spectators!.map(sp => esc(sp.name)).join(", ")}</div>` : ""}
-    <div class="panel-footer">${s.isSpectator
-        ? `${button(isAr ? "الانتقال كلاعب" : "Join as Player", "switch-to-player", "", "primary wide")}${button(isAr ? "🔗 نسخ رابط الدعوة" : "🔗 Copy invite link", "copy-invite", s.id, "quiet wide")}${button("مغادرة الروم", "leave", "", "quiet wide")}`
-        : `${button(youPlayer?.ready ? "إلغاء الجاهزية" : "جاهز للعب ✓", "ready", "", "wide")}${isHost ? button("بدء المباراة", "start", "", "primary wide") : ""}${button(isAr ? "🔗 نسخ رابط الدعوة" : "🔗 Copy invite link", "copy-invite", s.id, "quiet wide")}${button(isAr ? "مشاهدة 👁" : "Spectate 👁", "switch-to-spectator", "", "quiet wide")}${button("مغادرة الروم", "leave", "", "quiet wide")}`
+    ${(s.spectators?.length ?? 0) > 0 ? `<div class="muted" style="margin-top:4px;">👁 ${isAr ? "المشاهدون:" : "Spectators:"} ${s.spectators!.map(sp => esc(sp.name)).join(", ")}</div>` : ""}
+    <div class="panel-footer lobby-footer">${s.isSpectator
+        ? `<div class="lobby-footer-primary">${button(isAr ? "الانتقال كلاعب" : "Join as Player", "switch-to-player", "", "primary")}</div><div class="lobby-footer-links">${button(isAr ? "🔗 نسخ رابط الدعوة" : "🔗 Copy invite link", "copy-invite", s.id, "quiet")}${button("مغادرة الروم", "leave", "", "quiet")}</div>`
+        : `<div class="lobby-footer-primary">${button(youPlayer?.ready ? "إلغاء الجاهزية" : "جاهز للعب ✓", "ready", "", "")}${isHost ? button("بدء المباراة", "start", "", "primary") : ""}</div><div class="lobby-footer-links">${button(isAr ? "🔗 نسخ رابط الدعوة" : "🔗 Copy invite link", "copy-invite", s.id, "quiet")}${button(isAr ? "مشاهدة 👁" : "Spectate 👁", "switch-to-spectator", "", "quiet")}${button("مغادرة الروم", "leave", "", "quiet")}</div>`
     }</div>`;
 } function patchPanel(target: Node, source: Node) {
     const wanted = Array.from(source.childNodes);
@@ -2605,18 +2766,20 @@ function renderDrawer(force = false) {
                 : isLive
                     ? (isAr ? "بدأت المباراة" : "Started")
                     : (isAr ? "ممتلئة" : "Full");
+            const hideBots = !!r.maskBots && !adminEnabled;
+            const totalPlayers = r.humans + r.bots;
             return `<article class="room-card">
                 <div class="room-card-top">
-                    <span class="room-card-name">${r.isBotOnly ? "🤖 " : "⚔ "}${esc(r.name)}</span>
+                    <span class="room-card-name">${!hideBots && r.isBotOnly ? "🤖 " : "⚔ "}${esc(r.name)}</span>
                     <div class="room-card-badges">
                         ${speedBadge}
                         <span class="room-pill ${isLive ? "live" : "lobby"}">${esc(statusText)}</span>
                     </div>
                 </div>
                 <div class="room-card-meta">
-                    <span>👤 ${r.humans} ${isAr ? "لاعب" : "humans"}</span>
-                    <span>🤖 ${r.bots} ${isAr ? "بوت" : "AI"}</span>
-                    <span>🪑 ${r.humans + r.bots} / ${r.capacity}</span>
+                    ${hideBots
+                        ? `<span>👤 ${totalPlayers} / ${r.capacity} ${isAr ? "لاعب" : "players"}</span>`
+                        : `<span>👤 ${r.humans} ${isAr ? "لاعب" : "humans"}</span><span>🤖 ${r.bots} ${isAr ? "بوت" : "AI"}</span><span>🪑 ${totalPlayers} / ${r.capacity}</span>`}
                     ${(r.spectators ?? 0) > 0 ? `<span>👁 ${r.spectators} ${isAr ? "مشاهد" : "watching"}</span>` : ""}
                 </div>
                 <div class="room-card-actions">
@@ -3277,18 +3440,19 @@ document.addEventListener("click", event => {
                 notice(currentLanguage() === "ar" ? `انضممت إلى ${open.name}!` : `Joined ${open.name}!`);
             } else {
                 const realmTitle = currentLanguage() === "ar" ? "ساحة أونلاين سريعة" : "Quick Online Realm";
-                render(await connection.invoke<Snapshot>("CreateRoom", playerName, initialTribe, realmTitle, { capacity: 8, durationMinutes: 30, castleUnlockMinutes: 15, shieldMinutes: 5, resourceSpeed: 2, botCount: 4, botDifficulty: "Normal" }));
+                render(await connection.invoke<Snapshot>("CreateRoom", playerName, initialTribe, realmTitle, { capacity: 8, durationMinutes: 30, castleUnlockMinutes: 15, shieldMinutes: 5, resourceSpeed: 2, botCount: 4, botDifficulty: "Mixed" }));
                 notice(currentLanguage() === "ar" ? "تم إنشاء غرفة جديدة! انسخ رابط الدعوة لدعوة أصدقائك." : "Created a new realm! Copy the invite link for friends.");
             }
         }
         else if (action === "refresh") {
             roomList = await connection.invoke<RoomSummary[]>("ListRooms");
+            syncLiveGamesBadge();
             renderDrawer(true);
         }
         else if (action === "create") {
             const initialTribe = el("tribe-picker").hidden ? "Random" : el<HTMLInputElement>("tribe").value;
             const createBots = Math.max(0, Math.min(7, Math.floor(Number((document.getElementById("create-bots") as HTMLInputElement | null)?.value ?? 6) || 0)));
-            render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, initialTribe, el<HTMLInputElement>("room-name").value, { capacity: 8, durationMinutes: 60, castleUnlockMinutes: 45, shieldMinutes: 5, resourceSpeed: 1, botCount: createBots, botDifficulty: "Normal" }));
+            render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, initialTribe, el<HTMLInputElement>("room-name").value, { capacity: 8, durationMinutes: 60, castleUnlockMinutes: 45, shieldMinutes: 5, resourceSpeed: 1, botCount: createBots, botDifficulty: "Mixed" }));
         }
         else if (action === "join") {
             const initialTribe = el("tribe-picker").hidden ? "Random" : el<HTMLInputElement>("tribe").value;
@@ -3368,10 +3532,11 @@ el("tribe-picker").addEventListener("click", event => {
     renderTribePicker();
 });
 renderTribePicker();
+syncWelcomeMatchmakingUi();
 el('language-select').onchange = () => setLanguage(el<HTMLInputElement>('language-select').value);
 el<HTMLInputElement>('language-select').value = currentLanguage();
 el('village-biome').onclick = () => { selection = null; openPanel('biome', el('village-biome').dataset.id ?? ''); };
-window.addEventListener('languagechange', () => { renderTribePicker(); renderArmyOrderBar(); map.refreshLanguage(); renderArmiesStrip(); renderDrawer(true); renderChat(); renderSpectatorBar(); adminOverlay.refreshLanguageAndState(); localizeNow(); });
+window.addEventListener('languagechange', () => { renderTribePicker(); syncWelcomeMatchmakingUi(); renderAllianceInvites(); renderArmyOrderBar(); map.refreshLanguage(); renderArmiesStrip(); renderDrawer(true); renderChat(); renderSpectatorBar(); adminOverlay.refreshLanguageAndState(); localizeNow(); });
 document.addEventListener('keydown', event => {
     if (!state) {
         const active = document.activeElement;
@@ -3422,7 +3587,6 @@ el("view-standings").onclick = () => {
     openPanel("standings");
 };
 el("view-guide").onclick = () => { gameGuide.setTribe(currentTribe()); gameGuide.open(); };
-el("welcome-guide").onclick = () => { gameGuide.setTribe(el<HTMLInputElement>("tribe")?.value); gameGuide.open(); };
 el("realm-menu").onclick = () => gameMenu.open();
 el("close-drawer").onclick = () => {
     closePanel(); if (!state)
@@ -3461,9 +3625,31 @@ el("chat-form").addEventListener("submit", event => {
     if (!state) return;
     void perform(async () => { if (await command("SendChat", "00000000-0000-0000-0000-000000000000", { message })) input.value = ""; });
 });
-el("multiplayer").onclick = () => void perform(async () => { roomList = await connection.invoke<RoomSummary[]>("ListRooms"); el("welcome").hidden = true; openPanel("rooms"); }, true);
-el("play-blitz").onclick = () => void perform(async () => { render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, el<HTMLInputElement>("tribe").value, "Sunmeadow Blitz (3x)", { capacity: 8, durationMinutes: 30, castleUnlockMinutes: 15, shieldMinutes: 5, resourceSpeed: 3, botCount: 7, botDifficulty: "Normal" })); await connection.invoke("SetReady", true); render(await connection.invoke<Snapshot>("StartMatch")); }, true);
-el("play-solo").onclick = () => void perform(async () => { render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, el<HTMLInputElement>("tribe").value, "Sunmeadow Valley", { capacity: 8, durationMinutes: 60, castleUnlockMinutes: 45, shieldMinutes: 5, resourceSpeed: 1, botCount: 7, botDifficulty: "Normal" })); await connection.invoke("SetReady", true); render(await connection.invoke<Snapshot>("StartMatch")); }, true);
+el("find-match").onclick = () => {
+    if (searchingMatch || matchReadyState) return;
+    void gameAudio.playMatchSearchStart();
+    void perform(async () => {
+        if (connection.state === HubConnectionState.Disconnected) await connect(false, true);
+        if (connection.state !== HubConnectionState.Connected)
+            throw Error(currentLanguage() === "ar" ? "تعذر الاتصال بالسيرفر، حاول مجدداً." : "Could not connect to server. Please try again.");
+        setMatchmakingUi(true);
+        try {
+            const playerName = el<HTMLInputElement>("player-name").value.trim() || "Commander";
+            const tribe = el<HTMLInputElement>("tribe").value || "Romans";
+            await connection.invoke("StartMatchmaking", playerName, tribe);
+        } catch (err) {
+            setMatchmakingUi(false);
+            throw err;
+        }
+    }, true);
+};
+el("cancel-matchmaking").onclick = () => {
+    if (!searchingMatch) return;
+    setMatchmakingUi(false);
+    if (connection.state === HubConnectionState.Connected)
+        void connection.invoke("CancelMatchmaking").catch(() => { /* ignore cancel error */ });
+};
+el("multiplayer").onclick = () => void perform(async () => { roomList = await connection.invoke<RoomSummary[]>("ListRooms"); syncLiveGamesBadge(); el("welcome").hidden = true; openPanel("rooms"); }, true);
 el("play-tutorial").onclick = () => void perform(async () => {
     render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, el<HTMLInputElement>("tribe").value, "Sunmeadow Valley (Tutorial)", { capacity: 8, durationMinutes: 30, castleUnlockMinutes: 20, shieldMinutes: 10, resourceSpeed: 2, botCount: 1, botDifficulty: "Easy" }));
     await connection.invoke("SetReady", true);
@@ -3518,6 +3704,10 @@ function applyInboundSnapshot(snapshot: Snapshot, wireBytes?: number) {
         syncAdminOverlay();
         if (panel === "rooms") renderDrawer();
     }
+    if (matchReadyState && pendingReadySnapshot && pendingReadySnapshot.id === snapshot.id) {
+        if (snapshot.revision >= pendingReadySnapshot.revision) pendingReadySnapshot = snapshot;
+        return;
+    }
     if (state?.id !== snapshot.id) return;
     if (pointerPressed) { pendingSnapshot = snapshot; deferredSnapshotsCount++; return; }
     render(snapshot);
@@ -3535,9 +3725,13 @@ connection.on("SnapshotGz", (base64: string) => {
         applyInboundSnapshot(snapshot, base64.length);
     }).catch(() => { /* Next periodic snapshot recovers cleanly. */ });
 });
+connection.on("MatchFound", (snapshot: Snapshot) => {
+    showMatchReadyTransition(snapshot);
+});
 connection.on("RoomsUpdated", (rooms: RoomSummary[]) => {
     debugOverlay.recordInbound("RoomsUpdated", rooms);
     roomList = rooms.filter(r => r.status === "Lobby" || r.status === "Running");
+    syncLiveGamesBadge();
     syncAdminOverlay();
     if (panel === "rooms") renderDrawer();
 });
@@ -3545,13 +3739,14 @@ window.setInterval(async () => {
     if ((panel === "rooms" || adminOverlay.isOpen()) && connection.state === HubConnectionState.Connected && !busy) {
         try {
             roomList = (await connection.invoke<RoomSummary[]>("ListRooms")).filter(r => r.status === "Lobby" || r.status === "Running");
+            syncLiveGamesBadge();
             syncAdminOverlay();
             if (panel === "rooms") renderDrawer();
         } catch { /* ignore background polling errors */ }
     }
 }, 3000);
-connection.onreconnecting(() => { gameAudio.reset(); status(); });
-connection.onclose(() => { gameAudio.reset(); status(); });
+connection.onreconnecting(() => { if (searchingMatch || matchReadyState) setMatchmakingUi(false); gameAudio.reset(); status(); });
+connection.onclose(() => { if (searchingMatch || matchReadyState) setMatchmakingUi(false); gameAudio.reset(); status(); });
 connection.onreconnected(() => {
     debugOverlay.recordReconnect();
     status();
@@ -3646,13 +3841,13 @@ async function handleDeepLinks() {
         openPanel("rooms");
     } else if (mode === "blitz") {
         await perform(async () => {
-            render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, el<HTMLInputElement>("tribe").value, "Sunmeadow Blitz (3x)", { capacity: 8, durationMinutes: 30, castleUnlockMinutes: 15, shieldMinutes: 5, resourceSpeed: 3, botCount: 7, botDifficulty: "Normal" }));
+            render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, el<HTMLInputElement>("tribe").value, "Sunmeadow Blitz (3x)", { capacity: 8, durationMinutes: 30, castleUnlockMinutes: 15, shieldMinutes: 5, resourceSpeed: 3, botCount: 7, botDifficulty: "Mixed" }));
             await connection.invoke("SetReady", true);
             render(await connection.invoke<Snapshot>("StartMatch"));
         }, true);
     } else if (mode === "solo") {
         await perform(async () => {
-            render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, el<HTMLInputElement>("tribe").value, "Sunmeadow Valley", { capacity: 8, durationMinutes: 60, castleUnlockMinutes: 45, shieldMinutes: 5, resourceSpeed: 1, botCount: 7, botDifficulty: "Normal" }));
+            render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, el<HTMLInputElement>("tribe").value, "Sunmeadow Valley", { capacity: 8, durationMinutes: 60, castleUnlockMinutes: 45, shieldMinutes: 5, resourceSpeed: 1, botCount: 7, botDifficulty: "Mixed" }));
             await connection.invoke("SetReady", true);
             render(await connection.invoke<Snapshot>("StartMatch"));
         }, true);
@@ -3677,6 +3872,7 @@ async function connect(resumeReserved = false, keepMenu = false) {
             if (supportsGzipDecompress) await connection.invoke("SetSnapshotCompression", true).catch(() => { /* Fall back to plain JSON snapshots. */ });
             adminEnabled = await connection.invoke<boolean>("CheckAdmin");
             roomList = await connection.invoke<RoomSummary[]>("ListRooms");
+            syncLiveGamesBadge();
             const snapshot = await connection.invoke<Snapshot | null>('Resume');
             debugOverlay.recordInbound("Resume", snapshot);
             if (returnedToMenu && !resumeReserved && snapshot?.status === 'Running') {

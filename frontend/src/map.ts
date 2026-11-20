@@ -70,6 +70,7 @@ export class WorldMap {
   private secondaryLabels: Text[] = [];
   private oasisRipples:Graphics[]=[];
   private settlements = new Container();
+  private lobbyRings = new Graphics();
   private castleLayer = new Container();
   private nameplates = new Container();
   private paths = new Graphics();
@@ -99,6 +100,7 @@ export class WorldMap {
   private players: MapPlayer[] = [];
   private viewer = "preview";
   private isLobby = false;
+  private lobbyOpenSpots: { slot: number; position: Point }[] = [];
   private alliedOwners = new Set<string>();
   private signature = "";
   private terrainSignature = "";
@@ -131,7 +133,7 @@ export class WorldMap {
     this.app.canvas.tabIndex = 0;
     this.app.stage.addChild(this.sky, this.world);
     this.lossLayer.eventMode = 'none';
-    this.world.addChild(this.terrain, this.camps, this.paths, this.settlements, this.castleLayer, this.selection, this.units, this.fireLayer, this.warfare, this.nameplates, this.battleLayer, this.lossLayer);
+    this.world.addChild(this.terrain, this.camps, this.paths, this.lobbyRings, this.settlements, this.castleLayer, this.selection, this.units, this.fireLayer, this.warfare, this.nameplates, this.battleLayer, this.lossLayer);
     this.settlements.sortableChildren = true; this.units.sortableChildren=true;
     this.ready = true;
     const pending = this.last;
@@ -319,15 +321,19 @@ export class WorldMap {
       this.lastSnapshotAt = nowMs;
     }
     const lobbyClearings: Point[] = [];
+    const lobbyOpenSpots: { slot: number; position: Point }[] = [];
     if (isLobbyPreview && lobbyCapacity) {
       const ringSize = Math.max(2, lobbyCapacity);
       const occupiedSlots = new Set(players.map(p => p.effectiveSpawnSlot ?? p.spawnSlot).filter((s): s is number => s != null));
       for (let slot = 0; slot < ringSize; slot++) {
         if (occupiedSlots.has(slot)) continue;
         const angle = (slot * Math.PI * 2) / ringSize;
-        lobbyClearings.push({ x: 2250 + Math.cos(angle) * 1750, y: 2250 + Math.sin(angle) * 1750 });
+        const pos = { x: 2250 + Math.cos(angle) * 1750, y: 2250 + Math.sin(angle) * 1750 };
+        lobbyClearings.push(pos);
+        lobbyOpenSpots.push({ slot, position: pos });
       }
     }
+    this.lobbyOpenSpots = lobbyOpenSpots;
     const landscapeSettlements = [...players.filter(p => !p.relocateTarget).flatMap(p => p.position ? [p.position] : []), ...lobbyClearings];
     const terrainKey = `${world.regions?.length ?? 0}|` + players.map(p => p.relocateTarget ? 'relocating' : `${p.position?.x ?? 0},${p.position?.y ?? 0}`).join(';') + `|${lobbyClearings.length}|` + world.oases.map(c => `${c.position.x},${c.position.y}`).join(';');
     if(world.regions?.length && (terrainKey !== this.terrainSignature || (this.lastRegionsRef && this.lastRegionsRef.length !== world.regions.length))){
@@ -956,6 +962,7 @@ export class WorldMap {
         loss.root.alpha = progress < 0.6 ? 1 : Math.max(0, 1 - (progress - 0.6) / 0.4);
       }
       this.selection.clear();
+      this.lobbyRings.clear();
       const drawnSelected = new Set<string>();
       const drawArmyRing = (armyId: string, color: number, width = 3) => {
         const moving = this.moving.get(armyId);
@@ -973,11 +980,55 @@ export class WorldMap {
       };
       for (const armyId of this.selectedArmyIds) drawArmyRing(armyId, 0x56f09b, 3);
       if (this.isLobby) {
-        const me = this.players.find(pl => pl.id === this.viewer);
-        if (me?.position) {
-          const pt = project(me.position);
-          this.selection.ellipse(pt.x, pt.y + 5, 82, 42).stroke({ color: 0xe7c673, width: 3.5, alpha: 0.9 })
-            .ellipse(pt.x, pt.y + 5, 74, 36).stroke({ color: 0xfff3b0, width: 1.5, alpha: 0.85 });
+        const invScale = Math.min(2.6, Math.max(1, 0.65 / Math.max(0.1, this.scale)));
+        const drawSelectablePulse = (pt: Point, idx: number, isHovered: boolean) => {
+          const baseColor = isHovered ? 0x6ef7b2 : 0xffe07a;
+          const brightColor = isHovered ? 0xd4ffea : 0xfff7cc;
+          if (this.reduced) {
+            this.lobbyRings
+              .ellipse(pt.x, pt.y + 10, 94, 48)
+              .fill({ color: baseColor, alpha: isHovered ? 0.24 : 0.14 })
+              .stroke({ color: baseColor, width: 3 * invScale, alpha: isHovered ? 0.95 : 0.85 });
+            return;
+          }
+          const phase = idx * 0.45;
+          const breathe = 0.5 + 0.5 * Math.sin(now / 420 + phase);
+          const rx1 = 78 + breathe * 42;
+          const ry1 = 39 + breathe * 21;
+          const breathe2 = 0.5 + 0.5 * Math.sin(now / 420 + phase + Math.PI * 0.65);
+          const rx2 = 64 + breathe2 * 30;
+          const ry2 = 32 + breathe2 * 15;
+          this.lobbyRings
+            .ellipse(pt.x, pt.y + 10, rx1, ry1)
+            .fill({ color: baseColor, alpha: (isHovered ? 0.22 : 0.1) + breathe * (isHovered ? 0.16 : 0.1) })
+            .stroke({ color: baseColor, width: (isHovered ? 4.2 : 3.1) * invScale, alpha: (isHovered ? 0.72 : 0.48) + breathe * 0.48 });
+          this.lobbyRings
+            .ellipse(pt.x, pt.y + 10, rx2, ry2)
+            .stroke({ color: brightColor, width: (isHovered ? 2.6 : 1.9) * invScale, alpha: 0.3 + breathe2 * 0.6 });
+        };
+
+        let pulseIndex = 0;
+        for (const pl of this.players) {
+          if (!pl.position) continue;
+          const pt = project(pl.position);
+          if (pl.id === this.viewer) {
+            const mePulse = this.reduced ? 0.5 : 0.5 + 0.5 * Math.sin(now / 520);
+            this.lobbyRings
+              .ellipse(pt.x, pt.y + 10, 92 + mePulse * 20, 46 + mePulse * 10)
+              .fill({ color: 0xffe48a, alpha: 0.12 + mePulse * 0.1 })
+              .stroke({ color: 0xffe48a, width: 3 * invScale, alpha: 0.45 + mePulse * 0.48 })
+              .ellipse(pt.x, pt.y + 10, 82, 41)
+              .stroke({ color: 0xe7c673, width: 3.6 * invScale, alpha: 0.95 })
+              .ellipse(pt.x, pt.y + 10, 72, 36)
+              .stroke({ color: 0xfff5c2, width: 1.7 * invScale, alpha: 0.9 });
+          } else if (pl.isBot) {
+            const pickId = pl.villageId ?? pl.id;
+            drawSelectablePulse(pt, pulseIndex++, this.hovered?.id === pickId);
+          }
+        }
+        for (const spot of this.lobbyOpenSpots) {
+          const pt = project(spot.position);
+          drawSelectablePulse(pt, pulseIndex++, this.hovered?.id === `slot:${spot.slot}`);
         }
       }
       for (const vid of this.selectedHomeVillageIds) {
@@ -989,7 +1040,7 @@ export class WorldMap {
             .ellipse(pt.x, pt.y + 5, 74, 35).stroke({ color: 0xfff3b0, width: 1.5 });
         }
       }
-      if (this.selected && !drawnSelected.has(this.selected.id)) {
+      if (!this.isLobby && this.selected && !drawnSelected.has(this.selected.id)) {
         const moving = this.moving.get(this.selected.id);
         const position = (moving && !moving.root.destroyed) ? { x: moving.root.x, y: moving.root.y } : this.selected.position ? project(this.selected.position) : null;
         if (position) {
