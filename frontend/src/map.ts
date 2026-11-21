@@ -755,30 +755,45 @@ export class WorldMap {
   private positionClash(clash:{effect:BattleClash;battle?:BattleView;siege?:SiegeView;pick:MapSelection}) {
     const {battle,siege,effect,pick}=clash;
     if (effect.root.destroyed) return;
+    const collectNodes = (ids: string[] | undefined, fallbackId: string | undefined) => {
+      const ordered = [...new Set([...(ids ?? []), ...(fallbackId ? [fallbackId] : [])])];
+      const nodes: Point[] = [];
+      for (const id of ordered) {
+        const node = this.moving.get(id);
+        if (node && !node.root.destroyed) nodes.push({ x: node.root.x, y: node.root.y });
+      }
+      return nodes;
+    };
     if (battle) {
       const world = this.last?.world ?? undefined;
-      const leadPoint = (ids: string[] | undefined, fallbackId: string | undefined) => {
-        const ordered = [...new Set([...(ids ?? []), ...(fallbackId ? [fallbackId] : [])])];
-        for (const id of ordered) {
-          const node = this.moving.get(id);
-          if (node && !node.root.destroyed) return node.root.position;
-        }
-        return project(battle.position ?? { x: 2250, y: 1462.5 });
-      };
-      const attacker = leadPoint(battle.attackerArmyIds, battle.attackerId);
-      const defender = leadPoint(battle.defenderArmyIds, battle.defenderId);
+      const fallback = project(battle.position ?? { x: 2250, y: 1462.5 });
+      const attackerNodes = collectNodes(battle.attackerArmyIds, battle.attackerId);
+      const defenderNodes = collectNodes(battle.defenderArmyIds, battle.defenderId);
+      const attacker = attackerNodes[0] ?? fallback;
+      const defender = defenderNodes[0] ?? fallback;
       effect.root.position.set((attacker.x + defender.x) / 2, (attacker.y + defender.y) / 2 - 25);
-      effect.setSides(this.armyLayout.battleOrientation(battle, world));
+      const attackerSide = this.armyLayout.battleOrientation(battle, world);
+      const defenderSide: -1 | 1 = attackerSide === -1 ? 1 : -1;
+      const attackerBadges = attackerNodes.length
+        ? attackerNodes.map(pos => ({ x: pos.x - attackerSide * 56, y: pos.y - 23 }))
+        : [{ x: effect.root.x + attackerSide * 32, y: effect.root.y + 2 }];
+      const defenderBadges = defenderNodes.length
+        ? defenderNodes.map(pos => ({ x: pos.x - defenderSide * 56, y: pos.y - 23 }))
+        : [{ x: effect.root.x - attackerSide * 32, y: effect.root.y + 2 }];
+      effect.setRoleBadges(attackerBadges, defenderBadges);
       pick.position = { x: effect.root.x, y: effect.root.y / .65 };
     } else if (siege) {
       const world = this.last?.world ?? undefined;
       const villagePos = project(siege.position ?? { x: 2250, y: 1462.5 });
-      const ordered = [...new Set([...(siege.armyIds ?? []), ...(siege.armyId ? [siege.armyId] : [])])];
-      const leadNode = ordered.map(id => this.moving.get(id)).find(node => node && !node.root.destroyed);
+      const attackerNodes = collectNodes(siege.armyIds, siege.armyId);
       const siegeSide = this.armyLayout.siegeOrientation(siege, world);
-      const attacker = leadNode ? leadNode.root.position : { x: villagePos.x + siegeSide * 88, y: villagePos.y };
-      effect.root.position.set((attacker.x + villagePos.x) / 2, (attacker.y + villagePos.y) / 2 - 25);
-      effect.setSides(siegeSide);
+      const leadAttacker = attackerNodes[0] ?? { x: villagePos.x + siegeSide * 88, y: villagePos.y };
+      effect.root.position.set((leadAttacker.x + villagePos.x) / 2, (leadAttacker.y + villagePos.y) / 2 - 25);
+      const attackerBadges = attackerNodes.length
+        ? attackerNodes.map(pos => ({ x: pos.x - siegeSide * 56, y: pos.y - 23 }))
+        : [{ x: effect.root.x + siegeSide * 32, y: effect.root.y + 2 }];
+      const defenderBadges = [{ x: effect.root.x - siegeSide * 32, y: effect.root.y + 2 }];
+      effect.setRoleBadges(attackerBadges, defenderBadges);
       pick.position = { x: effect.root.x, y: effect.root.y / .65 };
     }
   }

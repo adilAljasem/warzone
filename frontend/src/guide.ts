@@ -65,13 +65,13 @@ const TRIBE_PROFILES: TribeGuideInfo[] = [
     {
         id: 'Romans',
         name: { ar: 'الرومان (Romans)', en: 'Romans' },
-        badge: { ar: '+1 تدريب تلقائي · نخبة متوازنة', en: '+1 Auto Slot · Balanced Elite' },
+        badge: { ar: 'بناء أرخص 50% · نخبة متوازنة', en: '-50% Building Cost · Balanced Elite' },
         summary: {
-            ar: 'قبيلة متوازنة تبدأ بـ 4 خانات تدريب تلقائي بدلاً من 3، وتملك أقوى فرسان ثقيلة ومشاة بداية ممتازة.',
-            en: 'A balanced empire starting with 4 auto-queue slots instead of 3, fielding top-tier Heavy Cavalry and strong early infantry.'
+            ar: 'إمبراطورية معمارية متوازنة تطوّر جميع مبانيها بنصف التكلفة (-50%) مقارنة بباقي الشعوب، وتملك أقوى فرسان ثقيلة ومشاة بداية ممتازة.',
+            en: 'A balanced architectural empire with 50% cheaper building upgrades than other tribes, fielding top-tier Heavy Cavalry and strong early infantry.'
         },
         pros: [
-            { ar: 'خانة تدريب تلقائي إضافية منذ البداية (4 خانات بدل 3).', en: 'Starts with 4 auto-training slots instead of 3.' },
+            { ar: 'تطوير جميع المباني أرخص بنسبة 50% (نصف التكلفة من كل الموارد) مقارنة بباقي الشعوب.', en: 'All building upgrades are 50% cheaper than other civilizations.' },
             { ar: 'أقوى مشاة بداية (جندي أول: هجوم 46، دفاع 25/25) وأقوى فرسان ثقيلة (فرسان قيصر: هجوم 128، دفاع 88/64).', en: 'Strongest basic infantry (46 ATK, 25/25 DEF) and strongest Heavy Cavalry (128 ATK, 88/64 DEF).' },
             { ar: 'رماحة متوازنون (60 دفاع مشاة، 40 دفاع فرسان) وسهولة في بناء جيش هجومي ودفاعي.', en: 'Well-rounded Spearman defense (60/40) and reliable all-around troop stats.' }
         ],
@@ -478,10 +478,10 @@ export class GameGuide {
             {
                 key: 'Hospital',
                 name: BUILDING_LABELS.Hospital!,
-                tag: { ar: 'علاج 60% من خسائر الجنود', en: 'Recovers 60% Soldier Losses' },
+                tag: { ar: 'علاج 60% لكل جيش على حدة', en: 'Per-Army Recovery (60%)' },
                 desc: {
-                    ar: '60% من خسائر الجنود (باستثناء العربات وآلات الحصار) يعودون للمستشفى ويُشفون بتكلفة 1 حديد + 1 قمح للجندي (بسرعة مضاعفة 2x للإغريق).',
-                    en: '60% of fallen soldiers (excluding wagons/siege) enter recovery and heal at 1 Iron + 1 Wheat each (2x speed for Greeks).'
+                    ar: '60% من خسائر الجنود (باستثناء العربات وآلات الحصار) يُنسبون لجيشهم داخل المشفى ويُشفون بتكلفة 1 حديد + 1 قمح للجندي (2x للإغريق). إذا خسر الجيش ومات بالكامل يموت جرحاه فوراً، وإذا اندمج مع جيش آخر ينتقلون إليه.',
+                    en: '60% of fallen soldiers (excluding wagons/siege) are tracked per army in the Hospital and heal at 1 Iron + 1 Wheat each (2x for Greeks). If an army is wiped out, its wounded die immediately; if merged, they transfer to the merged army.'
                 }
             },
             {

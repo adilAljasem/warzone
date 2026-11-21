@@ -13,7 +13,7 @@ internal static class GameplayChecks
         var warehouse = instant.Village.Buildings.Single(b=>b.Type==BuildingType.Warehouse);
         Reject(()=>instant.Apply(new(Guid.NewGuid(),CommandKind.Upgrade,warehouse.QueueId),0),"main_hall");
         mainHall.CompleteUpgrade(1); mainHall.CompleteUpgrade(2);
-        var cost = warehouse.NextUpgrade!.Cost; var stock = instant.Resources;
+        var cost = instant.Snapshot().Targets.Single(t => t.Id == warehouse.QueueId).UpgradeCost!.Value; var stock = instant.Resources;
         instant.Apply(new(Guid.NewGuid(),CommandKind.Upgrade,warehouse.QueueId),0);
         Check(warehouse.Level==2 && warehouse.MaxLevel==30 && instant.Resources==stock-cost && instant.Snapshot().Jobs.Length==0,"Building upgrades pay once and complete instantly without construction jobs");
         Check(instant.Snapshot().Targets.Count(t=>t.Kind=="Building")==9 && instant.Snapshot().Targets.All(t=>t.Kind is "Building" or "Training"),"Nine buildings include a market and no resource fields");

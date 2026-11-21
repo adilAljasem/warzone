@@ -259,6 +259,8 @@ public sealed partial class LogisticsWorld
                 if (stack.Count > lost) surviving.Add(new(stack.Unit, stack.Count - lost));
             }
             FinalizeArmyDamage(army, surviving, armyTotalLost, wagonsBefore);
+            if (deployed && surviving.Count == 0)
+                KillWoundedOfDeadArmy(army, enemyOwner);
         }
         return appliedTotal;
     }
@@ -356,14 +358,21 @@ public sealed partial class LogisticsWorld
                 var cargo=convoy.Cargo+new Resources(0,0,0,(long)convoy.WheatCargo);
                 totalSpoils+=cargo;
                 DestroyWagons(member.Army,1,now,winner.OwnerId);convoy.Cargo=new();convoy.WheatCargo=0;convoy.Returning=true;
+                KillWoundedOfDeadArmy(member.Army, winner.OwnerId);
                 Note(convoy.OwnerId,now,"Your caravan was intercepted and its cargo was lost.","convoy-loss",targetId:convoy.Id);
                 convoy.Troops=member.Army.Troops;
             }
             else
             {
                 convoy.WheatCargo=Math.Min(convoy.WheatCargo,convoy.WheatCapacity);
+                if (villages.TryGetValue(member.Army.HomeVillageId, out var convoyHome))
+                    TransferArmyWoundedToGarrison(member.Army.Id, convoyHome);
             }
-            if(convoy.Troops.Count==0)convoys.Remove(convoy);
+            if(convoy.Troops.Count==0)
+            {
+                KillWoundedOfDeadArmy(member.Army, winner.OwnerId);
+                convoys.Remove(convoy);
+            }
         }
         foreach(var force in lost)
         {
@@ -371,6 +380,12 @@ public sealed partial class LogisticsWorld
             var cargo=force.Loot+new Resources(0,0,0,(long)force.Wheat);
             totalSpoils+=cargo;
             force.Loot=new();force.Wheat=0;
+            if(Count(force)==0) KillWoundedOfDeadArmy(force, winner.OwnerId);
+        }
+        foreach(var force in won)
+        {
+            if(convoyArmies.Contains(force))continue;
+            if(Count(force)==0) KillWoundedOfDeadArmy(force, lost.FirstOrDefault()?.OwnerId ?? Guid.Empty);
         }
         loot=totalSpoils;
         captured = DistributeLoot(recipients, totalSpoils);

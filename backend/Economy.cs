@@ -117,9 +117,10 @@ public sealed record TargetSnapshot(Guid Id, string Name, string Kind, int Level
     Resources? UpgradeCost, Resources? TrainingCost, double? TrainingSeconds, int AutoBatchSize, string? IconUrl = null,
     string? UnitId = null, string? TrainingBuilding = null, int RequiredBuildingLevel = 1,
     bool Unlocked = true, double TrainingSpeedBonusPercent = 0);
+public sealed record WoundedGroupSnapshot(Guid? ArmyId, int Total, IReadOnlyDictionary<string, int> Units);
 public sealed record EconomySnapshot(Guid VillageId, Resources Resources, long Capacity, int AutoSlots, int UsedAutoSlots,
-    bool FoodShortage, TargetSnapshot[] Targets, TrainingOrder[] Jobs, IReadOnlyDictionary<string, int> Garrison, int Wounded, bool Besieged, ProductionSnapshot[] Production, BiomeType Biome, int OwnedOases, double[] OasisBonuses, int ReservedTradeWagons);
-internal sealed record WoundedBatch(string UnitId, int Count, double ReadyAt);
+    bool FoodShortage, TargetSnapshot[] Targets, TrainingOrder[] Jobs, IReadOnlyDictionary<string, int> Garrison, int Wounded, bool Besieged, ProductionSnapshot[] Production, BiomeType Biome, int OwnedOases, double[] OasisBonuses, int ReservedTradeWagons, WoundedGroupSnapshot[]? WoundedGroups = null);
+internal sealed record WoundedBatch(string UnitId, int Count, double ReadyAt, Guid? ArmyId = null);
 
 // Mutations run under the game server lock. All time is authoritative match time.
 public sealed class VillageEconomy
@@ -222,9 +223,12 @@ public sealed class VillageEconomy
         (long)Math.Ceiling(value.Wood * multiplier), (long)Math.Ceiling(value.Iron * multiplier),
         (long)Math.Ceiling(value.Stone * multiplier), (long)Math.Ceiling(value.Wheat * multiplier));
     private Resources TrainingCost(UnitTraining target, int count) => Scale(target.Unit.TrainingCost, bonuses.TrainingCostMultiplier * count);
-    private Resources? EffectiveUpgradeCost(UpgradeableTarget target) => target.NextUpgrade is { } step
-        ? (BotBuildCostMultiplier < 1.0 ? Scale(step.Cost, BotBuildCostMultiplier) : step.Cost)
-        : null;
+    private Resources? EffectiveUpgradeCost(UpgradeableTarget target)
+    {
+        if (target.NextUpgrade is not { } step) return null;
+        var multiplier = (target is Building ? bonuses.BuildingCostMultiplier : 1.0) * BotBuildCostMultiplier;
+        return multiplier < 1.0 ? Scale(step.Cost, multiplier) : step.Cost;
+    }
     private double TrainingSeconds(UnitTraining target, int count) => Math.Max(.25,
         target.Unit.TrainingDuration.TotalSeconds * count * bonuses.TrainingTimeMultiplier
         / ((1 + TrainingRules.SpeedBonusPercent(Facility(target), BuildingLevel(Facility(target))) / 100)
@@ -352,9 +356,38 @@ public sealed class VillageEconomy
         var result = available.Fraction(Math.Min(1, Math.Max(0, capacity) / Math.Max(1, available.Total)));
         Pay(result); return result;
     }
-    internal void AdmitWounded(string unitId, int count, double readyAt)
+    internal void AdmitWounded(string unitId, int count, double readyAt, Guid? armyId = null)
     {
-        if (count > 0) wounded.Add(new(unitId, count, readyAt));
+        if (count > 0) wounded.Add(new(unitId, count, readyAt, armyId));
+    }
+    internal int WoundedForArmy(Guid armyId) => wounded.Where(x => x.ArmyId == armyId).Sum(x => x.Count);
+    internal Dictionary<string, int> KillArmyWounded(Guid armyId)
+    {
+        var killed = new Dictionary<string, int>();
+        for (var i = wounded.Count - 1; i >= 0; i--)
+        {
+            if (wounded[i].ArmyId != armyId) continue;
+            killed[wounded[i].UnitId] = killed.GetValueOrDefault(wounded[i].UnitId) + wounded[i].Count;
+            wounded.RemoveAt(i);
+        }
+        return killed;
+    }
+    internal List<WoundedBatch> ExtractArmyWounded(Guid armyId)
+    {
+        var extracted = new List<WoundedBatch>();
+        for (var i = wounded.Count - 1; i >= 0; i--)
+        {
+            if (wounded[i].ArmyId != armyId) continue;
+            extracted.Add(wounded[i]);
+            wounded.RemoveAt(i);
+        }
+        extracted.Reverse();
+        return extracted;
+    }
+    internal void AddWoundedBatches(IEnumerable<WoundedBatch> batches)
+    {
+        foreach (var batch in batches)
+            if (batch.Count > 0) wounded.Add(batch);
     }
     internal void DamageBuilding(BuildingType type, bool ruin = false)
     {
@@ -403,12 +436,15 @@ public sealed class VillageEconomy
         }
         FoodShortage = stock[3] == 0 && upkeep > 0;
         healingProgress = Math.Min(10, healingProgress + seconds * BuildingLevel(BuildingType.Hospital) * bonuses.HealingMultiplier / 10);
-        while (healingProgress >= 1 && wounded.FirstOrDefault(x => x.ReadyAt <= now) is { } patient && Resources.Covers(new(0, 1, 0, 1)))
+        while (healingProgress >= 1 && Resources.Covers(new(0, 1, 0, 1)))
         {
+            var idx = wounded.FindIndex(x => x.ReadyAt <= now);
+            if (idx < 0) break;
+            var patient = wounded[idx];
             Pay(new(0, 1, 0, 1)); healingProgress--;
             garrison[patient.UnitId] = garrison.GetValueOrDefault(patient.UnitId) + 1;
-            wounded.Remove(patient);
-            if (patient.Count > 1) wounded.Add(patient with { Count = patient.Count - 1 });
+            if (patient.Count > 1) wounded[idx] = patient with { Count = patient.Count - 1 };
+            else wounded.RemoveAt(idx);
         }
         foreach (var job in jobs.Where(x => x.CompletesAt <= now + 1e-9).ToArray())
         {
@@ -448,5 +484,12 @@ public sealed class VillageEconomy
                 training is null || Unlocked(training),
                 target is Building facility && facility.Type is BuildingType.Barracks or BuildingType.Stable or BuildingType.SiegeWorkshop or BuildingType.MainHall
                     ? TrainingRules.SpeedBonusPercent(facility.Type, facility.Level) : 0);
-        }).ToArray(), jobs.ToArray(), new Dictionary<string, int>(garrison), wounded.Sum(x => x.Count), Besieged, Production(resourceSpeed), Biome, OwnedOases, (double[])OasisBonuses.Clone(), ReservedTradeWagons);
+        }).ToArray(), jobs.ToArray(), new Dictionary<string, int>(garrison), wounded.Sum(x => x.Count), Besieged, Production(resourceSpeed), Biome, OwnedOases, (double[])OasisBonuses.Clone(), ReservedTradeWagons,
+        wounded.GroupBy(x => x.ArmyId)
+            .Select(g => new WoundedGroupSnapshot(
+                g.Key,
+                g.Sum(x => x.Count),
+                g.GroupBy(x => x.UnitId).ToDictionary(u => u.Key, u => u.Sum(x => x.Count))))
+            .OrderBy(g => g.ArmyId is null ? 1 : 0)
+            .ToArray());
 }

@@ -363,7 +363,7 @@ public sealed partial class LogisticsWorld
                 }
                 if (!army.Troops.Any(t => t.Unit is not SupplyWagon))
                 {
-                    if (Count(army) == 0) { WithdrawFromSieges(army, now, army.TargetId, army.Order); armies.Remove(army); continue; }
+                    if (Count(army) == 0) { WithdrawFromSieges(army, now, army.TargetId, army.Order); TransferArmyWoundedToGarrison(army.Id, home); armies.Remove(army); continue; }
                     if (army.Order != "Returning" && army.Order != "Battle") { WithdrawFromSieges(army, now, army.TargetId, army.Order); Route(army); }
                 }
             }
@@ -377,6 +377,7 @@ public sealed partial class LogisticsWorld
             {
                 home.Arrive(army.Troops, army.Wheat);
                 home.AddResources(army.Loot);
+                TransferArmyWoundedToGarrison(army.Id, home);
                 armies.Remove(army);
                 Note(army.OwnerId, now, "Your expedition returned. Troops, wagons and remaining wheat are home.");
                 continue;
@@ -1317,7 +1318,7 @@ public sealed partial class LogisticsWorld
                 allied ? x.SupplyStatus : null, x.TargetId, x.ActionSeconds, x.SupplyVillageId,
                 allied ? x.Loot : null, allied || x.SupportedOwnerId == viewer || IsScoutedBy(viewer, x.Id) ? x.Troops.ToDictionary(t => t.Unit.UnitId, t => t.Count) : null, x.AfterAttack, villages[x.HomeVillageId].Village.Tribe, x.DefendingSiteId, x.SupportedOwnerId,
                 x.Troops.Where(t => t.Count > 0 && (allied || t.Unit.Definition.Role != UnitRole.Scout)).ToDictionary(t => t.Unit.UnitId, t => (int)Math.Ceiling(t.Count / 10.0)), x.CampRadius,
-                allied ? x.WoundedCount : 0, allied ? x.DeadCount : 0, allied ? x.FledCount : 0,
+                allied ? LiveArmyWounded(x.Id) : 0, allied ? x.DeadCount : 0, allied ? x.FledCount : 0,
                 !allied && TryScoutExpiry(viewer, x.Id, out var scoutUntil) ? scoutUntil : null,
                 allied ? x.Objective : null);
             }).ToArray(),
@@ -1402,6 +1403,7 @@ public sealed partial class LogisticsWorld
         if (surviving.Count == 0)
         {
             WithdrawFromSieges(army, now, army.TargetId, army.Order);
+            TransferArmyWoundedToGarrison(army.Id, villages[army.HomeVillageId]);
             armies.Remove(army);
         }
         else if (Fighters(army) == 0 && army.Order is "Burning" or "Occupying" or "Blockading" or "Capturing" or "Attacking" or "Approaching" or "Intercepting")
@@ -1556,6 +1558,7 @@ public sealed partial class LogisticsWorld
                     villages[army.HomeVillageId].Rebase(destVillage, Count(army));
                 destVillage.Arrive(army.Troops, army.Wheat);
                 destVillage.AddResources(army.Loot);
+                TransferArmyWoundedToGarrison(army.Id, destVillage);
                 armies.Remove(army);
                 Note(army.OwnerId, now, "Your expedition merged into the village garrison.");
             }
@@ -1659,7 +1662,7 @@ public sealed partial class LogisticsWorld
                 home.LoseDeployed(lost);
                 stats.Wounded += lost;
                 army.WoundedCount += lost;
-                home.AdmitWounded(stack.Unit.UnitId, lost, now + 60 + Distance(army.Position, home.Village.Position) / stack.Unit.Speed);
+                home.AdmitWounded(stack.Unit.UnitId, lost, now + 60 + Distance(army.Position, home.Village.Position) / stack.Unit.Speed, army.Id);
             }
             if (stack.Count > lost) survivors.Add(new(stack.Unit, stack.Count - lost));
         }
@@ -1690,6 +1693,13 @@ public sealed partial class LogisticsWorld
         survivor.WoundedCount += absorbed.WoundedCount;
         survivor.DeadCount += absorbed.DeadCount;
         survivor.FledCount += absorbed.FledCount;
+        var survivorHome = villages[survivor.HomeVillageId];
+        foreach (var v in villages.Values)
+        {
+            var moved = v.ExtractArmyWounded(absorbed.Id);
+            if (moved.Count > 0)
+                survivorHome.AddWoundedBatches(moved.Select(b => b with { ArmyId = survivor.Id }));
+        }
         if (absorbed.AutoSupplyEnabled) survivor.SetSupply(true);
         survivor.SupplyWagons = Math.Clamp(Math.Max(survivor.SupplyWagons, absorbed.SupplyWagons), 0, 20);
         survivor.Escorts = Math.Clamp(Math.Max(survivor.Escorts, absorbed.Escorts), 0, 100);

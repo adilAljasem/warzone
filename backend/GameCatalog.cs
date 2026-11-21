@@ -9,7 +9,7 @@ public static class GameCatalog
 {
     public static IReadOnlyDictionary<TribeType, TribeDefinition> Tribes { get; } = new[]
     {
-        new TribeDefinition(TribeType.Romans, "Romans", "/assets/tribes/romans.svg", new(ExtraAutoQueueSlots: 1)),
+        new TribeDefinition(TribeType.Romans, "Romans", "/assets/tribes/romans.svg", new(BuildingCostMultiplier: .5)),
         new TribeDefinition(TribeType.Germans, "Germans", "/assets/tribes/germans.svg",
             new( TrainingTimeMultiplier: .7, LootMultiplier: 1.2)),
         new TribeDefinition(TribeType.Greeks, "Greeks", "/assets/tribes/greeks.svg", new(WallMultiplier: 2, HealingMultiplier: 2)),

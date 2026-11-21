@@ -114,6 +114,31 @@ public sealed partial class LogisticsWorld
             losses[unit.UnitId]=old with{Dead=old.Dead+dead,Wounded=old.Wounded+wounded,Fled=old.Fled+fled,Destroyed=old.Destroyed+destroyed};
         }
     }
+    private void ConvertReportWoundedToDead(Army force, IReadOnlyDictionary<string, int> killedWounded)
+    {
+        if (killedWounded.Count == 0) return;
+        foreach (var report in reports.Where(r => r.Status == "Active" && r.Forces.Any(f => f.Army == force)))
+        {
+            var participant = report.Forces.Find(f => f.Army == force);
+            if (participant is null) continue;
+            var losses = participant.Attacking ? report.AttackerLosses : report.DefenderLosses;
+            foreach (var (unitId, count) in killedWounded)
+            {
+                if (count <= 0) continue;
+                var prevPart = participant.Losses.GetValueOrDefault(unitId);
+                if (prevPart is null || prevPart.Wounded <= 0) continue;
+                var shift = Math.Min(count, prevPart.Wounded);
+                participant.Losses[unitId] = prevPart with { Dead = prevPart.Dead + shift, Wounded = prevPart.Wounded - shift };
+                var prevSide = losses.GetValueOrDefault(unitId);
+                if (prevSide is not null)
+                {
+                    var sideShift = Math.Min(shift, prevSide.Wounded);
+                    losses[unitId] = prevSide with { Dead = prevSide.Dead + sideShift, Wounded = prevSide.Wounded - sideShift };
+                }
+            }
+            RefreshReportForces(report);
+        }
+    }
     private void AddReportArmy(ReportState report,Army army,bool attacking)
     {
         if(report.Forces.Any(f=>f.Army==army))return;

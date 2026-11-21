@@ -13,7 +13,8 @@ public sealed record TribeBonuses(
     double WallMultiplier = 1,
     double HealingMultiplier = 1,
     bool CanRelocate = false,
-    double ResourceMultiplier = 1);
+    double ResourceMultiplier = 1,
+    double BuildingCostMultiplier = 1);
 
 public sealed record TribeDefinition(TribeType Type, string DisplayName, string IconUrl, TribeBonuses Bonuses)
 {

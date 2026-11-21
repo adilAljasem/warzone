@@ -450,7 +450,7 @@ public sealed partial class LogisticsWorld
                 var avail = RoleCount(defArmy, UnitRole.Scout);
                 if (avail <= 0) continue;
                 left -= KillScouts(defArmy, Math.Min(left, avail), scoutArmy.OwnerId, true);
-                if (Count(defArmy) == 0) armies.Remove(defArmy);
+                if (Count(defArmy) == 0) { KillWoundedOfDeadArmy(defArmy, scoutArmy.OwnerId); armies.Remove(defArmy); }
             }
         }
 
@@ -461,7 +461,7 @@ public sealed partial class LogisticsWorld
             DamageDefenderScouts(defLoss);
             KillScouts(scoutArmy, Count(scoutArmy), defenderOwner ?? scoutArmy.OwnerId, true);
             if (Count(scoutArmy) > 0) Route(scoutArmy);
-            else armies.Remove(scoutArmy);
+            else { KillWoundedOfDeadArmy(scoutArmy, defenderOwner ?? Guid.Empty); armies.Remove(scoutArmy); }
             ReportEvent(report.Id, now, "Enemy counter-scouts outnumbered your scouts. All your scouts were killed and no intelligence was gathered.", "Intercepted", defenderOwner);
             Note(scoutArmy.OwnerId, now, "Your scouts were intercepted and killed by superior enemy counter-scouts.", "war", targetId: report.Id);
             if (defenderOwner is { } defId) Note(defId, now, "Your scouts intercepted and eliminated enemy spies, suffering minor losses.", "war", targetId: report.Id);
@@ -677,7 +677,7 @@ public sealed partial class LogisticsWorld
         if (attackers.All(a => Fighters(a) == 0))
         {
             EndSiege(siege, "Defended", now);
-            foreach (var force in attackers) { if (Count(force) > 0) Route(force); else armies.Remove(force); }
+            foreach (var force in attackers) { if (Count(force) > 0) Route(force); else { KillWoundedOfDeadArmy(force, city.Village.OwnerId); armies.Remove(force); } }
             return;
         }
         if (city.Garrison().Length == 0)

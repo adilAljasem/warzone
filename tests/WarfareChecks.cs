@@ -113,14 +113,74 @@ internal static class WarfareChecks
         foreach (var city in new[] { r.A, r.B })
         {
             var rank = r.View.Warfare.Rankings.Single(x => x.PlayerId == city.Village.OwnerId);
-            var humanLoss = rank.Dead + rank.Wounded + rank.Fled;
-            var cycles = humanLoss / 10; var rem = humanLoss % 10;
-            Check(rank.Wounded == cycles * 6 + Math.Min(6, rem) && rank.Dead == cycles * 3 + Math.Clamp(rem - 6, 0, 3) && rank.Fled == cycles,
-                "Casualty stream preserves the 60/30/10 wounded/dead/fled distribution");
+            var won = battle.Winner == city.Village.OwnerId;
+            if (won)
+            {
+                var humanLoss = rank.Dead + rank.Wounded + rank.Fled;
+                var cycles = humanLoss / 10; var rem = humanLoss % 10;
+                Check(rank.Wounded == cycles * 6 + Math.Min(6, rem) && rank.Dead == cycles * 3 + Math.Clamp(rem - 6, 0, 3) && rank.Fled == cycles,
+                    "Surviving victor preserves the 60/30/10 wounded/dead/fled distribution");
+                Check(city.Snapshot().Wounded > 0 && city.Snapshot().WoundedGroups!.All(g => g.ArmyId is not null),
+                    "Surviving army retains its wounded attributed to its army in the hospital");
+            }
+            else
+            {
+                Check(city.Snapshot().Wounded == 0 && (city.Snapshot().WoundedGroups?.Length ?? 0) == 0 && rank.Wounded == 0,
+                    "Wiped-out losing army immediately loses all its wounded in the hospital");
+            }
             var living = city.Snapshot().Garrison.Where(x => !x.Key.EndsWith("wagon")).Sum(x => x.Value)
                 + r.View.Armies.Where(x => x.OwnerId == city.Village.OwnerId).Sum(x => x.Soldiers)
                 + r.View.Convoys.Where(x => x.OwnerId == city.Village.OwnerId).Sum(x => x.Escorts) + city.Snapshot().Wounded;
             Check(living + rank.Dead + rank.Fled == 120, "Combat conserves all human troops across field, home and hospital");
+        }
+        {
+            // Per-army hospital tracking: separate groups per army, live decrement on healing, and transfer on army merge
+            var hRealm = new Realm();
+            Gift(hRealm.A, "romans-infantry", 80); Gift(hRealm.A, "romans-wagon", 4);
+            var hArmy1 = hRealm.Dispatch(hRealm.A, new() { ["romans-infantry"] = 40 }, 1, false);
+            var hArmy2 = hRealm.Dispatch(hRealm.A, new() { ["romans-infantry"] = 40 }, 1, false);
+            hRealm.Tick(10);
+            hRealm.A.AdmitWounded("romans-infantry", 6, hRealm.Now + 1, hArmy1);
+            hRealm.A.AdmitWounded("romans-infantry", 4, hRealm.Now + 1, hArmy2);
+            var preGroups = hRealm.A.Snapshot().WoundedGroups!;
+            Check(preGroups.Length == 2 && preGroups.Single(g => g.ArmyId == hArmy1).Total == 6 && preGroups.Single(g => g.ArmyId == hArmy2).Total == 4,
+                "Hospital tracks wounded separately per army without mixing them");
+            Check(hRealm.View.Armies.Single(x => x.Id == hArmy1).Wounded == 6 && hRealm.View.Armies.Single(x => x.Id == hArmy2).Wounded == 4,
+                "Army snapshot displays each army's live remaining wounded count");
+            // Heal some wounded and confirm the army's live wounded count decreases
+            hRealm.Tick(25);
+            var healed1 = hRealm.View.Armies.Single(x => x.Id == hArmy1).Wounded;
+            var healed2 = hRealm.View.Armies.Single(x => x.Id == hArmy2).Wounded;
+            Check(healed1 + healed2 < 10 && healed1 < 6, "Healing in the hospital decreases the army's remaining wounded count");
+            // Merge hArmy1 and hArmy2 -> remaining wounded transfer to the merged army
+            hRealm.A.AdmitWounded("romans-infantry", 3, hRealm.Now + 500, hArmy1);
+            hRealm.A.AdmitWounded("romans-infantry", 5, hRealm.Now + 500, hArmy2);
+            var expectedCombined = hRealm.View.Armies.Single(x => x.Id == hArmy1).Wounded + hRealm.View.Armies.Single(x => x.Id == hArmy2).Wounded;
+            hRealm.World.Apply(hRealm.A.Village.OwnerId, new(Guid.NewGuid(), CommandKind.MergeArmies, hArmy1, TargetIds: [hArmy2]), hRealm.Now, 0);
+            for (var i = 0; i < 120 && hRealm.View.Armies.Count(x => x.OwnerId == hRealm.A.Village.OwnerId) > 1; i++) hRealm.Tick(.25);
+            var mergedArmy = hRealm.View.Armies.Single(x => x.OwnerId == hRealm.A.Village.OwnerId);
+            var postGroups = hRealm.A.Snapshot().WoundedGroups!;
+            Check(postGroups.Length == 1 && postGroups[0].ArmyId == mergedArmy.Id && mergedArmy.Wounded == expectedCombined,
+                "Merging armies reassigns all wounded in the hospital to the merged army");
+        }
+        {
+            // Romans trait: 50% cheaper building upgrades compared to other tribes
+            var rom = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(500, 500));
+            var grk = new VillageEconomy(Guid.NewGuid(), TribeType.Greeks, new(500, 500));
+            var rSnap = rom.Snapshot();
+            var gSnap = grk.Snapshot();
+            foreach (var bType in Enum.GetValues<BuildingType>())
+            {
+                var rCost = rSnap.Targets.Single(t => t.Kind == "Building" && t.Name == bType.ToString()).UpgradeCost!.Value;
+                var gCost = gSnap.Targets.Single(t => t.Kind == "Building" && t.Name == bType.ToString()).UpgradeCost!.Value;
+                Check(rCost.Wood == (long)Math.Ceiling(gCost.Wood * .5) && rCost.Iron == (long)Math.Ceiling(gCost.Iron * .5)
+                    && rCost.Stone == (long)Math.Ceiling(gCost.Stone * .5) && rCost.Wheat == (long)Math.Ceiling(gCost.Wheat * .5),
+                    $"Romans pay 50% building upgrade cost for {bType}");
+            }
+            var hallTarget = rSnap.Targets.Single(t => t.Kind == "Building" && t.Name == "MainHall");
+            var beforeRes = rom.Resources;
+            rom.Apply(new(Guid.NewGuid(), CommandKind.Upgrade, hallTarget.Id), 0);
+            Check(rom.Resources == beforeRes - hallTarget.UpgradeCost!.Value, "Romans debit exact 50% building upgrade cost");
         }
         var hospital = new VillageEconomy(Guid.NewGuid(), TribeType.Romans, new(50, 50));
         Check(GameCatalog.Units.Values.Where(u => u.Role != UnitRole.Wagon).All(u => u.Stats.HitPoints == 100)

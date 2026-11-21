@@ -41,4 +41,11 @@ for(let i=0;i<multiFlags.length;i++){
         assert(d>=40,`Flags ${i} and ${j} are well distributed across the army instead of bunched (dist=${d})`);
     }
 }
-console.log('Passed map visual rules: one figure per ten of each role, partial groups, uncapped balanced layouts, casualties, public figures, distributed flags and demolition/smoke lifecycle.');
+const settlementSource=(await readFile(new URL('../frontend/src/settlements.ts',import.meta.url),'utf8'))
+    .replace(/^import .*$/gm,'');
+const settlementJs=ts.transpileModule(settlementSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
+const {settlementMilestoneBuildings}=await import(`data:text/javascript;base64,${Buffer.from(settlementJs).toString('base64')}`);
+for(let level=1;level<=30;level++){
+    assert.equal(settlementMilestoneBuildings(level).length,Math.floor(level/5),`Main Hall level ${level} adds one exterior building every 5 levels`);
+}
+console.log('Passed map visual rules: one figure per ten of each role, partial groups, uncapped balanced layouts, casualties, public figures, distributed flags, 5-level village milestones and demolition/smoke lifecycle.');

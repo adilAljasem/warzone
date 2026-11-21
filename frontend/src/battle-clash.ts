@@ -8,37 +8,70 @@ function drawSword(blade: number, guard: number): Graphics {
     .circle(0, 18, 2.5).fill(guard);
 }
 
-/** Draws animated crossed steel swords with red attacker-swords / defender-shield side badges. */
+/** Draws animated crossed steel swords with per-army red attacker-swords / defender-shield badges. */
 export class BattleClash {
   readonly root = new Container();
   private readonly left = drawSword(0xf1f4f8, 0xd8b15f);
   private readonly right = drawSword(0xe3e8ef, 0xc79d4b);
   private readonly sparks = new Graphics();
-  private readonly attackerBadge: Container;
-  private readonly defenderBadge: Container;
+  private readonly badgesLayer = new Container();
+  private readonly attackerBadges: Container[] = [];
+  private readonly defenderBadges: Container[] = [];
 
   constructor() {
     this.left.position.set(-4, 2);
     this.right.position.set(4, 2);
     this.left.rotation = -.62;
     this.right.rotation = .62;
-    this.attackerBadge = this.drawSmallRedSwords();
-    this.defenderBadge = this.drawRedShield();
-    this.root.addChild(this.left, this.right, this.sparks, this.attackerBadge, this.defenderBadge);
+    this.root.addChild(this.left, this.right, this.sparks, this.badgesLayer);
     this.root.eventMode = 'none';
   }
 
-  /** Positions small red crossed swords on the attacker side (-1 left or 1 right) and a red shield on the defender side. */
+  /** Positions small red crossed swords in front of every attacking army and a red shield in front of every defending army. */
+  setRoleBadges(attackerWorldPoints: { x: number; y: number }[], defenderWorldPoints: { x: number; y: number }[]) {
+    while (this.attackerBadges.length < attackerWorldPoints.length) {
+      const badge = this.drawSmallRedSwords();
+      this.attackerBadges.push(badge);
+      this.badgesLayer.addChild(badge);
+    }
+    for (let i = 0; i < this.attackerBadges.length; i++) {
+      const badge = this.attackerBadges[i]!;
+      const pt = attackerWorldPoints[i];
+      if (!pt) {
+        badge.visible = false;
+      } else {
+        badge.visible = true;
+        badge.position.set(pt.x - this.root.x, pt.y - this.root.y);
+      }
+    }
+
+    while (this.defenderBadges.length < defenderWorldPoints.length) {
+      const badge = this.drawRedShield();
+      this.defenderBadges.push(badge);
+      this.badgesLayer.addChild(badge);
+    }
+    for (let i = 0; i < this.defenderBadges.length; i++) {
+      const badge = this.defenderBadges[i]!;
+      const pt = defenderWorldPoints[i];
+      if (!pt) {
+        badge.visible = false;
+      } else {
+        badge.visible = true;
+        badge.position.set(pt.x - this.root.x, pt.y - this.root.y);
+      }
+    }
+  }
+
+  /** Fallback single-side helper for tests or 1v1 positioning. */
   setSides(attackerSide?: -1 | 1) {
     if (!attackerSide) {
-      this.attackerBadge.visible = false;
-      this.defenderBadge.visible = false;
+      this.setRoleBadges([], []);
       return;
     }
-    this.attackerBadge.visible = true;
-    this.defenderBadge.visible = true;
-    this.attackerBadge.position.set(attackerSide * 32, 2);
-    this.defenderBadge.position.set(-attackerSide * 32, 2);
+    this.setRoleBadges(
+      [{ x: this.root.x + attackerSide * 32, y: this.root.y + 2 }],
+      [{ x: this.root.x - attackerSide * 32, y: this.root.y + 2 }]
+    );
   }
 
   private drawSmallRedSwords(): Container {

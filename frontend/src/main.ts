@@ -57,6 +57,11 @@ interface Job {
     completesAt: number;
     startedAt: number;
 }
+interface WoundedGroup {
+    armyId: string | null;
+    total: number;
+    units: Record<string, number>;
+}
 interface Economy {
     biome: string;
     ownedOases: number;
@@ -72,6 +77,7 @@ interface Economy {
     jobs: Job[];
     garrison: Record<string, number>;
     wounded: number;
+    woundedGroups?: WoundedGroup[];
     besieged: boolean;
 }
 interface Settings {
@@ -2065,6 +2071,42 @@ function facilityTrainingQueue(laneName: string, jobs: Job[], targets: Target[])
         return `<div class="queue-item ${active ? 'active' : 'queued'}"><div class="queue-item-head">${id ? unitPortrait(id) : ''}<div class="queue-item-info"><strong>${j.quantity} × ${esc(name)}</strong><small>${active ? 'Training now' : `Waiting in queue (#${idx + 1})`}</small></div><b data-deadline="${j.completesAt}">${time(j.completesAt - current)}</b></div><progress max="1" value="${progress}" data-training-start="${j.startedAt}" data-training-end="${j.completesAt}" aria-label="Training progress"></progress></div>`;
     }).join('')}</div></section>`;
 }
+function renderHospitalWoundedGroups(e: Economy): string {
+    const isAr = currentLanguage() === "ar";
+    const groups = (e.woundedGroups ?? []).filter(g => g.total > 0);
+    if (!groups.length) {
+        return `<section class="hospital-wounded-list" data-no-translate><div class="hospital-wounded-empty">${isAr ? "لا يوجد جرحى في المشفى حالياً." : "No wounded soldiers currently in the hospital."}</div></section>`;
+    }
+    const myArmies = ownArmies();
+    const cards = groups.map(group => {
+        const armyIdx = group.armyId ? myArmies.findIndex(a => a.id === group.armyId) : -1;
+        const army = armyIdx >= 0 ? myArmies[armyIdx]! : null;
+        const title = army
+            ? `${isAr ? "جيش" : "Army"} ${armyIdx + 1}`
+            : group.armyId
+                ? (isAr ? "جيش ميداني" : "Field army")
+                : (isAr ? "حامية القرية" : "Village garrison");
+        const orderNote = army ? esc(t(army.order)) : group.armyId ? "" : (isAr ? "داخل القرية" : "Home defense");
+        const focusId = army ? army.id : (!group.armyId ? `home:${e.villageId}` : "");
+        const unitPills = Object.entries(group.units)
+            .filter(([, count]) => count > 0)
+            .sort(([a], [b]) => compareUnitIds(a, b))
+            .map(([uId, count]) => `<span class="hospital-unit-pill" title="${esc(unitCatalog.get(uId)?.displayName ?? pretty(role(uId)))}">${unitPortrait(uId, false)}<b>${count.toLocaleString()}</b></span>`)
+            .join("");
+        const headInner = `<span class="hospital-wounded-title"><strong>${esc(title)}</strong>${orderNote ? `<small>${orderNote}</small>` : ""}</span><span class="hospital-wounded-count">${group.total.toLocaleString()} ${isAr ? "جريح" : "wounded"}</span>`;
+        return `<article class="hospital-wounded-group">
+            ${focusId
+                ? `<button type="button" class="hospital-wounded-head" data-action="focus-army" data-id="${focusId}">${headInner}</button>`
+                : `<div class="hospital-wounded-head">${headInner}</div>`}
+            <div class="hospital-wounded-units">${unitPills}</div>
+        </article>`;
+    }).join("");
+    return `<section class="hospital-wounded-list" data-no-translate>
+        <div class="army-units-editor-head"><strong>${isAr ? "الجرحى حسب الجيش" : "Wounded by Army"}</strong><small>${e.wounded.toLocaleString()} ${isAr ? "جريح" : "total"}</small></div>
+        ${cards}
+        <small class="muted">${isAr ? "إذا خسر جيش ومات بالكامل يموت جرحاه فوراً، وإذا اندمج مع جيش آخر ينتقل جرحاه للجيش الجديد." : "If an army is wiped out in battle, its wounded die immediately; if merged, they transfer to the merged army."}</small>
+    </section>`;
+}
 function buildingPanel(target: Target) {
     const e = state!.economy!, training = e.targets.filter(t => t.kind === "Training" && (t.trainingBuilding ?? facility(unitId(t))) === target.name).sort((a, b) => a.requiredBuildingLevel - b.requiredBuildingLevel);
     const mainHallLevel = e.targets.find(t => t.kind === "Building" && t.name === "MainHall")?.level ?? 1;
@@ -2092,7 +2134,7 @@ function buildingPanel(target: Target) {
         return governPanel();
     if (panelTab === "trade" && target.name === "Market") return marketPanel(state!.world!, e, state!.you, marketDraft, owner, running());
     const extra = target.name === "Warehouse" ? `Storage per resource: ${e.capacity.toLocaleString()}` : target.name === "Hospital" ? `${e.wounded} wounded awaiting recovery` : target.name === "MainHall" ? `${e.usedAutoSlots} / ${e.autoSlots} auto queues · Production +${Math.floor(target.level / 5) * 50}%` : target.name === "Smithy" ? `Attack & armor bonus: ${5 * (target.level - 1)}%` : target.name === "Market" ? `Market offer slots: ${target.level} · Instant swap 2:1` : target.name === "Wall" ? "Higher walls increase garrison protection." : "Faster recruitment with every building level.";
-    return `<div class="panel-hero">${target.kind === 'Training' ? unitPortrait(unitId(target)) : buildingArt(target.name, currentTribe())}<span class="level-seal">${target.level}<small>LEVEL</small></span></div><p class="muted">${descriptions[target.name] ?? 'Upgrade this training tier to recruit this unit faster.'}</p><div class="stat-line"><span>${extra}</span></div>${laneQueue}${training.length ? trainingSummary(target, training) + trainingRoadmap(training) : ''}<div class="cost-box"><small>${target.upgradeCost ? `UPGRADE TO LEVEL ${target.level + 1}` : 'FULLY UPGRADED'}</small>${costs(target.upgradeCost)}</div><div class="panel-footer">${button(target.kind === 'Training' ? 'Upgrade training tier' : 'Upgrade building', 'upgrade', target.id, 'primary wide', !running() || !target.upgradeCost || cappedByMainHall || !affordable(target.upgradeCost))}<small class="${cappedByMainHall ? "requirement-lack" : ""}">${cappedByMainHall ? `Requires Main Hall level ${target.level + 1}` : 'Upgrades complete instantly after payment.'}</small>${target.name === 'Market' ? button('Open market', 'tab', 'trade', 'quiet wide') : ''}</div>`;
+    return `<div class="panel-hero">${target.kind === 'Training' ? unitPortrait(unitId(target)) : buildingArt(target.name, currentTribe())}<span class="level-seal">${target.level}<small>LEVEL</small></span></div><p class="muted">${descriptions[target.name] ?? 'Upgrade this training tier to recruit this unit faster.'}</p><div class="stat-line"><span>${extra}</span></div>${target.name === 'Hospital' ? renderHospitalWoundedGroups(e) : ''}${laneQueue}${training.length ? trainingSummary(target, training) + trainingRoadmap(training) : ''}<div class="cost-box"><small>${target.upgradeCost ? `UPGRADE TO LEVEL ${target.level + 1}` : 'FULLY UPGRADED'}</small>${costs(target.upgradeCost)}</div><div class="panel-footer">${button(target.kind === 'Training' ? 'Upgrade training tier' : 'Upgrade building', 'upgrade', target.id, 'primary wide', !running() || !target.upgradeCost || cappedByMainHall || !affordable(target.upgradeCost))}<small class="${cappedByMainHall ? "requirement-lack" : ""}">${cappedByMainHall ? `Requires Main Hall level ${target.level + 1}` : 'Upgrades complete instantly after payment.'}</small>${target.name === 'Market' ? button('Open market', 'tab', 'trade', 'quiet wide') : ''}</div>`;
 
 }
 function governPanel() {
@@ -2276,7 +2318,10 @@ function armyPanel() {
                 stone: acc.stone + (a.loot?.stone ?? 0),
                 wheat: acc.wheat + Math.floor(a.wheat ?? 0)
             }), { wood: 0, iron: 0, stone: 0, wheat: 0 });
-            const woundedSum = fieldArmies.reduce((s, a) => s + (a.wounded ?? 0), 0);
+            const homeSelectedWounded = infos.some(i => i.isHome && i.villageId === state?.economy?.villageId)
+                ? (state?.economy?.woundedGroups?.find(g => g.armyId == null)?.total ?? 0)
+                : 0;
+            const woundedSum = fieldArmies.reduce((s, a) => s + (a.wounded ?? 0), 0) + homeSelectedWounded;
             const deadSum = fieldArmies.reduce((s, a) => s + (a.dead ?? 0), 0);
             const fledSum = fieldArmies.reduce((s, a) => s + (a.fled ?? 0), 0);
             const chips = infos.map(i => `<div class="army-inspector-chip">
@@ -2301,7 +2346,9 @@ function armyPanel() {
         const sameEco = state?.economy?.villageId === info.villageId ? state.economy : null;
         const chosen = chosenDraft(info.id);
         const chosenSum = Object.values(chosen).reduce((s, n) => s + n, 0);
-        const villageHospital = sameEco?.wounded ?? 0;
+        const villageHospital = sameEco?.woundedGroups
+            ? (sameEco.woundedGroups.find(g => g.armyId == null)?.total ?? 0)
+            : (sameEco?.wounded ?? 0);
         const recentVillageReports = (state?.world?.reports ?? []).filter(r => r.villageId === info.villageId && r.defender === state?.you);
         const vDead = recentVillageReports.reduce((s, r) => s + r.garrisonUnits.reduce((k, u) => k + u.dead, 0), 0);
         const vFled = recentVillageReports.reduce((s, r) => s + r.garrisonUnits.reduce((k, u) => k + u.fled, 0), 0);
@@ -3573,7 +3620,7 @@ document.addEventListener("click", event => {
 el('language-picker').innerHTML = select('language-select', '', [{ value: 'ar', label: 'AR' }, { value: 'en', label: 'EN' }], currentLanguage());
 
 const TRIBE_CARDS: { id: string; icon: string; ar: string; en: string; perkAr: string; perkEn: string; descAr: string; descEn: string }[] = [
-    { id: 'Romans', icon: '🦅', ar: 'الرومان', en: 'Romans', perkAr: '+1 تدريب', perkEn: '+1 Slot', descAr: '4 خانات تدريب تلقائي وأقوى فرسان ثقيلة ومشاة متوازنة.', descEn: 'Starts with 4 auto-training slots, balanced elites & top Heavy Cavalry.' },
+    { id: 'Romans', icon: '🦅', ar: 'الرومان', en: 'Romans', perkAr: 'بناء -50%', perkEn: '-50% Build', descAr: 'تطوير جميع المباني أرخص بـ 50% مع أقوى فرسان ثقيلة ومشاة متوازنة.', descEn: '50% cheaper building upgrades, balanced elites & top Heavy Cavalry.' },
     { id: 'Germans', icon: '🪓', ar: 'الجرمان', en: 'Germans', perkAr: 'نهب +20%', perkEn: '+20% Loot', descAr: 'تدريب أسرع 30% وجنود رخيصة وغنائم نهب إضافية +20%.', descEn: '30% faster recruitment, cheap massed raiders & +20% village raid loot.' },
     { id: 'Greeks', icon: '🛡️', ar: 'الإغريق', en: 'Greeks', perkAr: 'سور 2x', perkEn: '2x Wall', descAr: 'أقوى دفاع وسور مضاعف (+8%/مستوى) وشفاء مستشفى أسرع مرتين.', descEn: 'Double Wall protection (+8%/lv), 2x Hospital recovery & ironclad Hoplites.' },
     { id: 'Mongols', icon: '🐎', ar: 'المغول', en: 'Mongols', perkAr: 'نقل القرية', perkEn: 'Relocate', descAr: 'أسرع جيوش الخريطة بنصف استهلاك القمح مع قدرة ترحيل القرية.', descEn: 'Fastest armies, ½ Wheat upkeep & exclusive ability to relocate settlements.' },

@@ -45,7 +45,37 @@ public sealed partial class LogisticsWorld
         }
         force.WoundedCount += woundedCount; force.DeadCount += deadCount; force.FledCount += fledCount;
         ReportLosses(force, unit, deadCount, woundedCount, fledCount, 0, deployed);
-        home.AdmitWounded(unit.UnitId, woundedCount, now + 60 + Distance(force.Position, home.Village.Position) / unit.Speed);
+        home.AdmitWounded(unit.UnitId, woundedCount, now + 60 + Distance(force.Position, home.Village.Position) / unit.Speed, deployed ? force.Id : null);
+    }
+    private int LiveArmyWounded(Guid armyId) => villages.Values.Sum(v => v.WoundedForArmy(armyId));
+    private void TransferArmyWoundedToGarrison(Guid armyId, VillageEconomy targetVillage)
+    {
+        foreach (var v in villages.Values)
+        {
+            var moved = v.ExtractArmyWounded(armyId);
+            if (moved.Count > 0)
+                targetVillage.AddWoundedBatches(moved.Select(b => b with { ArmyId = null }));
+        }
+    }
+    private void KillWoundedOfDeadArmy(Army force, Guid killerOwner)
+    {
+        var totalKilledByUnit = new Dictionary<string, int>();
+        foreach (var v in villages.Values)
+        {
+            foreach (var (unitId, count) in v.KillArmyWounded(force.Id))
+                totalKilledByUnit[unitId] = totalKilledByUnit.GetValueOrDefault(unitId) + count;
+        }
+        var totalKilled = totalKilledByUnit.Values.Sum();
+        if (totalKilled <= 0) return;
+        force.DeadCount += totalKilled;
+        if (statistics.TryGetValue(force.OwnerId, out var stats))
+        {
+            stats.Wounded = Math.Max(0, stats.Wounded - totalKilled);
+            stats.Dead += totalKilled;
+        }
+        if (killerOwner != Guid.Empty && killerOwner != force.OwnerId && statistics.TryGetValue(killerOwner, out var killerStats))
+            killerStats.Kills += totalKilled;
+        ConvertReportWoundedToDead(force, totalKilledByUnit);
     }
     private static void TakeLoot(Army army, Resources loot)
     {
