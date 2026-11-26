@@ -1,4 +1,4 @@
-/* Mobile Landscape-First Responsive UI, Touch Comfort, Safe-Area Support, Rotate Gate & Install Helpers */
+/* Mobile Landscape-First Responsive UI, Compact Scaling, Touch Comfort, Safe-Area Support & Install Helpers */
 
 html.is-mobile-phone,
 html.is-mobile-phone body {
@@ -27,25 +27,25 @@ html.is-mobile-phone body {
 
 .mobile-rotate-card {
     width: min(340px, 100%);
-    padding: 24px 20px;
+    padding: 22px 18px;
     border-radius: 16px;
     border: 1px solid rgba(227, 193, 122, 0.45);
     text-align: center;
     display: grid;
-    gap: 12px;
+    gap: 11px;
     justify-items: center;
 }
 
 .mobile-rotate-card h2 {
-    font-size: 20px;
+    font-size: 19px;
     color: #f8e3ab;
     margin: 0;
 }
 
 .mobile-rotate-card p {
-    font-size: 12.5px;
+    font-size: 12px;
     color: #c9d7c1;
-    line-height: 1.55;
+    line-height: 1.5;
     margin: 0;
 }
 
@@ -59,8 +59,8 @@ html.is-mobile-phone body {
 }
 
 .mobile-rotate-anim {
-    width: 68px;
-    height: 68px;
+    width: 60px;
+    height: 60px;
     color: #e7c980;
     animation: mobilePhoneRotate 2.4s ease-in-out infinite;
 }
@@ -77,24 +77,32 @@ html.is-mobile-phone body {
 }
 
 .mobile-rotate-btn {
-    min-height: 44px;
-    font-size: 13.5px;
+    min-height: 42px;
+    font-size: 13px;
+}
+
+.mobile-rotate-install {
+    width: 100%;
+    padding-top: 8px;
+    border-top: 1px solid rgba(216, 233, 206, 0.16);
+    display: grid;
+    gap: 5px;
 }
 
 .mobile-rotate-skip {
-    font-size: 11.5px;
-    padding: 6px 10px;
+    font-size: 11px;
+    padding: 5px 10px;
     text-decoration: underline;
     color: #b7c6b8;
 }
 
 /* Mobile Install Bar on Welcome Card */
 .mobile-install-bar {
-    margin-top: 10px;
-    padding-top: 10px;
+    margin-top: 8px;
+    padding-top: 8px;
     border-top: 1px solid rgba(216, 233, 206, 0.16);
     display: grid;
-    gap: 6px;
+    gap: 5px;
 }
 
 .mobile-install-bar[hidden] {
@@ -109,13 +117,13 @@ html.is-mobile-phone body {
 }
 
 .mobile-install-btn {
-    flex: 1 1 140px;
+    flex: 1 1 135px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    min-height: 38px;
-    padding: 7px 10px;
+    min-height: 36px;
+    padding: 6px 10px;
     border-radius: 9px;
     border: 1px solid rgba(227, 193, 122, 0.45);
     background: linear-gradient(135deg, rgba(35, 72, 58, 0.92), rgba(20, 44, 36, 0.95));
@@ -127,13 +135,13 @@ html.is-mobile-phone body {
 }
 
 .mobile-install-btn.apk {
-    border-color: rgba(74, 222, 128, 0.55);
-    background: linear-gradient(135deg, rgba(24, 84, 52, 0.95), rgba(14, 52, 34, 0.96));
+    border-color: rgba(74, 222, 128, 0.6);
+    background: linear-gradient(135deg, rgba(24, 92, 56, 0.96), rgba(14, 56, 36, 0.97));
     color: #dcfce7;
 }
 
 .mobile-install-note {
-    font-size: 10px;
+    font-size: 9.5px;
     color: #b7c8b4;
     text-align: center;
 }
@@ -213,25 +221,54 @@ html.is-mobile-phone body {
 
 /* ==========================================================================
    MOBILE LANDSCAPE GAMEPLAY LAYOUT (Phones in Landscape: 600–960px x 320–560px)
+   Uses a unified compact mobile scale so EVERY HUD/drawer/overlay stays crisp
+   and leaves maximum open battlefield for RTS play.
    ========================================================================== */
 html.is-mobile-landscape {
-    --command-height: 108px;
-    --top: 48px;
-    --drawer: min(340px, 50vw);
+    --mobile-scale: 0.72;
+    --eff-scale: calc(var(--ui-scale, 1) * var(--mobile-scale));
+    --command-height: 92px;
+    --top: 44px;
+    --drawer: 310px;
+}
+
+@media (min-height: 440px) {
+    html.is-mobile-landscape {
+        --mobile-scale: 0.78;
+    }
 }
 
 html.is-mobile-landscape .game-shell {
-    --top-hud-offset: 48px;
+    --top-hud-offset: 46px;
 }
 
-/* Top HUD Bar: Compact single-row, safe-area aware, thumb-friendly */
+/* Apply compact mobile scale across all HUD chrome & overlays */
+html.is-mobile-landscape .hud,
+html.is-mobile-landscape .live-standings-hud,
+html.is-mobile-landscape .world-broadcast,
+html.is-mobile-landscape .important-alerts,
+html.is-mobile-landscape .alliance-invites,
+html.is-mobile-landscape .world-tools,
+html.is-mobile-landscape .world-chat,
+html.is-mobile-landscape .drawer,
+html.is-mobile-landscape .work-queue,
+html.is-mobile-landscape .command-deck,
+html.is-mobile-landscape .spectator-bar,
+html.is-mobile-landscape .achievement,
+html.is-mobile-landscape .toast,
+html.is-mobile-landscape .welcome-card,
+html.is-mobile-landscape .unit-tooltip {
+    zoom: var(--eff-scale);
+}
+
+/* Top HUD Bar: Compact single-row, safe-area aware, nothing clipped */
 html.is-mobile-landscape .hud {
     top: 0;
     left: 0;
     right: 0;
-    height: 44px;
+    height: 42px;
     border-radius: 0;
-    padding: 3px calc(8px + env(safe-area-inset-right, 0px)) 3px calc(8px + env(safe-area-inset-left, 0px));
+    padding: 2px calc(10px + env(safe-area-inset-right, 0px)) 2px calc(10px + env(safe-area-inset-left, 0px));
     gap: 5px;
     align-items: center;
     overflow-x: auto;
@@ -243,8 +280,8 @@ html.is-mobile-landscape .hud::-webkit-scrollbar {
 }
 
 html.is-mobile-landscape .brand {
-    min-width: 34px;
-    height: 34px;
+    min-width: 32px;
+    height: 32px;
     justify-content: center;
     padding: 2px;
 }
@@ -263,9 +300,9 @@ html.is-mobile-landscape .hud-nav {
 }
 
 html.is-mobile-landscape .hud-btn {
-    height: 34px;
-    min-width: 34px;
-    padding: 4px 7px;
+    height: 32px;
+    min-width: 32px;
+    padding: 3px 6px;
     gap: 4px;
     font-size: 10.5px;
     border-radius: 7px;
@@ -315,7 +352,7 @@ html.is-mobile-landscape .resource svg {
 }
 
 html.is-mobile-landscape .resource strong {
-    font-size: 11px;
+    font-size: 11.5px;
     line-height: 1.1;
     white-space: nowrap;
 }
@@ -325,7 +362,7 @@ html.is-mobile-landscape .resource small {
 }
 
 html.is-mobile-landscape .resource .production-percent {
-    font-size: 9px;
+    font-size: 9.5px;
     margin-inline-start: 3px;
 }
 
@@ -335,7 +372,7 @@ html.is-mobile-landscape .realm-possessions {
 }
 
 html.is-mobile-landscape .possession-badge {
-    padding: 2px 5px;
+    padding: 2px 6px;
     font-size: 10px;
     height: 28px;
 }
@@ -343,7 +380,7 @@ html.is-mobile-landscape .possession-badge {
 html.is-mobile-landscape .muster-hud {
     height: 30px;
     padding: 2px 7px;
-    font-size: 10px;
+    font-size: 10.5px;
 }
 
 html.is-mobile-landscape .language-control {
@@ -362,28 +399,30 @@ html.is-mobile-landscape .match-status {
     position: static;
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     flex-shrink: 0;
+    padding-inline-end: 4px;
 }
 
 html.is-mobile-landscape .match-status strong {
-    font-size: 10.5px;
+    font-size: 11px;
 }
 
 html.is-mobile-landscape #connection {
     display: none;
 }
 
-html.is-mobile-landscape .scene-heading {
+html.is-mobile-landscape .scene-heading,
+html.is-mobile-landscape .village-biome {
     display: none !important;
 }
 
-/* Live Attack Reports: sleek horizontal strip right below 44px HUD */
+/* Live Attack Reports: sleek horizontal strip right below HUD */
 html.is-mobile-landscape .important-alerts,
 html.is-mobile-landscape .has-drawer .important-alerts {
     top: 48px;
-    left: calc(8px + env(safe-area-inset-left, 0px));
-    width: calc(100vw / var(--ui-scale, 1) - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+    left: calc(10px + env(safe-area-inset-left, 0px));
+    width: calc(100vw / var(--eff-scale) - 20px);
     flex-wrap: nowrap;
     overflow-x: auto;
     gap: 5px;
@@ -392,7 +431,7 @@ html.is-mobile-landscape .has-drawer .important-alerts {
 }
 
 html.is-mobile-landscape .has-drawer .important-alerts {
-    width: calc(100vw / var(--ui-scale, 1) - var(--drawer-space, 320px) - 24px - env(safe-area-inset-left, 0px));
+    width: calc(100vw / var(--eff-scale) - var(--drawer-space, 320px) - 28px);
 }
 
 html.is-mobile-landscape .important-alerts::-webkit-scrollbar {
@@ -401,152 +440,146 @@ html.is-mobile-landscape .important-alerts::-webkit-scrollbar {
 
 html.is-mobile-landscape .important-alert {
     flex: 0 0 auto;
-    min-width: 132px;
-    max-width: 175px;
+    min-width: 140px;
+    max-width: 185px;
     border-radius: 8px;
 }
 
 html.is-mobile-landscape .important-alert button {
-    padding: 4px 7px;
+    padding: 5px 8px;
 }
 
 html.is-mobile-landscape .important-alert strong {
-    font-size: 9.5px;
-    line-height: 1.2;
+    font-size: 10.5px;
+    line-height: 1.25;
 }
 
 html.is-mobile-landscape .important-alert strong small {
-    font-size: 8.5px;
+    font-size: 9px;
     margin-top: 1px;
 }
 
-html.is-mobile-landscape .important-alert button > span.live-event-icon {
-    width: 15px;
-    height: 15px;
-    flex-basis: 15px;
+/* Progression / Achievement Notification: sleek compact pill, never huge */
+html.is-mobile-landscape .achievement {
+    top: calc(var(--top-hud-offset, 46px) + var(--events-offset, 0px) + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: min(320px, calc(100vw / var(--eff-scale) - 24px));
+    grid-template-columns: 26px 1fr 22px;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    align-items: center;
 }
 
-html.is-mobile-landscape .important-alert button > span.live-event-icon svg {
-    width: 15px;
-    height: 15px;
+html.is-mobile-landscape .achievement > span {
+    width: 26px;
+    height: 26px;
+    font-size: 15px;
 }
 
-/* Left Column: Alliance Invites & Compact Live Scoreboard */
-html.is-mobile-landscape .alliance-invites {
-    left: calc(8px + env(safe-area-inset-left, 0px));
-    width: 185px;
-    gap: 5px;
+html.is-mobile-landscape .achievement strong {
+    font-size: 11.5px;
 }
 
-html.is-mobile-landscape .alliance-invite-card {
-    padding: 6px 8px;
-    gap: 5px;
-    border-radius: 9px;
-}
-
-html.is-mobile-landscape .alliance-invite-head {
-    font-size: 10.5px;
-}
-
-html.is-mobile-landscape .alliance-invite-btns button {
-    padding: 5px 7px;
-    min-height: 30px;
+html.is-mobile-landscape .achievement p {
     font-size: 10px;
+    line-height: 1.35;
+    margin-top: 2px;
+}
+
+html.is-mobile-landscape .achievement button {
+    width: 22px;
+    height: 22px;
+    font-size: 16px;
+}
+
+/* Left Column: Alliance Invites, Scoreboard, Compact Zoom Strip & Chat Pill */
+html.is-mobile-landscape .alliance-invites {
+    left: calc(10px + env(safe-area-inset-left, 0px));
+    width: 205px;
+    gap: 5px;
 }
 
 html.is-mobile-landscape .live-standings-hud {
-    left: calc(8px + env(safe-area-inset-left, 0px));
-    width: 180px;
-    padding: 5px 7px;
+    left: calc(10px + env(safe-area-inset-left, 0px));
+    width: 196px;
+    padding: 6px 8px;
     gap: 4px;
     border-radius: 9px;
 }
 
 html.is-mobile-landscape .live-standings-hud.collapsed {
-    min-width: 150px;
+    min-width: 156px;
     width: auto;
-    padding: 4px 6px;
-}
-
-html.is-mobile-landscape .lsh-keep-btn {
-    padding: 3px 6px;
-}
-
-html.is-mobile-landscape .lsh-keep-top {
-    font-size: 9.5px;
-}
-
-html.is-mobile-landscape .lsh-keep-top b {
-    font-size: 9px;
-}
-
-html.is-mobile-landscape .lsh-toggle {
-    width: 28px;
-    height: 28px;
-    font-size: 13px;
-}
-
-html.is-mobile-landscape .lsh-row {
-    padding: 3px 5px;
-    font-size: 9.5px;
-    gap: 4px;
-    grid-template-columns: 16px 8px minmax(0, 1fr) auto;
+    padding: 5px 7px;
 }
 
 html.is-mobile-landscape .has-drawer .live-standings-hud {
     display: none;
 }
 
-/* Top-Center World Broadcast & Toast */
-html.is-mobile-landscape .world-broadcast {
-    min-width: 180px;
-    max-width: min(310px, calc(100vw / var(--ui-scale, 1) - 180px));
+/* Compact 3-button Map Zoom strip (+, -, Fit) on Left Middle */
+html.is-mobile-landscape .world-tools {
+    display: grid;
+    left: calc(10px + env(safe-area-inset-left, 0px));
+    top: 50%;
+    transform: translateY(-50%);
+    gap: 5px;
+    z-index: 20;
 }
 
-html.is-mobile-landscape .wb-card {
-    padding: 4px 9px;
-    gap: 6px;
+html.is-mobile-landscape .world-tools button {
+    width: 34px;
+    height: 34px;
+    font-size: 20px;
     border-radius: 8px;
 }
 
-html.is-mobile-landscape .wb-icon {
-    font-size: 14px;
+html.is-mobile-landscape #map-biomes,
+html.is-mobile-landscape #toggle-debug {
+    display: none;
 }
 
-html.is-mobile-landscape .wb-kicker {
-    font-size: 7.5px;
+/* Top-Center World Broadcast & Toast */
+html.is-mobile-landscape .world-broadcast {
+    min-width: 190px;
+    max-width: min(330px, calc(100vw / var(--eff-scale) - 48px));
 }
 
-html.is-mobile-landscape .wb-text {
-    font-size: 10px;
+html.is-mobile-landscape .has-drawer .world-broadcast {
+    left: calc((100vw / var(--eff-scale) - var(--drawer-space, 320px) - 16px) / 2);
+    max-width: min(330px, calc(100vw / var(--eff-scale) - var(--drawer-space, 320px) - 48px));
 }
 
 html.is-mobile-landscape .toast {
-    padding: 5px 11px;
-    font-size: 10.5px;
+    padding: 6px 12px;
+    font-size: 11px;
+    bottom: auto;
 }
 
-/* World Chat: sleek floating pill on bottom-left when collapsed, clean drawer when expanded */
+/* World Chat: sleek floating pill on bottom-left */
 html.is-mobile-landscape .world-chat {
-    left: calc(8px + env(safe-area-inset-left, 0px));
-    bottom: calc(var(--command-height) + 6px);
-    width: 215px;
+    left: calc(10px + env(safe-area-inset-left, 0px));
+    bottom: calc(var(--command-height) + 14px);
+    width: 225px;
     border-radius: 10px;
 }
 
 html.is-mobile-landscape .world-chat:has(#chat-content[hidden]) {
     width: auto;
-    min-width: 112px;
+    min-width: 108px;
 }
 
 html.is-mobile-landscape .chat-toggle {
     padding: 6px 10px;
     min-height: 32px;
-    font-size: 10px;
+    font-size: 10.5px;
 }
 
 html.is-mobile-landscape #chat-messages {
-    height: 92px;
+    height: 110px;
 }
 
 html.is-mobile-landscape .has-drawer .world-chat {
@@ -561,22 +594,67 @@ html.is-mobile-landscape .world-chat.lobby-chat {
     left: calc(10px + env(safe-area-inset-left, 0px));
     transform: none;
     bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-    width: calc(100vw - var(--drawer-space, 320px) - 28px);
+    width: calc(100vw / var(--eff-scale) - var(--drawer-space, 320px) - 28px);
 }
 
 html.is-mobile-landscape .world-chat.lobby-chat #chat-messages {
-    height: 110px;
+    height: 125px;
 }
 
-/* Hide redundant desktop map zoom buttons on touch phones (pinch-to-zoom is native) */
-html.is-mobile-landscape .world-tools {
+/* Spectator Bar: single sleek scrollable horizontal row at bottom, never covering the map */
+html.is-mobile-landscape .spectator-bar {
+    bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    flex-wrap: nowrap;
+    padding: 5px 10px;
+    gap: 7px;
+    border-radius: 10px;
+    max-width: calc(100vw / var(--eff-scale) - 20px);
+    z-index: 24;
+}
+
+html.is-mobile-landscape .spectator-pill {
+    font-size: 10.5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+html.is-mobile-landscape .spectator-follow-list {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-width: 60vw;
+    gap: 4px;
+    scrollbar-width: none;
+}
+
+html.is-mobile-landscape .spectator-follow-list::-webkit-scrollbar {
     display: none;
 }
 
+html.is-mobile-landscape .spectator-follow-btn {
+    padding: 4px 8px;
+    font-size: 10.5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+html.is-mobile-landscape .spectator-bar > button[data-action="leave"] {
+    padding: 4px 8px;
+    font-size: 10.5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+html.is-mobile-landscape .has-drawer .spectator-bar {
+    left: calc((100vw / var(--eff-scale) - var(--drawer-space, 320px) - 16px) / 2);
+    max-width: calc(100vw / var(--eff-scale) - var(--drawer-space, 320px) - 24px);
+}
+
 html.is-mobile-landscape .work-queue {
-    bottom: calc(var(--command-height) + 6px);
-    right: calc(8px + env(safe-area-inset-right, 0px));
-    max-width: 145px;
+    bottom: calc(var(--command-height) + 14px);
+    right: calc(10px + env(safe-area-inset-right, 0px));
+    max-width: 155px;
     flex-direction: column;
     gap: 4px;
 }
@@ -586,117 +664,110 @@ html.is-mobile-landscape .has-drawer .work-queue {
 }
 
 html.is-mobile-landscape .work-item {
-    padding: 4px 7px;
-    font-size: 9px;
+    padding: 5px 8px;
+    font-size: 9.5px;
     min-width: 0;
 }
 
-/* Bottom Command Deck: compact, full-width, easy thumb taps */
+/* Bottom Command Deck: compact, clean spacing, zero clipping */
 html.is-mobile-landscape .command-deck {
-    bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(6px + env(safe-area-inset-bottom, 0px));
     left: 50%;
     transform: translateX(-50%);
-    width: min(780px, calc(100vw / var(--ui-scale, 1) - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
-    gap: 4px;
+    width: min(860px, calc(100vw / var(--eff-scale) - 20px));
+    gap: 5px;
     z-index: 22;
 }
 
 html.is-mobile-landscape .army-order-bar {
-    padding: 3px 6px;
-    gap: 4px;
+    padding: 4px 8px;
+    gap: 5px;
     border-radius: 10px;
     max-width: 100%;
 }
 
-html.is-mobile-landscape .army-order-count {
-    font-size: 9.5px;
-}
-
 html.is-mobile-landscape .army-order-pill {
-    padding: 4px 8px;
+    padding: 4px 9px;
     min-height: 28px;
-    font-size: 9.5px;
-}
-
-html.is-mobile-landscape .army-merge-btn {
-    padding: 4px 12px;
-    font-size: 11px;
-    min-height: 30px;
+    font-size: 10.5px;
 }
 
 html.is-mobile-landscape .army-shelf {
-    padding: 3px 5px;
-    border-radius: 10px;
+    padding: 4px 6px;
+    border-radius: 11px;
     min-height: 0;
 }
 
 html.is-mobile-landscape .army-strip {
-    gap: 5px;
-    padding: 1px;
+    gap: 6px;
+    padding: 2px;
 }
 
 html.is-mobile-landscape .army-card {
-    flex: 0 0 64px;
-    width: 64px;
-    height: 52px;
+    flex: 0 0 74px;
+    width: 74px;
+    height: 68px;
 }
 
 html.is-mobile-landscape .army-card-btn {
-    padding: 2px 3px;
-    border-radius: 7px;
+    padding: 3px 4px;
+    border-radius: 8px;
 }
 
 html.is-mobile-landscape .army-name-tag {
-    font-size: 8px;
+    font-size: 8.5px;
 }
 
 html.is-mobile-landscape .army-lead-art {
-    width: 34px;
-    height: 26px;
+    width: 38px;
+    height: 30px;
 }
 
 html.is-mobile-landscape .army-total-count {
-    font-size: 10px;
+    font-size: 11px;
 }
 
 html.is-mobile-landscape .army-select-toggle {
     opacity: 1;
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
+    top: -5px;
+    inset-inline-start: auto;
+    inset-inline-end: -5px;
     font-size: 11px;
-    line-height: 20px;
+    line-height: 18px;
 }
 
 html.is-mobile-landscape .building-shelf {
-    padding: 4px 6px;
-    border-radius: 10px;
+    padding: 5px 7px;
+    border-radius: 11px;
 }
 
 html.is-mobile-landscape .building-strip {
-    gap: 5px;
-    padding: 1px 1px 2px;
+    gap: 6px;
+    padding: 2px;
 }
 
 html.is-mobile-landscape .building-card {
-    flex: 0 0 68px;
-    min-width: 68px;
-    max-width: 78px;
+    flex: 0 0 76px;
+    min-width: 76px;
+    max-width: 84px;
 }
 
 html.is-mobile-landscape .building-open {
-    height: 60px;
-    padding: 2px 3px 3px;
-    border-radius: 7px;
+    height: 68px;
+    padding: 2px 3px 4px;
+    border-radius: 8px;
 }
 
 html.is-mobile-landscape .building-open .building-art {
-    width: 44px;
-    height: 36px;
+    width: 48px;
+    height: 40px;
 }
 
 html.is-mobile-landscape .building-name {
-    font-size: 8.5px;
-    line-height: 11px;
+    font-size: 9px;
+    line-height: 12px;
 }
 
 html.is-mobile-landscape .building-upgrade {
@@ -707,36 +778,26 @@ html.is-mobile-landscape .building-upgrade {
     border-radius: 6px;
 }
 
-html.is-mobile-landscape .building-upgrade::before {
-    width: 10px;
-    height: 2.5px;
-}
-
-html.is-mobile-landscape .building-upgrade::after {
-    width: 2.5px;
-    height: 10px;
-}
-
 html.is-mobile-landscape .building-level {
     top: 3px;
     inset-inline-end: 3px;
-    min-width: 20px;
-    padding: 1px 3px;
-    font-size: 11.5px;
-    line-height: 13px;
+    min-width: 22px;
+    padding: 1px 4px;
+    font-size: 12px;
+    line-height: 14px;
 }
 
 html.is-mobile-landscape .building-level small {
     display: none;
 }
 
-/* Right Drawer: full height, above command-deck, comfortable touch controls */
+/* Right Drawer: sleek ~32% of screen width at eff-scale, full height, compact internals */
 html.is-mobile-landscape #drawer,
 html.is-mobile-landscape .drawer {
     top: 48px !important;
     bottom: calc(6px + env(safe-area-inset-bottom, 0px)) !important;
-    right: calc(6px + env(safe-area-inset-right, 0px));
-    width: min(350px, 50vw);
+    right: calc(8px + env(safe-area-inset-right, 0px));
+    width: min(320px, calc(100vw / var(--eff-scale) * 0.40));
     max-height: none !important;
     padding: 10px 12px;
     border-radius: 11px;
@@ -748,50 +809,29 @@ html.is-mobile-landscape .drawer[data-panel=dispatch],
 html.is-mobile-landscape .drawer[data-panel=rooms],
 html.is-mobile-landscape .drawer[data-panel=lobby],
 html.is-mobile-landscape .drawer[data-building-name=MainHall] {
-    width: min(450px, 64vw);
+    width: min(440px, calc(100vw / var(--eff-scale) * 0.56));
 }
 
 html.is-mobile-landscape .drawer-heading {
-    min-height: 32px;
+    min-height: 30px;
     margin-bottom: 5px;
 }
 
 html.is-mobile-landscape .drawer-heading h2 {
-    font-size: 16px;
+    font-size: 17px;
 }
 
-html.is-mobile-landscape .drawer-heading span {
-    font-size: 8.5px;
+html.is-mobile-landscape .biome-preview {
+    height: 54px !important;
+    min-height: 54px !important;
 }
 
-html.is-mobile-landscape .icon-button {
-    width: 34px;
-    height: 34px;
-    font-size: 20px;
-}
-
-html.is-mobile-landscape .tabs {
-    margin-bottom: 8px;
-}
-
-html.is-mobile-landscape .tabs button {
-    padding: 6px 4px;
-    min-height: 32px;
-    font-size: 10.5px;
-}
-
-html.is-mobile-landscape #drawer-body {
-    gap: 8px;
-}
-
-html.is-mobile-landscape .drawer button {
-    min-height: 34px;
-    padding: 6px 10px;
-    font-size: 11.5px;
+html.is-mobile-landscape .biome-preview span {
+    font-size: 28px !important;
 }
 
 html.is-mobile-landscape .panel-hero {
-    height: 74px;
+    height: 76px;
 }
 
 html.is-mobile-landscape .panel-hero > .building-art,
@@ -800,43 +840,62 @@ html.is-mobile-landscape .panel-hero > .scenery-art {
     height: 72px;
 }
 
-html.is-mobile-landscape .level-seal {
-    width: 34px;
-    height: 34px;
+html.is-mobile-landscape .oasis-summary {
+    position: static;
+    padding: 4px 0 8px;
+}
+
+html.is-mobile-landscape .oasis-resource-grid {
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+html.is-mobile-landscape .oasis-resource-grid > div {
+    padding: 4px 2px;
+}
+
+html.is-mobile-landscape .oasis-resource-grid svg {
+    width: 18px;
+    height: 18px;
+}
+
+html.is-mobile-landscape .oasis-resource-grid b {
     font-size: 13px;
-    bottom: 6px;
 }
 
-html.is-mobile-landscape .cost-box {
-    padding: 8px 10px;
+html.is-mobile-landscape .drawer button {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 11.5px;
 }
 
-html.is-mobile-landscape .train-portrait > .unit-portrait {
-    width: 48px;
-    height: 48px;
+html.is-mobile-landscape .icon-button {
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
 }
 
 /* Larger thumb-friendly radial command icons on touch phones */
 html.is-mobile-phone .radial-action-icon {
-    width: 48px;
-    height: 48px;
+    width: 46px;
+    height: 46px;
 }
 
 html.is-mobile-phone .radial-action-label {
-    font-size: 11.5px;
+    font-size: 11px;
     padding: 3px 8px;
 }
 
-/* Welcome Card in Mobile Landscape: sleek wide layout so no cramped scrolling */
+/* Welcome Card in Mobile Landscape: sleek wide layout, fits cleanly with install button */
 html.is-mobile-landscape .welcome-overlay {
-    padding: calc(48px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
+    padding: 44px 12px 8px;
     align-items: center;
 }
 
 html.is-mobile-landscape .welcome-card {
-    width: min(640px, calc(100vw - 24px));
-    max-height: calc(100dvh - 58px);
-    padding: 12px 16px;
+    width: min(640px, calc(100vw / var(--eff-scale) - 24px));
+    max-height: calc(100dvh / var(--eff-scale) - 56px);
+    padding: 14px 18px;
     border-radius: 14px;
 }
 
@@ -844,37 +903,14 @@ html.is-mobile-landscape .welcome-emblem {
     display: none;
 }
 
-html.is-mobile-landscape .welcome-card .eyebrow {
-    font-size: 9px;
-}
-
 html.is-mobile-landscape .welcome-card h1 {
-    font-size: 24px;
+    font-size: 26px;
     letter-spacing: 3px;
     margin-top: 2px;
 }
 
 html.is-mobile-landscape .welcome-card > p {
     display: none;
-}
-
-html.is-mobile-landscape .welcome-card label {
-    margin: 6px 0;
-    font-size: 10.5px;
-}
-
-html.is-mobile-landscape .welcome-card input {
-    padding: 7px 9px;
-    font-size: 12.5px;
-}
-
-html.is-mobile-landscape .tribe-picker-grid {
-    gap: 5px;
-}
-
-html.is-mobile-landscape .tribe-tile {
-    padding: 6px 4px;
-    min-height: 42px;
 }
 
 html.is-mobile-landscape .welcome-actions {
@@ -887,26 +923,11 @@ html.is-mobile-landscape .welcome-actions {
 html.is-mobile-landscape .welcome-actions .wide {
     margin-top: 0;
     min-height: 38px;
-    padding: 7px 10px;
-    font-size: 11.5px;
 }
 
-html.is-mobile-landscape .welcome-seo-links {
-    margin-top: 6px;
-    font-size: 10px;
-}
-
-html.is-mobile-landscape #welcome-tagline {
-    display: block;
-    margin-top: 4px;
-    font-size: 9.5px;
-}
-
-/* Game Menu Dialog in Mobile Landscape */
 html.is-mobile-landscape .game-menu {
-    max-height: calc(100dvh - 16px);
-    padding: 12px 14px;
-    gap: 8px;
+    zoom: var(--eff-scale);
+    max-height: calc(100dvh / var(--eff-scale) - 16px);
 }
 
 html.is-mobile-landscape .app-version {

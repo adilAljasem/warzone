@@ -123,6 +123,9 @@ export class WorldMap {
   private pendingFocus: { point: Point; zoom: number } | null = null;
   private last: { world: WorldView | null; players: MapPlayer[]; viewer: string; lobbyCapacity?: number } | null = null;
   private dragging: { x: number; y: number; panX: number; panY: number; moved: boolean; pointerId: number; longPressTimer: number; longPressed: boolean } | null = null;
+  private activeTouchPointers = new Map<number, { x: number; y: number }>();
+  private pinch: { startDist: number; startZoom: number; anchorWorld: Point } | null = null;
+  private suppressTapUntil = 0;
   constructor(private host: HTMLElement, private onSelect: (selection: MapSelection, modifiers: { ctrl: boolean; shift: boolean; client?: Point }) => void) {}
 
   async init() {
@@ -1133,6 +1136,49 @@ export class WorldMap {
     const target = this.resolveAtClient(clientX, clientY);
     this.rightClickHandler(target, { x: clientX, y: clientY });
   }
+  private beginPinch(canvas: HTMLCanvasElement) {
+    const pts = [...this.activeTouchPointers.values()];
+    if (pts.length < 2) return;
+    const [a, b] = pts;
+    const dist = Math.hypot(b!.x - a!.x, b!.y - a!.y);
+    const rect = canvas.getBoundingClientRect();
+    const cx = (a!.x + b!.x) / 2 - rect.left;
+    const cy = (a!.y + b!.y) / 2 - rect.top;
+    if (this.dragging?.longPressTimer) window.clearTimeout(this.dragging.longPressTimer);
+    if (this.dragging) {
+      try { if (canvas.hasPointerCapture(this.dragging.pointerId)) canvas.releasePointerCapture(this.dragging.pointerId); } catch { /* ignore */ }
+      this.dragging = null;
+    }
+    this.pinch = {
+      startDist: Math.max(12, dist),
+      startZoom: this.zoomFactor,
+      anchorWorld: this.world.toLocal({ x: cx, y: cy })
+    };
+    this.hoverHandler?.(null, null);
+  }
+  private updatePinch(canvas: HTMLCanvasElement) {
+    if (!this.pinch || this.activeTouchPointers.size < 2) return;
+    const [a, b] = [...this.activeTouchPointers.values()];
+    const dist = Math.hypot(b!.x - a!.x, b!.y - a!.y);
+    const rect = canvas.getBoundingClientRect();
+    const cx = (a!.x + b!.x) / 2 - rect.left;
+    const cy = (a!.y + b!.y) / 2 - rect.top;
+    const width = this.host.clientWidth, height = this.host.clientHeight;
+    if (width < 1 || height < 1) return;
+    const bottom = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--command-height')) || 220;
+    const topPad = height < 540 ? 48 : 105;
+    const available = Math.max(120, height - topPad - bottom - (height < 540 ? 10 : 25));
+    const baseScale = Math.min((width - 60) / 4500, available / 2925);
+    const nextZoom = Math.max(.55, Math.min(8, this.pinch.startZoom * (dist / this.pinch.startDist)));
+    this.zoomFactor = nextZoom;
+    this.scale = baseScale * this.zoomFactor;
+    this.pan.x = Math.max(-8500, Math.min(8500, cx - this.pinch.anchorWorld.x * this.scale - (width - 4500 * this.scale) / 2));
+    this.pan.y = Math.max(-5800, Math.min(5800, cy - this.pinch.anchorWorld.y * this.scale - (this.viewportCenterY - 1462.5 * this.scale)));
+    this.world.scale.set(this.scale);
+    this.world.position.set((width - 4500 * this.scale) / 2 + this.pan.x, this.viewportCenterY - 1462.5 * this.scale + this.pan.y);
+    this.updateDetail();
+    this.cameraMoveHandler?.();
+  }
   private bind() {
     const canvas = this.app.canvas;
     canvas.style.touchAction = "none";
@@ -1145,12 +1191,19 @@ export class WorldMap {
       }
     });
     canvas.addEventListener("pointerdown", event => {
+      if (event.pointerType === "touch") {
+        this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (this.activeTouchPointers.size >= 2) {
+          this.beginPinch(canvas);
+          return;
+        }
+      }
       if (event.button !== 0) return;
       if (this.dragging?.longPressTimer) window.clearTimeout(this.dragging.longPressTimer);
       const startX = event.clientX, startY = event.clientY, pointerId = event.pointerId;
       const longPressTimer = event.pointerType === "touch"
         ? window.setTimeout(() => {
-            if (!this.dragging || this.dragging.pointerId !== pointerId || this.dragging.moved) return;
+            if (this.pinch || !this.dragging || this.dragging.pointerId !== pointerId || this.dragging.moved) return;
             this.dragging.longPressed = true;
             try { navigator.vibrate?.(18); } catch { /* Optional haptic */ }
             try { this.triggerRightClick(startX, startY); } catch (err) { console.error("Long-press error:", err); }
@@ -1160,6 +1213,13 @@ export class WorldMap {
     });
     canvas.addEventListener("pointermove", event => {
       try {
+        if (event.pointerType === "touch" && this.activeTouchPointers.has(event.pointerId)) {
+          this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+          if (this.pinch && this.activeTouchPointers.size >= 2) {
+            this.updatePinch(canvas);
+            return;
+          }
+        }
         const rect = canvas.getBoundingClientRect(), p = this.world.toLocal({x:event.clientX-rect.left,y:event.clientY-rect.top});
         const target = this.pickAt(p) ?? null;
         const hover=target?this.moving.get(target.id):undefined;
@@ -1170,6 +1230,7 @@ export class WorldMap {
           this.hoverHandler?.(target ?? this.resolveAtClient(event.clientX, event.clientY), { x: event.clientX, y: event.clientY });
           return;
         }
+        if (event.pointerId !== this.dragging.pointerId) return;
         const dx = event.clientX - this.dragging.x, dy = event.clientY - this.dragging.y;
         if (!this.dragging.moved && Math.hypot(dx, dy) > 14) {
           this.dragging.moved = true;
@@ -1192,13 +1253,23 @@ export class WorldMap {
       }
     });
     canvas.addEventListener("pointerup", event => {
+      if (event.pointerType === "touch") {
+        this.activeTouchPointers.delete(event.pointerId);
+        if (this.pinch) {
+          if (this.activeTouchPointers.size < 2) {
+            this.pinch = null;
+            this.suppressTapUntil = performance.now() + 260;
+          }
+          return;
+        }
+      }
       if (!this.dragging || event.pointerId !== this.dragging.pointerId) return;
       if (this.dragging.longPressTimer) {
         window.clearTimeout(this.dragging.longPressTimer);
         this.dragging.longPressTimer = 0;
       }
       try {
-        if (event.button === 0 && !this.dragging.moved && !this.dragging.longPressed) {
+        if (event.button === 0 && !this.dragging.moved && !this.dragging.longPressed && performance.now() > this.suppressTapUntil) {
           const selected = this.resolveAtClient(event.clientX, event.clientY);
           this.selected = selected; this.updateDetail();
           this.onSelect(selected, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey, client: { x: event.clientX, y: event.clientY } });
@@ -1214,7 +1285,11 @@ export class WorldMap {
         canvas.style.cursor = this.hovered ? 'pointer' : 'grab';
       }
     });
-    canvas.addEventListener("pointercancel", () => {
+    canvas.addEventListener("pointercancel", event => {
+      if (event.pointerType === "touch") {
+        this.activeTouchPointers.delete(event.pointerId);
+        if (this.activeTouchPointers.size < 2) this.pinch = null;
+      }
       if (this.dragging?.longPressTimer) window.clearTimeout(this.dragging.longPressTimer);
       this.dragging = null;
       this.hoverHandler?.(null, null);
