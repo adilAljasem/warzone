@@ -156,8 +156,9 @@ export class WorldMap {
     this.app.renderer.resize(width, height);
     if(width<1||height<1)return;
     const bottom = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--command-height')) || 220;
-    const available = Math.max(120, height - 105 - bottom - 25);
-    this.viewportCenterY = 105 + available / 2;
+    const topPad = height < 540 ? 48 : 105;
+    const available = Math.max(120, height - topPad - bottom - (height < 540 ? 10 : 25));
+    this.viewportCenterY = topPad + available / 2;
     this.scale = Math.min((width - 60) / 4500, available / 2925) * this.zoomFactor;
     this.world.scale.set(this.scale);
     this.world.position.set((width - 4500 * this.scale) / 2 + this.pan.x, this.viewportCenterY - 1462.5 * this.scale + this.pan.y);

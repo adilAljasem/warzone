@@ -1,0 +1,18 @@
+{
+  "name": "warzonee-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capacitor Android wrapper for Warzonee (loads live https://warzonee.com in forced landscape fullscreen so web updates sync instantly).",
+  "scripts": {
+    "cap:add:android": "npx cap add android",
+    "cap:sync": "npx cap sync android && node scripts/patch-android.mjs",
+    "cap:open": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}

@@ -27,6 +27,8 @@ import { buildingArt } from "./art";
 import { marketPanel, marketOffersSection, estimateTradeWagons, type MarketDraft } from "./market";
 import { DebugOverlay, type ServerDebugTelemetry } from "./debug-overlay";
 import { AdminOverlay } from "./admin-overlay";
+import { initMobileShell, isMobilePhone } from "./mobile-shell";
+import "./mobile.css";
 interface Resources {
     wood: number;
     iron: number;
@@ -478,6 +480,7 @@ let selection: MapSelection | null = null, busy = false, roomBusy = false, pendi
 const isTouchUi = () => typeof window !== "undefined" && (
     (window.matchMedia?.("(pointer: coarse)").matches ?? false)
     || (window.matchMedia?.("(hover: none)").matches ?? false)
+    || isMobilePhone()
     || (navigator.maxTouchPoints > 0 && window.innerWidth <= 900)
 );
 let tapOrderMode = isTouchUi();
@@ -489,7 +492,7 @@ let attackObjective = "Raid";
 let dispatchMission: "attack" | "reinforce" | "blockade" | "scout" | "camp" | "burn" = "attack";
 const marketDraft: MarketDraft = { offerResource: "Wood", offerAmount: 500, askResource: "Iron", askAmount: 500, swapGiveResource: "Iron", swapTakeResource: "Wheat", swapAmount: 250 };
 const transferDraft: Resources = { wood: 100, iron: 100, stone: 100, wheat: 100 };
-let transferSource = "", chatOpen = window.innerWidth > 700, chatKey = "";
+let transferSource = "", chatOpen = !isMobilePhone() && window.innerWidth > 700, chatKey = "";
 let dispatchAuto = true, campLoadedOnly = true, dispatchArmy = "new", preferredDispatchArmy = "", formation: Record<string, number> = {};
 let focusedMatchId = "", dismissedVictoryMatchId = "";
 let victoryRaf = 0, victoryKey = "";
@@ -532,10 +535,11 @@ const ROOM_PRESETS: Record<RoomPresetId, { durationMinutes: number; castleUnlock
 };
 
 let streamerMode = false;
-let liveHudCollapsed = false;
+let liveHudCollapsed = isMobilePhone();
 try {
     streamerMode = localStorage.getItem("warzone.streamerMode") === "true";
-    liveHudCollapsed = localStorage.getItem("warzone.liveHudCollapsed") === "true";
+    const savedLiveHud = localStorage.getItem("warzone.liveHudCollapsed");
+    if (savedLiveHud !== null) liveHudCollapsed = savedLiveHud === "true";
 } catch { /* Storage is optional. */ }
 
 interface BroadcastItem { id: number; kind: string; text: string }
@@ -1576,7 +1580,7 @@ function render(snapshot: Snapshot | null) {
     if (snapshot && snapshot.id === state?.id && snapshot.revision < state.revision) {
         debugOverlay.recordStaleDrop();
         return;
-    } const previous = state; state = snapshot; if (snapshot && returnedToMenu) setReturnedToMenu(false); gameAudio.update(snapshot); clockReceived = performance.now(); el("welcome").hidden = !!snapshot || panel === "rooms" || panel === "online-players"; if (!snapshot) {
+    } const previous = state; state = snapshot; if (snapshot && returnedToMenu) setReturnedToMenu(false); gameAudio.update(snapshot); mobileShell.setMatchActive(snapshot?.status === "Running"); clockReceived = performance.now(); el("welcome").hidden = !!snapshot || panel === "rooms" || panel === "online-players"; if (!snapshot) {
             pendingSnapshot = null;
             selectedArmies = []; oasisUnitSelection = null; focusedMatchId = ""; dismissedVictoryMatchId = ""; renderVictoryOverlay(null);
             closeRadial(); renderCursorBadge(el("map-cursor-badge"), "none", null); map.setSelectedArmies([], []);
@@ -3938,7 +3942,8 @@ syncWelcomeMatchmakingUi();
 el('language-select').onchange = () => setLanguage(el<HTMLInputElement>('language-select').value);
 el<HTMLInputElement>('language-select').value = currentLanguage();
 el('village-biome').onclick = () => { selection = null; openPanel('biome', el('village-biome').dataset.id ?? ''); };
-window.addEventListener('languagechange', () => { renderTribePicker(); syncWelcomeMatchmakingUi(); renderAllianceInvites(); renderLiveStandingsHud(); renderArmyOrderBar(); map.refreshLanguage(); renderArmiesStrip(); renderDrawer(true); renderChat(); renderSpectatorBar(); adminOverlay.refreshLanguageAndState(); localizeNow(); });
+const mobileShell = initMobileShell(() => { if (panel) renderDrawer(true); renderChat(); renderLiveStandingsHud(); });
+window.addEventListener('languagechange', () => { renderTribePicker(); syncWelcomeMatchmakingUi(); renderAllianceInvites(); renderLiveStandingsHud(); renderArmyOrderBar(); map.refreshLanguage(); renderArmiesStrip(); renderDrawer(true); renderChat(); renderSpectatorBar(); adminOverlay.refreshLanguageAndState(); mobileShell.refreshLanguage(); localizeNow(); });
 document.addEventListener('keydown', event => {
     if (!state) {
         const active = document.activeElement;
