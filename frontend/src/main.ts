@@ -316,7 +316,11 @@ function syncLiveGamesBadge() {
 function syncWelcomeMatchmakingUi() {
     const isAr = currentLanguage() === "ar";
     const findLabel = document.getElementById("find-match-label");
-    if (findLabel) findLabel.textContent = isAr ? "البحث عن جيم" : "Find Match";
+    if (findLabel) findLabel.textContent = isAr ? "البحث عن جيم أونلاين (30د)" : "Find Online Match (30m)";
+    const blitzBtn = document.getElementById("play-blitz");
+    if (blitzBtn) blitzBtn.textContent = isAr ? "⚡ جيم سريع ضد البوتات (30د · 3x)" : "⚡ Instant Blitz vs AI (30m · 3x)";
+    const tagline = document.getElementById("welcome-tagline");
+    if (tagline) tagline.textContent = isAr ? "مباريات حاسمة في 30 دقيقة · 5 حضارات · تحالفات وخيانات" : "30-Min Fast Battles · 5 Civilizations · Alliances & Betrayals";
     const title = document.getElementById("matchmaking-title");
     const sub = document.getElementById("matchmaking-sub");
     if (matchReadyState) {
@@ -406,8 +410,11 @@ const seenIncomingAllianceIds = new Set<string>();
 function renderAllianceInvites() {
     const box = document.getElementById("alliance-invites");
     const badge = document.getElementById("alliance-count");
+    const game = el("game");
     if (!state || state.status !== "Running" || state.isSpectator) {
         if (box) { box.hidden = true; if (allianceInviteHtml) { box.innerHTML = ""; allianceInviteHtml = ""; } }
+        game.classList.remove("has-alliance-invites");
+        game.style.setProperty("--invites-height", "0px");
         if (badge) { badge.hidden = true; badge.textContent = ""; }
         if (!state) seenIncomingAllianceIds.clear();
         return;
@@ -427,6 +434,8 @@ function renderAllianceInvites() {
     if (!box) return;
     if (incoming.length === 0) {
         box.hidden = true;
+        game.classList.remove("has-alliance-invites");
+        game.style.setProperty("--invites-height", "0px");
         if (allianceInviteHtml) { box.innerHTML = ""; allianceInviteHtml = ""; }
         return;
     }
@@ -441,16 +450,21 @@ function renderAllianceInvites() {
         </div>
     </article>`).join("");
     box.hidden = false;
+    game.classList.add("has-alliance-invites");
     if (html !== allianceInviteHtml) {
         box.innerHTML = html;
         allianceInviteHtml = html;
     }
+    game.style.setProperty("--invites-height", `${box.offsetHeight}px`);
 }
 function renderImportantAlerts() {
-    const box = el("important-alerts"); if (!state) { box.hidden = true; return; }
+    const box = el("important-alerts"); const game = el("game");
+    if (!state) { box.hidden = true; game.classList.remove("has-live-events"); game.style.setProperty("--events-height", "0px"); return; }
     alertInbox.use(state.id, state.you);
     alertInbox.names = new Map([...(state.world?.oases ?? []).map(o => [o.id, o.name + ' · ' + Math.round(o.position.x) + ':' + Math.round(o.position.y)] as [string, string]), ...(state.world?.warfare?.settlements ?? []).map(c => [c.id, owner(c.ownerId) + "'s village"] as [string, string])]); const html = liveEvents.render(state.status === "Running" && state.world ? activeEvents(state.world, state.you) : []);
-    box.hidden = !html; el("game").classList.toggle("has-live-events", !!html); if (html !== alertBanner) { box.innerHTML = html; alertBanner = html; localizeNow(box); }
+    box.hidden = !html; game.classList.toggle("has-live-events", !!html);
+    if (html !== alertBanner) { box.innerHTML = html; alertBanner = html; localizeNow(box); }
+    game.style.setProperty("--events-height", html ? `${box.offsetHeight}px` : "0px");
 }
 let reportDetail = "";
 let state: Snapshot | null = null, panel: Panel | null = null, panelId = "", panelTab = "overview", selectedUnit = "", activeArmy = "", roomList: RoomSummary[] = [];
@@ -493,6 +507,158 @@ function isAllyPlayer(playerId?: string | null): boolean {
     if (state.alliances.some(a => (a.firstPlayerId === state!.you && a.secondPlayerId === playerId) || (a.secondPlayerId === state!.you && a.firstPlayerId === playerId))) return true;
     const me = state.players.find(p => p.id === state!.you), other = state.players.find(p => p.id === playerId);
     return !!(me?.team && me.team > 0 && me.team === other?.team);
+}
+
+function canBreakAllianceWith(playerId?: string | null): boolean {
+    if (!state || !playerId || playerId === state.you || state.isSpectator || state.status !== "Running") return false;
+    const me = state.players.find(p => p.id === state!.you), other = state.players.find(p => p.id === playerId);
+    if (me?.team && me.team > 0 && me.team === other?.team) return false;
+    return state.alliances.some(a => (a.firstPlayerId === state!.you && a.secondPlayerId === playerId) || (a.secondPlayerId === state!.you && a.firstPlayerId === playerId));
+}
+
+let betrayConfirmPlayerId = "";
+let betrayConfirmTimer = 0;
+function resetBetrayConfirm() {
+    if (betrayConfirmTimer) { window.clearTimeout(betrayConfirmTimer); betrayConfirmTimer = 0; }
+    betrayConfirmPlayerId = "";
+}
+
+type RoomPresetId = "blitz" | "standard" | "epic";
+let createRoomPreset: RoomPresetId = "blitz";
+const ROOM_PRESETS: Record<RoomPresetId, { durationMinutes: number; castleUnlockMinutes: number; resourceSpeed: number; shieldMinutes: number }> = {
+    blitz: { durationMinutes: 30, castleUnlockMinutes: 15, resourceSpeed: 3, shieldMinutes: 5 },
+    standard: { durationMinutes: 30, castleUnlockMinutes: 18, resourceSpeed: 2, shieldMinutes: 5 },
+    epic: { durationMinutes: 60, castleUnlockMinutes: 45, resourceSpeed: 1, shieldMinutes: 5 }
+};
+
+let streamerMode = false;
+let liveHudCollapsed = false;
+try {
+    streamerMode = localStorage.getItem("warzone.streamerMode") === "true";
+    liveHudCollapsed = localStorage.getItem("warzone.liveHudCollapsed") === "true";
+} catch { /* Storage is optional. */ }
+
+interface BroadcastItem { id: number; kind: string; text: string }
+let broadcastMatchId = "";
+let lastBroadcastChatId = 0;
+let broadcastQueue: BroadcastItem[] = [];
+let activeBroadcast: BroadcastItem | null = null;
+let broadcastTimer = 0;
+
+function showNextBroadcast() {
+    window.clearTimeout(broadcastTimer);
+    broadcastTimer = 0;
+    const box = document.getElementById("world-broadcast");
+    activeBroadcast = broadcastQueue.shift() ?? null;
+    if (!box) return;
+    if (!activeBroadcast) {
+        box.hidden = true;
+        box.innerHTML = "";
+        return;
+    }
+    const isAr = currentLanguage() === "ar";
+    const kind = activeBroadcast.kind;
+    const meta = kind === "Betrayal"
+        ? { tone: "tone-betrayal", icon: "🗡️", kicker: isAr ? "خيانة مدوّية ونقض عهد!" : "ALLIANCE BETRAYAL!" }
+        : kind === "Elimination"
+            ? { tone: "tone-elimination", icon: "💀", kicker: isAr ? "سقوط مملكة من الوادي!" : "KINGDOM ELIMINATED!" }
+            : kind === "Conquest"
+                ? { tone: "tone-elimination", icon: "🔥", kicker: isAr ? "اجتياح وسقوط مدينة!" : "SETTLEMENT FALLEN!" }
+                : kind === "CastleAwakened" || kind === "CastleClaimed"
+                    ? { tone: "tone-castle", icon: "👑", kicker: isAr ? "حدث قلعة التاج الحاسم" : "CROWN KEEP ALERT" }
+                    : { tone: "tone-alliance", icon: "🤝", kicker: isAr ? "معاهدة تحالف جديدة" : "DIPLOMATIC TREATY" };
+    const localizedText = t(activeBroadcast.text);
+    box.hidden = false;
+    box.innerHTML = `<button type="button" class="wb-card ${meta.tone}" data-action="dismiss-broadcast">
+        <span class="wb-icon" aria-hidden="true">${meta.icon}</span>
+        <span class="wb-body"><small class="wb-kicker">${esc(meta.kicker)}</small><strong class="wb-text">${esc(localizedText)}</strong></span>
+    </button>`;
+    broadcastTimer = window.setTimeout(() => showNextBroadcast(), 6200);
+}
+
+function syncWorldBroadcast(snapshot: Snapshot | null) {
+    if (!snapshot || snapshot.status !== "Running") {
+        broadcastMatchId = "";
+        lastBroadcastChatId = 0;
+        broadcastQueue = [];
+        if (activeBroadcast) showNextBroadcast();
+        return;
+    }
+    const msgs = snapshot.chat ?? [];
+    if (broadcastMatchId !== snapshot.id) {
+        broadcastMatchId = snapshot.id;
+        lastBroadcastChatId = msgs.reduce((m, c) => Math.max(m, c.id), 0);
+        broadcastQueue = [];
+        return;
+    }
+    const dramaticKinds = new Set(["Betrayal", "Elimination", "Conquest", "CastleAwakened", "CastleClaimed", "Alliance"]);
+    for (const m of msgs) {
+        if (m.id > lastBroadcastChatId && dramaticKinds.has(m.kind)) {
+            broadcastQueue.push({ id: m.id, kind: m.kind, text: m.text });
+            if (broadcastQueue.length > 4) broadcastQueue.shift();
+        }
+        if (m.id > lastBroadcastChatId) lastBroadcastChatId = m.id;
+    }
+    if (!activeBroadcast && broadcastQueue.length > 0) showNextBroadcast();
+}
+
+function renderLiveStandingsHud() {
+    const box = document.getElementById("live-standings-hud");
+    if (!box) return;
+    if (!state || state.status !== "Running" || !state.world?.warfare) {
+        box.hidden = true;
+        patchHtml(box, "");
+        return;
+    }
+    const isAr = currentLanguage() === "ar";
+    const war = state.world.warfare;
+    const keep = war.castle;
+    const unlockSeconds = (state.settings.castleUnlockMinutes ?? 45) * 60;
+    const keepLabel = !keep.active
+        ? (isAr ? "👑 قلعة التاج" : "👑 Crown Keep")
+        : keep.contested
+            ? (isAr ? "⚔ قلعة التاج · نزاع!" : "⚔ Keep Contested!")
+            : keep.controllerId
+                ? `👑 ${owner(keep.controllerId)}`
+                : (isAr ? "👑 قلعة التاج · مفتوحة!" : "👑 Keep Open!");
+    const keepTimer = !keep.active
+        ? time(Math.max(0, unlockSeconds - now()))
+        : keep.controllerId
+            ? `${time(keep.captureProgress)} / 5:00`
+            : (isAr ? "هاجم الآن" : "Claim now");
+    const keepPct = keep.active ? Math.min(100, (keep.captureProgress / 300) * 100) : Math.min(100, (now() / Math.max(1, unlockSeconds)) * 100);
+    const keepCls = keep.contested ? "contested" : keep.active ? "active" : "";
+
+    const ranks = war.rankings ?? [];
+    const topRows = ranks.slice(0, 4);
+    const myRankIndex = ranks.findIndex(r => r.playerId === state!.you);
+    const includePinnedMe = !state.isSpectator && myRankIndex >= 4;
+    const displayRows = includePinnedMe
+        ? [...topRows.map((r, i) => ({ r, rank: i + 1 })), { r: ranks[myRankIndex]!, rank: myRankIndex + 1 }]
+        : topRows.map((r, i) => ({ r, rank: i + 1 }));
+
+    box.hidden = false;
+    box.classList.toggle("collapsed", liveHudCollapsed);
+    const rowsHtml = liveHudCollapsed ? "" : `<div class="lsh-list">${displayRows.map(({ r, rank }) => {
+        const p = state!.players.find(pl => pl.id === r.playerId);
+        const dotColor = p?.flagColor ?? "#94a3b8";
+        const isMe = r.playerId === state!.you;
+        const allyMark = isAllyPlayer(r.playerId) ? " 🤝" : "";
+        return `<button type="button" class="lsh-row${isMe ? " is-you" : ""}" data-action="focus-rank-player" data-id="${r.playerId}" title="${esc(owner(r.playerId))}">
+            <span class="lsh-rank">#${rank}</span>
+            <span class="lsh-dot" style="background:${esc(dotColor)}"></span>
+            <span class="lsh-name">${esc(owner(r.playerId))}${allyMark}</span>
+            <span class="lsh-meta">${r.kills > 0 ? `<span class="lsh-kills">⚔${r.kills}</span>` : ""}<b class="lsh-score">${r.score.toLocaleString()}</b></span>
+        </button>`;
+    }).join("")}</div>`;
+
+    patchHtml(box, `<div class="lsh-head">
+        <button type="button" class="lsh-keep-btn ${keepCls}" data-action="focus-castle" title="${isAr ? "اضغط لعرض قلعة التاج" : "Click to inspect Crown Keep"}">
+            <span class="lsh-keep-top"><strong>${esc(keepLabel)}</strong><b dir="ltr">${esc(keepTimer)}</b></span>
+            <span class="lsh-keep-bar"><i style="width:${keepPct.toFixed(1)}%"></i></span>
+        </button>
+        <button type="button" class="lsh-toggle" data-action="toggle-live-hud" aria-label="${isAr ? "طي أو توسيع الترتيب" : "Collapse or expand standings"}" title="${isAr ? "طي / توسيع" : "Minimize / Expand"}">${liveHudCollapsed ? "+" : "−"}</button>
+    </div>${rowsHtml}`);
 }
 
 interface ControlledArmyInfo {
@@ -1083,7 +1249,8 @@ function renderChat() {
             const text = system ? t(message.text) : message.text;
             const author = system ? "Realm" : (message.senderName || owner(message.senderId));
             const timestamp = state!.status === "Lobby" ? "" : `<time>${time(message.at)}</time>`;
-            return `<article class="chat-message ${system ? "system" : mine ? "own" : ""}"><div class="chat-author"><span>${esc(author)}</span>${timestamp}</div><div class="chat-text" data-no-translate>${esc(text)}</div></article>`;
+            const kindCls = system ? ` kind-${message.kind.toLowerCase()}` : "";
+            return `<article class="chat-message ${system ? "system" + kindCls : mine ? "own" : ""}"><div class="chat-author"><span>${esc(author)}</span>${timestamp}</div><div class="chat-text" data-no-translate>${esc(text)}</div></article>`;
         }).join("") : '<p class="chat-empty">No messages yet. Start the conversation.</p>';
         chatKey = key;
         if (follow) list.scrollTop = list.scrollHeight;
@@ -1116,6 +1283,7 @@ function renderSpectatorBar() {
 function renderWorld() {
     const inGame = !!state?.world;
     const isSpec = !!state?.isSpectator;
+    el("game").classList.toggle("is-running", state?.status === "Running");
     el("world-tools").hidden = !inGame;
     el("command-deck").hidden = !inGame || isSpec;
     el("scene-title").textContent = "Sunmeadow Valley"; el("scene-eyebrow").textContent = "THE WORLD BEYOND YOUR WALLS";
@@ -1414,8 +1582,11 @@ function render(snapshot: Snapshot | null) {
             closeRadial(); renderCursorBadge(el("map-cursor-badge"), "none", null); map.setSelectedArmies([], []);
             patchHtml(el('resources'), ''); el('muster-hud').hidden = true; el('village-biome').hidden = true;
             const armyStrip = document.getElementById('army-strip'); if (armyStrip) patchHtml(armyStrip, '');
-            alertBanner = ""; el("important-alerts").innerHTML = ""; el("important-alerts").hidden = true; el("game").classList.remove("has-live-events");
+            alertBanner = ""; el("important-alerts").innerHTML = ""; el("important-alerts").hidden = true; el("game").classList.remove("has-live-events", "has-alliance-invites"); el("game").style.setProperty("--events-height", "0px"); el("game").style.setProperty("--invites-height", "0px");
             renderAllianceInvites();
+            syncWorldBroadcast(null);
+            renderLiveStandingsHud();
+            resetBetrayConfirm();
             el("work-queue").innerHTML = "";
             el("match-clock").textContent = "A new adventure";
             map.update(null, [], "preview");
@@ -1515,6 +1686,8 @@ function render(snapshot: Snapshot | null) {
         try { renderBuildings(); refreshUpgradeCostTip(); } catch (e) { console.error("renderBuildings error:", e); }
         try { renderImportantAlerts(); } catch (e) { console.error("renderImportantAlerts error:", e); }
         try { renderAllianceInvites(); } catch (e) { console.error("renderAllianceInvites error:", e); }
+        try { syncWorldBroadcast(snapshot); } catch (e) { console.error("syncWorldBroadcast error:", e); }
+        try { renderLiveStandingsHud(); } catch (e) { console.error("renderLiveStandingsHud error:", e); }
         try { renderTimers(); } catch (e) { console.error("renderTimers error:", e); }
         try { renderDrawer(); } catch (e) { console.error("renderDrawer error:", e); }
         try { renderIntelligence(); } catch (e) { console.error("renderIntelligence error:", e); }
@@ -2036,6 +2209,7 @@ function renderTimers() {
     document.querySelectorAll<HTMLProgressElement>('[data-training-start]').forEach(bar => { const start = Number(bar.dataset.trainingStart), end = Number(bar.dataset.trainingEnd); bar.value = Math.min(1, Math.max(0, (elapsed - start) / Math.max(.01, end - start))); });
     if (pointerPressed) return;
     renderImportantAlerts();
+    renderLiveStandingsHud();
     const queueHtml = state.economy?.jobs.slice(0, 4).map(j => `<button class="work-item" data-action="job" data-id="${j.targetId}">⚔ ${esc(state!.economy!.targets.find(t => t.id === j.targetId)?.name)}<strong>${time(j.completesAt - elapsed)}</strong></button>`).join("") ?? "";
     patchHtml(el("work-queue"), queueHtml);
     renderBuildings();
@@ -2168,8 +2342,17 @@ function villageAlliances(playerId: string) {
 }
 function allianceControls(playerId: string) {
     if (!state || playerId === state.you || state.isSpectator) return "";
-    if (state.alliances.some(a => (a.firstPlayerId === state!.you && a.secondPlayerId === playerId) || (a.secondPlayerId === state!.you && a.firstPlayerId === playerId)))
-        return '<small class="positive">Allied commanders</small>';
+    const isAr = currentLanguage() === "ar";
+    if (isAllyPlayer(playerId)) {
+        if (!canBreakAllianceWith(playerId)) {
+            return `<small class="positive">${isAr ? "🤝 قائد في نفس فريقك الثابت" : "🤝 Fixed team ally"}</small>`;
+        }
+        const confirming = betrayConfirmPlayerId === playerId;
+        const breakLabel = confirming
+            ? (isAr ? "⚠️ تأكيد الغدر ونقض التحالف؟ (اضغط للتأكيد)" : "⚠️ Confirm Betrayal? (Click again)")
+            : (isAr ? "🗡️ نقض التحالف (إعلان الحرب)" : "🗡️ Break Alliance");
+        return `<div class="alliance-ally-box" data-no-translate><small class="positive">${isAr ? "🤝 بينكما معاهدة تحالف نشطة" : "🤝 Allied commanders"}</small><button type="button" data-action="alliance-break" data-id="${esc(playerId)}" class="alliance-betray-btn wide${confirming ? " confirming" : ""}" ${!running() ? "disabled" : ""}>${esc(breakLabel)}</button></div>`;
+    }
     const incoming = state.allianceRequests.find(r => r.senderId === playerId && r.recipientId === state!.you);
     if (incoming) return `<div class="alliance-actions">${button("Accept alliance", "alliance-accept", incoming.id, "primary", !running())}${button("Decline", "alliance-decline", incoming.id, "quiet", !running())}</div>`;
     const outgoing = state.allianceRequests.find(r => r.senderId === state!.you && r.recipientId === playerId);
@@ -2501,7 +2684,11 @@ function standingsPanel() {
     const unlockSeconds = (state!.settings.castleUnlockMinutes ?? 45) * 60;
     const rankAllianceControl = (playerId: string, eliminated: boolean) => {
         if (!state || playerId === state.you || eliminated || state.isSpectator || state.status !== "Running") return "";
-        if (isAllyPlayer(playerId)) return `<span class="rank-alliance-tag">🤝 ${isAr ? "حليف" : "Ally"}</span>`;
+        if (isAllyPlayer(playerId)) {
+            const canBetray = canBreakAllianceWith(playerId);
+            const confirming = betrayConfirmPlayerId === playerId;
+            return `<span class="rank-alliance-tag">🤝 ${isAr ? "حليف" : "Ally"}</span>${canBetray ? `<button type="button" data-action="alliance-break" data-id="${esc(playerId)}" class="rank-betray-btn${confirming ? " confirming" : ""}" data-no-translate ${!running() ? "disabled" : ""}>${confirming ? (isAr ? "تأكيد الغدر؟" : "Confirm?") : (isAr ? "🗡️ نقض" : "🗡️ Break")}</button>` : ""}`;
+        }
         const incoming = state.allianceRequests.find(req => req.senderId === playerId && req.recipientId === state!.you);
         if (incoming) return `${button(isAr ? "قبول" : "Accept", "alliance-accept", incoming.id, "primary rank-alliance-btn", !running())}${button(isAr ? "رفض" : "Decline", "alliance-decline", incoming.id, "quiet rank-alliance-btn", !running())}`;
         const outgoing = state.allianceRequests.find(req => req.senderId === state!.you && req.recipientId === playerId);
@@ -2521,8 +2708,13 @@ function lobbyPanel() {
     if (panelTab === "settings") {
         const t = s.settings;
         const ro = !isHost ? "disabled" : "";
+        const presetBar = isHost ? `<div class="preset-pills" data-no-translate>
+            <button type="button" class="preset-pill${t.durationMinutes === 30 && t.resourceSpeed === 3 ? " active" : ""}" data-action="lobby-preset" data-id="blitz">⚡ ${isAr ? "سريع / يوتيوب" : "Blitz / Stream"}<small>${isAr ? "30د · سرعة 3x · قلعة 15د" : "30m · 3x · Keep 15m"}</small></button>
+            <button type="button" class="preset-pill${t.durationMinutes === 30 && t.resourceSpeed === 2 ? " active" : ""}" data-action="lobby-preset" data-id="standard">⚔ ${isAr ? "متوازن" : "Standard"}<small>${isAr ? "30د · سرعة 2x · قلعة 18د" : "30m · 2x · Keep 18m"}</small></button>
+            <button type="button" class="preset-pill${t.durationMinutes === 60 && t.resourceSpeed === 1 ? " active" : ""}" data-action="lobby-preset" data-id="epic">🏰 ${isAr ? "ملحمي" : "Epic"}<small>${isAr ? "60د · سرعة 1x · قلعة 45د" : "60m · 1x · Keep 45m"}</small></button>
+        </div>` : "";
         return `<div class="lobby-settings-pane${!isHost ? " readonly" : ""}">
-            ${!isHost ? `<p class="muted">${isAr ? "هذه إعدادات الروم الحالية (منشئ الروم فقط يمكنه تعديلها)." : "Current room settings (only the host can modify them)."}</p>` : ""}
+            ${!isHost ? `<p class="muted">${isAr ? "هذه إعدادات الروم الحالية (منشئ الروم فقط يمكنه تعديلها)." : "Current room settings (only the host can modify them)."}</p>` : presetBar}
             <div class="form-grid">
                 <label>${isAr ? "عدد اللاعبين" : "Seats"}<input id="capacity" type="number" min="8" max="16" value="${t.capacity}" ${ro}/></label>
                 <label>${isAr ? "المدة (دقيقة)" : "Minutes"}<input id="duration" type="number" min="30" max="999" value="${t.durationMinutes}" ${ro}/></label>
@@ -2621,8 +2813,8 @@ function lobbyPanel() {
     }).join("")}</div>
     ${(s.spectators?.length ?? 0) > 0 ? `<div class="muted" style="margin-top:4px;">👁 ${isAr ? "المشاهدون:" : "Spectators:"} ${s.spectators!.map(sp => esc(sp.name)).join(", ")}</div>` : ""}
     <div class="panel-footer lobby-footer">${s.isSpectator
-        ? `<div class="lobby-footer-primary">${button(isAr ? "الانتقال كلاعب" : "Join as Player", "switch-to-player", "", "primary")}</div><div class="lobby-footer-links">${button(isAr ? "🔗 نسخ رابط الدعوة" : "🔗 Copy invite link", "copy-invite", s.id, "quiet")}${button("مغادرة الروم", "leave", "", "quiet")}</div>`
-        : `<div class="lobby-footer-primary">${button(youPlayer?.ready ? "إلغاء الجاهزية" : "جاهز للعب ✓", "ready", "", "")}${isHost ? button("بدء المباراة", "start", "", "primary") : ""}</div><div class="lobby-footer-links">${button(isAr ? "🔗 نسخ رابط الدعوة" : "🔗 Copy invite link", "copy-invite", s.id, "quiet")}${button(isAr ? "مشاهدة 👁" : "Spectate 👁", "switch-to-spectator", "", "quiet")}${button("مغادرة الروم", "leave", "", "quiet")}</div>`
+        ? `<div class="lobby-footer-primary">${button(isAr ? "الانتقال كلاعب" : "Join as Player", "switch-to-player", "", "primary")}</div><div class="lobby-footer-links">${button(isAr ? "🔗 رابط اللعب" : "🔗 Invite link", "copy-invite", s.id, "quiet")}${button(isAr ? "👁 رابط المشاهدة" : "👁 Watch link", "copy-spectate", s.id, "quiet")}${button("مغادرة الروم", "leave", "", "quiet")}</div>`
+        : `<div class="lobby-footer-primary">${button(youPlayer?.ready ? "إلغاء الجاهزية" : "جاهز للعب ✓", "ready", "", "")}${isHost ? button("بدء المباراة", "start", "", "primary") : ""}</div><div class="lobby-footer-links">${button(isAr ? "🔗 رابط اللعب" : "🔗 Invite link", "copy-invite", s.id, "quiet")}${button(isAr ? "👁 رابط المشاهدة" : "👁 Watch link", "copy-spectate", s.id, "quiet")}<button type="button" data-action="toggle-streamer-mode" class="quiet streamer-pill${streamerMode ? " active" : ""}" data-no-translate>${isAr ? (streamerMode ? "🎥 وضع البث: مفعل" : "🎥 وضع البث") : (streamerMode ? "🎥 Streamer: ON" : "🎥 Streamer")}</button>${button(isAr ? "مشاهدة 👁" : "Spectate 👁", "switch-to-spectator", "", "quiet")}${button("مغادرة الروم", "leave", "", "quiet")}</div>`
     }</div>`;
 } function patchPanel(target: Node, source: Node) {
     const wanted = Array.from(source.childNodes);
@@ -2814,8 +3006,9 @@ function renderDrawer(force = false) {
         html = standingsPanel();
     }
     else if (panel === "lobby") {
-        title = state!.name;
-        kicker = "REALM LOBBY";
+        const isAr = currentLanguage() === "ar";
+        title = streamerMode ? (isAr ? "غرفة بث خاصة 🎥" : "Streamer Lobby 🎥") : state!.name;
+        kicker = streamerMode ? (isAr ? "وضع التصوير مفعل" : "STREAMER MODE") : "REALM LOBBY";
         html = lobbyPanel();
     }
     else if (panel === "rooms") {
@@ -2861,6 +3054,11 @@ function renderDrawer(force = false) {
                 ${button(isAr ? "⚡ دخول سريع أونلاين (انضمام أو إنشاء)" : "⚡ Quick Match (Auto-Join or Create)", "quick-match", "", "primary wide")}
             </section>
             <section class="rooms-create-card">
+                <div class="preset-pills" data-no-translate>
+                    <button type="button" class="preset-pill${createRoomPreset === "blitz" ? " active" : ""}" data-action="room-preset" data-id="blitz">⚡ ${isAr ? "سريع / يوتيوب" : "Blitz / Stream"}<small>${isAr ? "30د · سرعة 3x" : "30m · 3x"}</small></button>
+                    <button type="button" class="preset-pill${createRoomPreset === "standard" ? " active" : ""}" data-action="room-preset" data-id="standard">⚔ ${isAr ? "متوازن" : "Standard"}<small>${isAr ? "30د · سرعة 2x" : "30m · 2x"}</small></button>
+                    <button type="button" class="preset-pill${createRoomPreset === "epic" ? " active" : ""}" data-action="room-preset" data-id="epic">🏰 ${isAr ? "ملحمي" : "Epic"}<small>${isAr ? "60د · سرعة 1x" : "60m · 1x"}</small></button>
+                </div>
                 <div class="rooms-create-grid">
                     <label>${isAr ? "اسم الغرفة" : "Realm name"}<input id="room-name" maxlength="32" value="Sunmeadow friends"/></label>
                     <label>${isAr ? "عدد البوتات (0-7)" : "AI neighbors"}<input id="create-bots" type="number" min="0" max="7" value="3"/></label>
@@ -3338,6 +3536,91 @@ document.addEventListener("click", event => {
         return;
     }
     if (action === 'show-standings') { openPanel('standings'); return; }
+    if (action === 'dismiss-broadcast') { showNextBroadcast(); return; }
+    if (action === 'toggle-live-hud') {
+        liveHudCollapsed = !liveHudCollapsed;
+        try { localStorage.setItem('warzone.liveHudCollapsed', String(liveHudCollapsed)); } catch { /* Optional */ }
+        renderLiveStandingsHud();
+        return;
+    }
+    if (action === 'focus-castle') {
+        const keep = state?.world?.warfare?.castle;
+        if (keep) {
+            selection = { id: keep.id, kind: 'castle', name: 'Crown Keep', position: keep.position };
+            map.focus(keep.position, 2.5);
+            map.select(selection);
+            openPanel('castle', keep.id);
+        } else {
+            openPanel('standings');
+        }
+        return;
+    }
+    if (action === 'focus-rank-player') {
+        const city = (state?.world?.warfare?.settlements ?? []).find(s => s.ownerId === id && !s.ruined)
+            ?? (state?.world?.warfare?.settlements ?? []).find(s => s.ownerId === id);
+        if (city) {
+            selection = { ...city, kind: 'village', name: owner(city.ownerId) };
+            map.focus(city.position, 2.6);
+            map.select(selection);
+            openPanel('village', city.id);
+        } else {
+            openPanel('standings');
+        }
+        return;
+    }
+    if (action === 'room-preset') {
+        if (id === 'blitz' || id === 'standard' || id === 'epic') {
+            createRoomPreset = id;
+            renderDrawer(true);
+        }
+        return;
+    }
+    if (action === 'lobby-preset') {
+        if (id === 'blitz' || id === 'standard' || id === 'epic') {
+            const p = ROOM_PRESETS[id];
+            const setVal = (elId: string, val: string | number) => {
+                const input = document.getElementById(elId) as HTMLInputElement | null;
+                if (input) input.value = String(val);
+            };
+            setVal('duration', p.durationMinutes);
+            setVal('castle-unlock', p.castleUnlockMinutes);
+            setVal('speed', p.resourceSpeed);
+            el('drawer').querySelectorAll<HTMLElement>('[data-action="lobby-preset"]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.id === id);
+            });
+        }
+        return;
+    }
+    if (action === 'toggle-streamer-mode') {
+        streamerMode = !streamerMode;
+        try { localStorage.setItem('warzone.streamerMode', String(streamerMode)); } catch { /* Optional */ }
+        renderDrawer(true);
+        notice(currentLanguage() === 'ar'
+            ? (streamerMode ? '🎥 تم تفعيل وضع البث (أُخفي اسم الروم عن الشاشة).' : 'تم إيقاف وضع البث.')
+            : (streamerMode ? '🎥 Streamer mode enabled (room name hidden).' : 'Streamer mode disabled.'));
+        return;
+    }
+    if (action === 'alliance-break') {
+        if (!canBreakAllianceWith(id)) return;
+        if (betrayConfirmPlayerId !== id) {
+            resetBetrayConfirm();
+            betrayConfirmPlayerId = id;
+            renderDrawer(true);
+            betrayConfirmTimer = window.setTimeout(() => {
+                betrayConfirmPlayerId = "";
+                betrayConfirmTimer = 0;
+                if (panel === 'village' || panel === 'standings') renderDrawer(true);
+            }, 4500);
+            return;
+        }
+        resetBetrayConfirm();
+        void perform(async () => {
+            if (await command('BreakAlliance', id)) {
+                renderDrawer(true);
+            }
+        });
+        return;
+    }
     if (action === 'dismiss-victory') { dismissedVictoryMatchId = state?.id ?? ""; renderVictoryOverlay(null); return; }
     if (action === 'victory-standings') { dismissedVictoryMatchId = state?.id ?? ""; renderVictoryOverlay(null); openPanel('standings'); return; }
     if (action === 'plan-blockade') { openDispatch('blockade'); return; }
@@ -3567,7 +3850,8 @@ document.addEventListener("click", event => {
             const initialTribe = el("tribe-picker").hidden ? "Random" : el<HTMLInputElement>("tribe").value;
             const rawBots = (document.getElementById("create-bots") as HTMLInputElement | null)?.value;
             const createBots = Math.max(0, Math.min(7, Math.floor(rawBots !== undefined && rawBots !== "" ? Number(rawBots) : 3) || 0));
-            render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, initialTribe, el<HTMLInputElement>("room-name").value, { capacity: 8, durationMinutes: 60, castleUnlockMinutes: 45, shieldMinutes: 5, resourceSpeed: 1, botCount: createBots, botDifficulty: "Mixed" }));
+            const preset = ROOM_PRESETS[createRoomPreset];
+            render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, initialTribe, el<HTMLInputElement>("room-name").value, { capacity: 8, durationMinutes: preset.durationMinutes, castleUnlockMinutes: preset.castleUnlockMinutes, shieldMinutes: preset.shieldMinutes, resourceSpeed: preset.resourceSpeed, botCount: createBots, botDifficulty: "Mixed" }));
         }
         else if (action === "join") {
             const initialTribe = el("tribe-picker").hidden ? "Random" : el<HTMLInputElement>("tribe").value;
@@ -3600,13 +3884,16 @@ document.addEventListener("click", event => {
             render(updated);
             notice(currentLanguage() === "ar" ? "تم حفظ إعدادات العالم." : "Realm settings updated.");
         }
-        else if (action === "copy-invite") {
-            const inviteUrl = `${window.location.origin}/?room=${encodeURIComponent(id || state?.id || "")}`;
+        else if (action === "copy-invite" || action === "copy-spectate") {
+            const param = action === "copy-spectate" ? "spectate" : "room";
+            const inviteUrl = `${window.location.origin}/?${param}=${encodeURIComponent(id || state?.id || "")}`;
             try {
                 await navigator.clipboard.writeText(inviteUrl);
-                notice(currentLanguage() === "ar" ? "تم نسخ رابط الدعوة! شاركه مع أصدقائك." : "Invite link copied! Share it with friends.");
+                notice(currentLanguage() === "ar"
+                    ? (action === "copy-spectate" ? "👁 تم نسخ رابط المشاهدة المباشرة للمتابعين!" : "🔗 تم نسخ رابط الدعوة للعب! شاركه مع أصدقائك.")
+                    : (action === "copy-spectate" ? "👁 Live spectator link copied!" : "🔗 Invite link copied! Share it with friends."));
             } catch {
-                window.prompt(currentLanguage() === "ar" ? "انسخ رابط الدعوة:" : "Copy invite link:", inviteUrl);
+                window.prompt(currentLanguage() === "ar" ? "انسخ الرابط:" : "Copy link:", inviteUrl);
             }
         }
         else if (action === "leave") {
@@ -3615,7 +3902,7 @@ document.addEventListener("click", event => {
             render(null);
             roomList = await connection.invoke<RoomSummary[]>("ListRooms");
         }
-    }, !!action && ["quick-match", "refresh", "refresh-online-players", "create", "join", "spectate", "switch-to-spectator", "switch-to-player", "ready", "lobby-slot", "lobby-color", "start", "settings", "copy-invite", "leave"].includes(action));
+    }, !!action && ["quick-match", "refresh", "refresh-online-players", "create", "join", "spectate", "switch-to-spectator", "switch-to-player", "ready", "lobby-slot", "lobby-color", "start", "settings", "copy-invite", "copy-spectate", "leave"].includes(action));
 });
 el('language-picker').innerHTML = select('language-select', '', [{ value: 'ar', label: 'AR' }, { value: 'en', label: 'EN' }], currentLanguage());
 
@@ -3651,7 +3938,7 @@ syncWelcomeMatchmakingUi();
 el('language-select').onchange = () => setLanguage(el<HTMLInputElement>('language-select').value);
 el<HTMLInputElement>('language-select').value = currentLanguage();
 el('village-biome').onclick = () => { selection = null; openPanel('biome', el('village-biome').dataset.id ?? ''); };
-window.addEventListener('languagechange', () => { renderTribePicker(); syncWelcomeMatchmakingUi(); renderAllianceInvites(); renderArmyOrderBar(); map.refreshLanguage(); renderArmiesStrip(); renderDrawer(true); renderChat(); renderSpectatorBar(); adminOverlay.refreshLanguageAndState(); localizeNow(); });
+window.addEventListener('languagechange', () => { renderTribePicker(); syncWelcomeMatchmakingUi(); renderAllianceInvites(); renderLiveStandingsHud(); renderArmyOrderBar(); map.refreshLanguage(); renderArmiesStrip(); renderDrawer(true); renderChat(); renderSpectatorBar(); adminOverlay.refreshLanguageAndState(); localizeNow(); });
 document.addEventListener('keydown', event => {
     if (!state) {
         const active = document.activeElement;
@@ -3780,6 +4067,12 @@ el("cancel-matchmaking").onclick = () => {
     if (connection.state === HubConnectionState.Connected)
         void connection.invoke("CancelMatchmaking").catch(() => { /* ignore cancel error */ });
 };
+el("play-blitz").onclick = () => void perform(async () => {
+    const realmTitle = currentLanguage() === "ar" ? "معركة سريعة (30د · 3x)" : "Sunmeadow Blitz (3x)";
+    render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, el<HTMLInputElement>("tribe").value, realmTitle, { capacity: 8, durationMinutes: 30, castleUnlockMinutes: 15, shieldMinutes: 5, resourceSpeed: 3, botCount: 7, botDifficulty: "Mixed" }));
+    await connection.invoke("SetReady", true);
+    render(await connection.invoke<Snapshot>("StartMatch"));
+}, true);
 el("multiplayer").onclick = () => void perform(async () => { roomList = await connection.invoke<RoomSummary[]>("ListRooms"); syncLiveGamesBadge(); el("welcome").hidden = true; openPanel("rooms"); }, true);
 el("play-tutorial").onclick = () => void perform(async () => {
     render(await connection.invoke<Snapshot>("CreateRoom", el<HTMLInputElement>("player-name").value, el<HTMLInputElement>("tribe").value, "Sunmeadow Valley (Tutorial)", { capacity: 8, durationMinutes: 30, castleUnlockMinutes: 20, shieldMinutes: 10, resourceSpeed: 2, botCount: 1, botDifficulty: "Easy" }));
@@ -4051,7 +4344,17 @@ window.addEventListener("selectstart", event => {
 });
 window.addEventListener("dragstart", event => event.preventDefault());
 window.addEventListener("resize", () => { if (panel && ["muster", "reports", "report", "production"].includes(panel)) { page = 0; renderDrawer(true); } });
-new ResizeObserver(entries => { for (const entry of entries) { const t = entry.target as HTMLElement; const name = entry.target.id === 'drawer' ? '--drawer-space' : '--events-height'; el('game').style.setProperty(name, `${entry.target.id === 'drawer' ? t.offsetWidth : t.offsetHeight}px`); } }).observe(el('drawer'));
-new ResizeObserver(() => el('game').style.setProperty('--events-height', `${el('important-alerts').offsetHeight}px`)).observe(el('important-alerts'));
+const hudLayoutObserver = new ResizeObserver(entries => {
+    const game = el('game');
+    for (const entry of entries) {
+        const target = entry.target as HTMLElement;
+        if (target.id === 'drawer') game.style.setProperty('--drawer-space', `${target.offsetWidth}px`);
+        else if (target.id === 'important-alerts') game.style.setProperty('--events-height', `${target.hidden ? 0 : target.offsetHeight}px`);
+        else if (target.id === 'alliance-invites') game.style.setProperty('--invites-height', `${target.hidden ? 0 : target.offsetHeight}px`);
+    }
+});
+hudLayoutObserver.observe(el('drawer'));
+hudLayoutObserver.observe(el('important-alerts'));
+hudLayoutObserver.observe(el('alliance-invites'));
 window.setInterval(renderTimers, 250);
 void connect();

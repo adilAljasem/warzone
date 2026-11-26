@@ -72,6 +72,13 @@ internal static class SocialChecks
             && m.Text == "Alliance formed between Host and Guest."), "Acceptance announces both players in the shared chat");
         Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.ProposeAlliance, guest)).Code == "alliance",
             "Duplicate alliances are rejected");
+        Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.BreakAlliance, third)).Code == "alliance",
+            "Breaking a non-existent alliance is rejected");
+        Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.BreakAlliance, guest)).Accepted,
+            "An allied player can break a diplomatic alliance");
+        Check(room.Snapshot(third, _ => true).Alliances.Length == 0
+            && room.Snapshot(guest, _ => true).Chat.Any(m => m.Kind == "Betrayal" && m.Text == "Alliance broken! Host betrayed Guest."),
+            "Breaking an alliance removes it immediately and broadcasts a public betrayal event");
         Check(room.Execute(host, new(Guid.NewGuid(), CommandKind.ProposeAlliance, host)).Code == "alliance",
             "Self alliance is rejected");
         var bot = room.Snapshot(host, _ => true).Players.First(p => p.IsBot);

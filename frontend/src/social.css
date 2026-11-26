@@ -1,18 +1,28 @@
-.world-chat{position:fixed;left:16px;bottom:calc(var(--command-height) + 18px);width:240px;z-index:23;border:1px solid #d8e9ce38;border-radius:12px;background:linear-gradient(145deg,#102b24e8,#18372ccc);box-shadow:0 10px 28px #10251f26;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);overflow:hidden}
+.world-chat{position:fixed;left:16px;bottom:132px;width:240px;z-index:23;border:1px solid #d8e9ce38;border-radius:12px;background:linear-gradient(145deg,#102b24e8,#18372ccc);box-shadow:0 10px 28px #10251f26;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);overflow:hidden}
 .chat-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;padding:9px 12px;border:0;border-radius:0;background:#ffffff08;color:#f0d497;font-size:11px;font-weight:700;letter-spacing:.4px}
 .chat-toggle>span:last-child{font-size:17px;line-height:14px}
 #chat-content{padding:0 9px 9px}
-#chat-messages{height:190px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#b7a27366 transparent;padding:3px 3px 8px;display:flex;flex-direction:column;gap:7px}
+#chat-messages{height:165px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#b7a27366 transparent;padding:3px 3px 8px;display:flex;flex-direction:column;gap:7px}
 .chat-message{padding:6px 8px;border-radius:8px;background:#071e1645;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
 .chat-message .chat-author{display:flex;justify-content:space-between;gap:8px;color:#e5ca8e;font-size:9px;margin-bottom:2px}
 .chat-message .chat-author time{color:#b8c5b5;font-size:8px;direction:ltr}
 .chat-message.own{background:#6f69312e}
 .chat-message.system{background:#b89b4d1f;border:1px solid #d8bb6b2e;color:#ead9aa}
+.chat-message.system.kind-betrayal{background:linear-gradient(135deg,#69191ee0,#3b1115d9);border-color:#f8717188;color:#ffd6d6;font-weight:700}
+.chat-message.system.kind-elimination,.chat-message.system.kind-conquest{background:linear-gradient(135deg,#521b16d9,#2f1410cc);border-color:#fb923c77;color:#ffe4cc;font-weight:700}
+.chat-message.system.kind-castleawakened,.chat-message.system.kind-castleclaimed{background:linear-gradient(135deg,#594314e0,#2e240dd9);border-color:#facc1588;color:#fef08a;font-weight:700}
+.alliance-ally-box{display:grid;gap:7px;margin-top:4px}
+.alliance-betray-btn{background:#5f191d66;border-color:#f8717166;color:#fecaca;font-size:12px;font-weight:700}
+.alliance-betray-btn:hover:not(:disabled){background:#991b1b99;border-color:#fca5a5;color:#fff}
+.alliance-betray-btn.confirming{background:linear-gradient(135deg,#dc2626,#991b1b);border-color:#fef08a;color:#fff;animation:betrayPulse .85s ease-in-out infinite alternate}
+.rank-betray-btn{padding:3px 7px;font-size:10px;border-radius:6px;margin-inline-start:5px;background:#69191e66;border-color:#f8717166;color:#fecaca}
+.rank-betray-btn.confirming{background:#dc2626;border-color:#fef08a;color:#fff}
+@keyframes betrayPulse{from{box-shadow:0 0 0 rgba(239,68,68,0)}to{box-shadow:0 0 14px rgba(239,68,68,.75)}}
 .chat-empty{margin:auto;color:#c1cdbd;font-size:10px;text-align:center}
 #chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;border-top:1px solid #d8e9ce26;padding-top:8px}
 #chat-form input{padding:7px 8px;background:#0a211bbd;font-size:11px}
 #chat-form .chat-send{padding:6px 10px;background:#b69a5552;border-color:#dbc17d66;font-size:10px}
-.has-drawer .world-chat{width:260px}
+.has-drawer .world-chat{width:240px}
 .world-chat.lobby-chat{left:50%;right:auto;bottom:16px;transform:translateX(-50%);width:min(540px,calc(100vw - 32px));z-index:26}
 .world-chat.lobby-chat #chat-messages{height:175px}
 @media(min-width:701px){
@@ -34,7 +44,7 @@
 .alliance-request .alliance-actions{grid-column:1/-1}
 [dir=rtl] .chat-message{text-align:right}
 @media(max-width:1100px){
- .world-chat{bottom:calc(var(--command-height) + 14px)}
+ .world-chat{bottom:130px}
 }
 @media(max-width:700px){
  .world-chat{left:8px;bottom:calc(var(--command-height) + 12px);width:min(280px,calc(100vw - 16px));background:linear-gradient(145deg,#102b24ed,#18372cdd)}
@@ -45,4 +55,4 @@
  .world-chat.lobby-chat #chat-messages{height:150px}
  .resource-transfer,.village-alliances,.alliance-requests{padding:9px}
 }
-@media(max-height:650px){#chat-messages{height:115px}}
+@media(max-height:650px){.world-chat{bottom:108px}.world-chat.lobby-chat,.world-chat.menu-chat{bottom:16px}#chat-messages{height:105px}}

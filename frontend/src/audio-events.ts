@@ -1,20 +1,37 @@
 import type { WorldView } from './map';
 
-export type SoundCue='attack'|'village-captured'|'oasis-captured'|'oasis-lost';
-export interface SoundState { id:string;you:string;status:string;world:WorldView|null }
+export type SoundCue='attack'|'village-captured'|'oasis-captured'|'oasis-lost'|'alliance'|'betrayal'|'castle'|'elimination';
+export interface SoundState { id:string;you:string;status:string;world:WorldView|null;chat?:{id:number;kind:string;text:string}[] }
 export interface CombatSound { level:number;pan:number }
 
 // Only transitions after the initial snapshot produce notification sounds.
 export class SoundEvents {
     private key='';
     private noticeId=0;
+    private chatId=0;
     private incoming=new Set<string>();
     private oases=new Map<string,string|null>();
     private villages=new Map<string,string|null>();
-    reset(){this.key='';this.noticeId=0;this.incoming.clear();this.oases.clear();this.villages.clear();}
+    reset(){this.key='';this.noticeId=0;this.chatId=0;this.incoming.clear();this.oases.clear();this.villages.clear();}
+    private collectChatCues(chat:SoundState['chat'],cues:Set<SoundCue>){
+        for(const msg of chat??[]){
+            if(msg.id>this.chatId){
+                if(msg.kind==='Alliance')cues.add('alliance');
+                else if(msg.kind==='Betrayal')cues.add('betrayal');
+                else if(msg.kind==='CastleAwakened'||msg.kind==='CastleClaimed')cues.add('castle');
+                else if(msg.kind==='Elimination'||msg.kind==='Conquest')cues.add('elimination');
+            }
+        }
+    }
     update(state:SoundState|null):SoundCue[]{
-        if(!state?.world||state.status!=='Running'){this.reset();return [];}
+        if(!state?.world){this.reset();return [];}
         const {world,you}=state,key=`${state.id}:${you}`,initial=key!==this.key;
+        if(state.status!=='Running'){
+            const cues=new Set<SoundCue>();
+            if(state.status==='Finished'&&!initial)this.collectChatCues(state.chat,cues);
+            this.reset();
+            return [...cues];
+        }
         if(initial)this.reset();
         const cues=new Set<SoundCue>();
         const incoming=new Set((world.threats??[]).filter(t=>t.ownerId!==you).map(t=>t.armyId));
@@ -26,6 +43,7 @@ export class SoundEvents {
                 if(event.kind==='oasis-loss')cues.add('oasis-lost');
             }
         }
+        if(!initial)this.collectChatCues(state.chat,cues);
         const oases=new Map(world.oases.map(o=>[o.id,o.ownerId]));
         const villages=new Map((world.warfare?.settlements??[]).map(c=>[c.id,c.ruined?null:c.ownerId]));
         if(!initial){
@@ -37,6 +55,7 @@ export class SoundEvents {
         }
         this.key=key;this.incoming=incoming;this.oases=oases;this.villages=villages;
         this.noticeId=Math.max(this.noticeId,0,...world.notices.map(n=>n.id),...(world.alerts??[]).map(n=>n.id));
+        this.chatId=Math.max(this.chatId,0,...(state.chat??[]).map(m=>m.id));
         return [...cues];
     }
 }

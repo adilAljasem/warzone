@@ -653,12 +653,12 @@ public sealed class GameServer(TimeProvider time, ILogger<GameServer> logger)
             var botCount = Math.Max(0, 8 - batch.Count);
             var settings = new RoomSettings(
                 Capacity: 8,
-                DurationMinutes: 60,
+                DurationMinutes: 30,
                 ShieldMinutes: 5,
-                ResourceSpeed: 1,
+                ResourceSpeed: 2,
                 BotCount: botCount,
                 BotDifficulty: BotDifficulty.Mixed,
-                CastleUnlockMinutes: 45);
+                CastleUnlockMinutes: 15);
             var humans = batch.Select(e => (e.PlayerId, e.Name, e.Tribe)).ToArray();
             var activeNames = CollectActivePlayerNamesLocked();
             var room = GameRoom.CreateMatchmakingMatch(roomName, humans, settings, now, activeNames);

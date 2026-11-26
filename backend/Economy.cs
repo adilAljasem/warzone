@@ -101,7 +101,7 @@ public sealed class GameRuleException(string code, string message) : Exception(m
 
 public enum CommandKind { Upgrade, Train, SetAutoQueue, DispatchArmy, MoveArmy, CampArmy, RecallArmy, ConfigureSupply, CaptureOasis, InterceptConvoy,
     AttackArmy, BeginSiege, CaptureCastle, RelocateVillage, SelectVillage, SetAfterAttack, Reinforce, PostMarketOffer, AcceptMarketOffer, CancelMarketOffer, SwapMarket, SetOasisTransport, CollectOasis, UpgradeOasisWall, UpgradeOasisLevel, BesiegeOasis, BurnOasis, Scout,
-    SendResources, SendChat, ProposeAlliance, RespondAlliance, CancelAllianceRequest, MergeArmies, DisbandTroops }
+    SendResources, SendChat, ProposeAlliance, RespondAlliance, CancelAllianceRequest, BreakAlliance, MergeArmies, DisbandTroops }
 public enum OasisMode { Capture, Blockade, Burn }
 public enum AfterAttack { Hold, Return }
 public enum AttackObjective { Raid, Conquest, Raze, Blockade }

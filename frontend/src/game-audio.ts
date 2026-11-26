@@ -57,25 +57,52 @@ export class GameAudio {
         this.master.gain.setTargetAtTime(value,this.context.currentTime,.025);
     }
     update(state:SoundState|null){
+        const wasActive=this.active;
         this.active=state?.status==='Running'&&!!state.world;
-        if(!this.active)this.stopVoices();
         const cues=this.events.update(state);
+        if(!this.active){
+            this.stopAmbient();
+            if(wasActive&&state?.status!=='Finished')this.stopVoices();
+        }
         cues.forEach((cue,i)=>this.play(cue,i*.85));
     }
     reset(){this.active=false;this.events.reset();this.lastCue.clear();this.stopVoices();}
     private audible(){return !!this.context&&this.context.state==='running'&&!this.muted&&this.volume>0&&!document.hidden;}
-    private envelope(source:AudioScheduledSourceNode,at:number,duration:number,level:number,pan:number,filter?:BiquadFilterNode,attack=.008){
+    private envelope(source:AudioScheduledSourceNode,at:number,duration:number,level:number,pan:number,filter?:BiquadFilterNode,attack=.008,sustain=.0){
         const context=this.context!,gain=context.createGain(),panner=context.createStereoPanner();
-        gain.gain.setValueAtTime(.0001,at);gain.gain.exponentialRampToValueAtTime(Math.max(.0002,level),at+attack);gain.gain.exponentialRampToValueAtTime(.0001,at+duration);
+        const peak=Math.max(.0002,level);
+        gain.gain.setValueAtTime(.0001,at);
+        gain.gain.exponentialRampToValueAtTime(peak,at+attack);
+        if(sustain>0&&sustain<duration-attack){
+            gain.gain.setValueAtTime(peak,at+attack);
+            gain.gain.exponentialRampToValueAtTime(Math.max(.0002,peak*.78),at+attack+sustain);
+        }
+        gain.gain.exponentialRampToValueAtTime(.0001,at+duration);
         if(filter){source.connect(filter);filter.connect(gain);}else source.connect(gain);
         gain.connect(panner);panner.pan.value=Math.max(-.95,Math.min(.95,pan));panner.connect(this.master!);
         this.voices.add(source);if(this.creatingAmbient)this.ambientVoices.add(source);
         source.onended=()=>{this.voices.delete(source);this.ambientVoices.delete(source);source.disconnect();gain.disconnect();panner.disconnect();filter?.disconnect();};
-        source.start(at);source.stop(at+duration+.015);
+        source.start(at);source.stop(at+duration+.02);
     }
     private tone(frequency:number,at:number,duration:number,level:number,pan=0,type:OscillatorType='sine',end=frequency){
         const oscillator=this.context!.createOscillator();oscillator.type=type;oscillator.frequency.setValueAtTime(frequency,at);oscillator.frequency.exponentialRampToValueAtTime(end,at+duration);
         this.envelope(oscillator,at,duration,level,pan);
+    }
+    private hornNote(frequency:number,at:number,duration:number,level:number,pan=0,end=frequency,cutoff=1550){
+        const context=this.context!;
+        const saw=context.createOscillator(),filter=context.createBiquadFilter();
+        saw.type='sawtooth';saw.frequency.setValueAtTime(frequency,at);saw.frequency.exponentialRampToValueAtTime(end,at+duration);
+        filter.type='lowpass';filter.frequency.setValueAtTime(cutoff,at);filter.frequency.exponentialRampToValueAtTime(Math.max(320,cutoff*.48),at+duration);filter.Q.value=1.4;
+        this.envelope(saw,at,duration,level,pan,filter,.022,duration*.45);
+        const body=context.createOscillator();
+        body.type='triangle';body.frequency.setValueAtTime(frequency,at);body.frequency.exponentialRampToValueAtTime(end,at+duration);
+        this.envelope(body,at,duration,level*.85,pan,undefined,.018,duration*.5);
+    }
+    private warDrum(at:number,level:number,pan=0,startFreq=128,endFreq=44,duration=.36){
+        const context=this.context!,osc=context.createOscillator();
+        osc.type='sine';osc.frequency.setValueAtTime(startFreq,at);osc.frequency.exponentialRampToValueAtTime(endFreq,at+duration*.75);
+        this.envelope(osc,at,duration,level,pan,undefined,.005,duration*.18);
+        this.impact(at,level*.62,pan,360,.11);
     }
     private impact(at:number,level:number,pan:number,frequency:number,duration=.16){
         const noise=this.context!.createBufferSource(),filter=this.context!.createBiquadFilter();noise.buffer=this.noise;
@@ -139,8 +166,14 @@ export class GameAudio {
         }
     }
     play(cue:SoundCue,delay=0){
+        if(this.muted||this.volume===0||document.hidden)return;
+        if(!this.context)return;
+        if(this.context.state==='suspended'){
+            void this.context.resume().then(()=>{if(this.audible())this.play(cue,delay);}).catch(()=>{/* Audio requires prior gesture. */});
+            return;
+        }
         if(!this.audible())return;
-        const context=this.context!,at=context.currentTime+delay+.01;
+        const context=this.context,at=context.currentTime+delay+.01;
         if((this.lastCue.get(cue)??-Infinity)>context.currentTime-1.1)return;
         this.lastCue.set(cue,context.currentTime);
         if(cue==='attack'){
@@ -150,6 +183,39 @@ export class GameAudio {
                 this.tone(329.6,at+offset,duration,.035,0,'sine',392);
                 this.impact(at+offset,.16,0,170,.16);
             });
+        }else if(cue==='alliance'){
+            // Gentle, warm diplomatic chime (soft pure-sine G-major arpeggio, no harsh brass or drums)
+            const chime:readonly [number,number,number,number][]=[[392,0,.42,.085],[493.88,.11,.46,.085],[587.33,.22,.78,.095]];
+            chime.forEach(([freq,offset,dur,lvl])=>{
+                const osc=context.createOscillator();osc.type='sine';osc.frequency.setValueAtTime(freq,at+offset);
+                this.envelope(osc,at+offset,dur,lvl,0,undefined,.024,dur*.22);
+            });
+            const warm=context.createOscillator();warm.type='sine';warm.frequency.setValueAtTime(392,at+.22);
+            this.envelope(warm,at+.22,.74,.05,-.12,undefined,.03,0.18);
+            const shimmer=context.createOscillator();shimmer.type='sine';shimmer.frequency.setValueAtTime(1174.66,at+.22);
+            this.envelope(shimmer,at+.22,.52,.014,.12,undefined,.03,0.1);
+        }else if(cue==='betrayal'){
+            // Sharp dagger unsheathe + heavy drum hit + ominous dark war-horn tritone drop
+            this.swordStrike(at,1.0,0,1.24,.26,true);
+            this.warDrum(at+.09,.34,0,118,40,.42);
+            this.hornNote(207.65,at+.09,.38,.23,0,196,1250);
+            this.hornNote(146.83,at+.36,.82,.26,0,130.81,980);
+            this.tone(73.42,at+.36,.86,.20,0,'sine',65.41);
+        }else if(cue==='castle'){
+            // Royal Crown Keep horn fanfare (fifth + octave)
+            this.warDrum(at,.28,0,122,48,.32);
+            [[196,0,.28],[293.66,.19,.30],[392,.38,.78]].forEach(([freq,offset,dur])=>{
+                this.hornNote(freq!,at+offset!,dur!,.21,0,freq!,1850);
+                this.tone(freq!*2,at+offset!,dur!*.8,.045,0,'sine');
+            });
+        }else if(cue==='elimination'){
+            // Heavy double war-drum boom + dramatic descending conquest brass toll
+            this.warDrum(at,.34,-.18,132,42,.40);
+            this.warDrum(at+.20,.38,.18,112,38,.48);
+            [[293.66,.08,.30],[220,.26,.32],[174.61,.44,.34],[146.83,.62,.86]].forEach(([freq,offset,dur])=>{
+                this.hornNote(freq!,at+offset!,dur!,.22,0,freq!,1350);
+            });
+            this.tone(73.42,at+.62,.90,.19,0,'sine',69.3);
         }else{
             const notes=cue==='village-captured'?[261.63,329.63,392,523.25]:cue==='oasis-captured'?[523.25,659.25,783.99]:[329.63,277.18,220];
             notes.forEach((frequency,i)=>{

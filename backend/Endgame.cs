@@ -20,6 +20,7 @@ public sealed partial class LogisticsWorld
 {
     private readonly Dictionary<Guid, WarStatistics> statistics = [];
     private readonly CentralCastle castle = new();
+    private bool castleAwakenedAnnounced;
     private double warTime, protectionUntil, matchDuration = 1800, castleUnlockSeconds = 1800;
     public const double NomadRelocationSpeed = 10;
     public const double NomadRelocationCooldownSeconds = 900;
@@ -156,6 +157,15 @@ public sealed partial class LogisticsWorld
             foreach (var oasis in oases.Where(o => o.VillageId == city.Village.Id)) { oasis.OwnerId = null; oasis.VillageId = null; }
             RefreshOasisBonuses();
             Rehome(former, city, fallback, now);
+            if (attacker.OwnerId != former)
+            {
+                if (fallback is null)
+                    OnWorldEvent?.Invoke("Elimination", $"{CommanderName(attacker.OwnerId)} eliminated {CommanderName(former)}'s kingdom!");
+                else
+                    OnWorldEvent?.Invoke("Conquest", siege.Objective == AttackObjective.Conquest
+                        ? $"{CommanderName(attacker.OwnerId)} conquered a province from {CommanderName(former)}!"
+                        : $"{CommanderName(attacker.OwnerId)} razed {CommanderName(former)}'s settlement to ruins!");
+            }
         EndSiege(siege, siege.Objective.ToString(), now);
     }
     private void Rehome(Guid formerOwner, VillageEconomy lost, VillageEconomy? fallback, double now)
@@ -220,6 +230,14 @@ public sealed partial class LogisticsWorld
     private readonly HashSet<Guid> hardBotOwners = [];
     private readonly HashSet<Guid> humanOwners = [];
     private BotDifficulty worldBotDifficulty = BotDifficulty.Normal;
+    private Func<Guid, string>? commanderNameLookup;
+    internal Action<string, string>? OnWorldEvent { get; private set; }
+    private string CommanderName(Guid id) => commanderNameLookup?.Invoke(id) ?? "Commander";
+    internal void ConfigureWorldEvents(Func<Guid, string> nameLookup, Action<string, string> onEvent)
+    {
+        commanderNameLookup = nameLookup;
+        OnWorldEvent = onEvent;
+    }
     internal void ConfigureBotContext(BotDifficulty difficulty, IEnumerable<Guid> hardBots, IEnumerable<Guid> humans)
     {
         worldBotDifficulty = difficulty;
@@ -252,6 +270,13 @@ public sealed partial class LogisticsWorld
         AdvanceNomadRelocations(seconds, now);
         castle.Active = now >= castleUnlockSeconds;
         if (!castle.Active) return;
+        if (!castleAwakenedAnnounced && castleUnlockSeconds > 0)
+        {
+            castleAwakenedAnnounced = true;
+            foreach (var player in statistics.Keys)
+                Note(player, now, "Crown Keep has opened! Hold the center for 5 minutes to claim victory!", "war", targetId: castle.Id);
+            OnWorldEvent?.Invoke("CastleAwakened", "Crown Keep has opened! Hold the center for 5 minutes to claim victory!");
+        }
         var present = armies.Where(x => Distance(x.Position, castle.Position) < 45 && !x.Routing && x.Order != "Returning" && Fighters(x) > 0).ToArray();
         var owners = present.Select(x => x.OwnerId).Distinct().ToArray();
         var alliedHolders = owners.Length > 0 && owners.All(o => CampAllied(owners[0], o));
@@ -286,6 +311,7 @@ public sealed partial class LogisticsWorld
         {
             castle.Controller = owner; castle.Claimant = owner; castle.TransferTo(owner); castle.Progress = 0;
             foreach (var player in statistics.Keys) Note(player, now, "The central castle has a new ruler. Hold it for 5 continuous minutes to win the match.");
+            OnWorldEvent?.Invoke("CastleClaimed", $"{CommanderName(owner)} seized Crown Keep! Stop them before 5:00!");
         }
         castle.Progress = Math.Min(300, castle.Progress + seconds);
         statistics[owner].CastleSeconds += seconds;

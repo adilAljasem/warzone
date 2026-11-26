@@ -114,6 +114,20 @@ public sealed partial class GameRoom
             allianceRequests.Remove(request);
             return true;
         }
+        if (command.Kind == CommandKind.BreakAlliance)
+        {
+            if (!players.TryGetValue(command.TargetId, out var formerAlly) || command.TargetId == actor)
+                throw new GameRuleException("alliance", "Choose an allied commander.");
+            var actorPlayer = players[actor];
+            if (actorPlayer.Team > 0 && actorPlayer.Team == formerAlly.Team)
+                throw new GameRuleException("alliance", "Fixed team alliances cannot be broken during the match.");
+            var pair = AlliancePair(actor, command.TargetId);
+            if (!alliances.Remove(pair))
+                throw new GameRuleException("alliance", "You are not allied with this commander.");
+            declinedAlliances[pair] = ElapsedSeconds + 120;
+            AddChat(null, $"Alliance broken! {actorPlayer.Name} betrayed {formerAlly.Name}.", "Betrayal");
+            return true;
+        }
         return false;
     }
 
@@ -133,6 +147,17 @@ public sealed partial class LogisticsWorld
         campAlliances.Clear();
         foreach (var alliance in current) campAlliances.Add(alliance.FirstPlayerId.CompareTo(alliance.SecondPlayerId) < 0
             ? (alliance.FirstPlayerId, alliance.SecondPlayerId) : (alliance.SecondPlayerId, alliance.FirstPlayerId));
+    }
+    public void RecallBrokenAllianceSupport(Guid first, Guid second, double now)
+    {
+        foreach (var army in armies.Where(a => !Engaged(a) && !a.Routing
+            && a.Order is "Reinforcing" or "Guarding"
+            && ((a.OwnerId == first && a.SupportedOwnerId == second) || (a.OwnerId == second && a.SupportedOwnerId == first))).ToArray())
+        {
+            Route(army);
+            Note(army.OwnerId, now, "Alliance broken: your stationed reinforcements are returning home.", "war");
+        }
+        Note(second, now, "Your ally broke the treaty! Guard your borders!", "war");
     }
     private bool CampAllied(Guid first, Guid second) => first == second || campAlliances.Contains(first.CompareTo(second) < 0
         ? (first, second) : (second, first));

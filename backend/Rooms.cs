@@ -637,6 +637,9 @@ public sealed partial class GameRoom : IGameCommands
         }
 
         world = new(orderedPlayers.Select(x => x.Economy!), Random.Shared.Next(), Settings.CastleUnlockMinutes * 60);
+        world.ConfigureWorldEvents(
+            id => players.TryGetValue(id, out var p) ? p.Name : "Commander",
+            (kind, text) => AddChat(null, text, kind));
         world.ConfigureBotContext(Settings.BotDifficulty,
             players.Values.Where(p => p.IsBot && p.EffectiveDifficulty(Settings.BotDifficulty) == BotDifficulty.Hard).Select(p => p.Id),
             players.Values.Where(p => !p.IsBot).Select(p => p.Id));
@@ -684,7 +687,12 @@ public sealed partial class GameRoom : IGameCommands
                 if (world!.Primary(actorId) is null) throw new GameRuleException("eliminated", "Your settlements have fallen. You may spectate the remaining match.");
                 if (ApplySocial(actorId, command))
                 {
-                    if (command.Kind == CommandKind.RespondAlliance && command.Enabled) world.SetAlliances(AllianceView());
+                    if ((command.Kind == CommandKind.RespondAlliance && command.Enabled) || command.Kind == CommandKind.BreakAlliance)
+                    {
+                        world.SetAlliances(AllianceView());
+                        if (command.Kind == CommandKind.BreakAlliance)
+                            world.RecallBrokenAllianceSupport(actorId, command.TargetId, ElapsedSeconds);
+                    }
                 }
                 else if (command.Kind is CommandKind.Upgrade or CommandKind.Train or CommandKind.SetAutoQueue)
                     world.EconomyTarget(actorId, command.TargetId).Apply(command, ElapsedSeconds);

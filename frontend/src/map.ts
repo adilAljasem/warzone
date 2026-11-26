@@ -511,7 +511,7 @@ export class WorldMap {
       if (!node) {
         const root = new Container();
         root.position.set(position.x, position.y);
-        const text = label(isArmy ? `${entity.soldiers} troops` : "Supply", 10); text.anchor.set(.5, 0); text.position.set(0, 26); root.addChild(text);
+        const text = label(isArmy ? `${entity.soldiers} troops` : "Supply", 11); text.anchor.set(.5, 0); text.position.set(0, 26); root.addChild(text);
         root.scale.set(1.25);
         node = { root, from: position, to: position, dest: destPoint, at: nowMs, duration: interpDuration, label: text, kind, lastSoldiers: isArmy ? entity.soldiers : undefined, lastEscorts: !isArmy ? entity.escorts : undefined }; this.moving.set(entity.id, node); this.units.addChild(root);
       }
@@ -554,7 +554,7 @@ export class WorldMap {
       }
       const ownerName = players.find(p => p.id === entity.ownerId)?.name ?? t("Settlement");
       const statusText = t(isArmy ? entity.order === "Camping" ? "Establishing camp" : entity.campRadius ? "Camped" : entity.order === "Guarding" ? "Guarding" : entity.order === "Reinforcing" ? "Reinforcing" : entity.order === "Merging" ? "Merging" : `${entity.soldiers + entity.wagons} units` : entity.inBattle ? "AMBUSH" : entity.returning ? "Returning" : entity.kind === "Oasis" ? "Oasis collection" : entity.kind === "Trade" ? "Trade" : entity.kind === "Shipment" ? "Resource shipment" : "Supply");
-      node.label.text = isArmy ? statusText : `${ownerName.slice(0, 12)} · ${statusText}`;
+      node.label.text = isArmy ? (entity.ownerId === viewer ? statusText : `${ownerName.slice(0, 12)} · ${statusText}`) : `${ownerName.slice(0, 12)} · ${statusText}`;
       const isFighting = isArmy ? (
         entity.order === "Battle" || entity.order === "Sieging" ||
         (world.warfare?.battles.some(b => b.status === "Active" && (b.attackerArmyIds?.includes(entity.id) || b.defenderArmyIds?.includes(entity.id) || b.attackerId === entity.id || b.defenderId === entity.id)) ?? false) ||
