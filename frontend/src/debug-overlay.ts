@@ -48,6 +48,56 @@ interface DragOffset {
     y: number;
 }
 
+interface NativeHardwareMetrics {
+    cpuPct?: number;
+    gpuPct?: number;
+    tempC?: number;
+    thermalStatus?: string;
+    thermalHeadroom?: number;
+    appRamMb?: number;
+    availRamMb?: number;
+    batteryPct?: number;
+    charging?: boolean;
+}
+
+interface NativeTelemetryBridge {
+    getMetrics?: () => string;
+}
+
+interface WebBatteryManager {
+    level: number;
+    charging: boolean;
+}
+
+function detectGpuRenderer(): string {
+    try {
+        const canvas = document.createElement("canvas");
+        const gl = (canvas.getContext("webgl2") ?? canvas.getContext("webgl")) as WebGLRenderingContext | null;
+        if (!gl) return "WebGL N/A";
+        const ext = gl.getExtension("WEBGL_debug_renderer_info");
+        const raw = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) ?? "") : String(gl.getParameter(gl.RENDERER) ?? "");
+        gl.getExtension("WEBGL_lose_context")?.loseContext();
+        if (!raw) return "WebGL";
+        const angleMatch = raw.match(/ANGLE\s*\([^,]+,\s*([^,()]+(?:\([^)]*\))?[^,)]*)/i);
+        const cleaned = (angleMatch?.[1] ?? raw).replace(/\s+Direct3D.*|\s+OpenGL.*|\s+Vulkan.*/i, "").trim();
+        return cleaned.length > 26 ? `${cleaned.slice(0, 25)}…` : cleaned;
+    } catch {
+        return "WebGL";
+    }
+}
+
+function readNativeTelemetry(): NativeHardwareMetrics | null {
+    try {
+        const bridge = (window as Window & { WarzoneNativeTelemetry?: NativeTelemetryBridge }).WarzoneNativeTelemetry;
+        if (!bridge?.getMetrics) return null;
+        const raw = bridge.getMetrics();
+        if (!raw) return null;
+        return JSON.parse(raw) as NativeHardwareMetrics;
+    } catch {
+        return null;
+    }
+}
+
 const OPEN_KEY = "warzone.debugOpen";
 const COLLAPSE_KEY = "warzone.debugCollapsed";
 const POS_KEY = "warzone.debugPos";
@@ -125,6 +175,13 @@ export class DebugOverlay {
     private expectedSnapshots = 0;
     private missedSnapshots = 0;
     private wasHidden = document.hidden;
+
+    private gpuRenderer = "";
+    private loopLagMs = 0;
+    private loopTimer = 0;
+    private lastLoopAt = 0;
+    private webBattery: WebBatteryManager | null = null;
+    private nativeHw: NativeHardwareMetrics | null = null;
 
     constructor(private readonly ctx: DebugContext, private readonly onToggle?: (open: boolean) => void) {
         try {
@@ -359,12 +416,29 @@ export class DebugOverlay {
 
         window.clearInterval(this.pingTimer);
         window.clearInterval(this.renderTimer);
+        window.clearInterval(this.loopTimer);
         window.cancelAnimationFrame(this.rafId);
         this.pingTimer = 0;
         this.renderTimer = 0;
+        this.loopTimer = 0;
         this.rafId = 0;
 
         if (!this.open) return;
+
+        if (!this.gpuRenderer) this.gpuRenderer = detectGpuRenderer();
+        if (!this.webBattery) {
+            const nav = navigator as Navigator & { getBattery?: () => Promise<WebBatteryManager> };
+            if (nav.getBattery) {
+                void nav.getBattery().then(b => { this.webBattery = b; }).catch(() => { /* Optional */ });
+            }
+        }
+        this.lastLoopAt = performance.now();
+        this.loopTimer = window.setInterval(() => {
+            const now = performance.now();
+            const lag = Math.max(0, (now - this.lastLoopAt) - 250);
+            this.lastLoopAt = now;
+            this.loopLagMs = this.loopLagMs * 0.7 + lag * 0.3;
+        }, 250);
 
         this.lastFrameAt = performance.now();
         this.fpsWindowStart = this.lastFrameAt;
@@ -475,10 +549,17 @@ export class DebugOverlay {
         const pingLabel = this.pingLastMs === null ? "—" : `${Math.round(this.pingLastMs)} ms`;
         const tickLabel = srv ? `${srv.lastTickMs.toFixed(1)} ms` : "—";
 
+        this.nativeHw = readNativeTelemetry();
+        const hw = this.nativeHw;
+        const tempC = typeof hw?.tempC === "number" && hw.tempC > 0 ? hw.tempC : null;
+        const tempClass = tempC === null ? "muted" : tempC < 39 ? "good" : tempC < 43 ? "warn" : "bad";
+
         this.strip.innerHTML = `
             <span><label>FPS</label><b class="debug-val ${fpsClass}">${this.fps || "—"}</b></span>
             <span><label>PING</label><b class="debug-val ${pingClass}">${pingLabel}</b></span>
-            <span><label>LOSS</label><b class="debug-val ${lossClass}">${loss.pct.toFixed(1)}%</b></span>
+            ${tempC !== null
+                ? `<span><label>TEMP</label><b class="debug-val ${tempClass}">${tempC.toFixed(1)}°C</b></span>`
+                : `<span><label>LOSS</label><b class="debug-val ${lossClass}">${loss.pct.toFixed(1)}%</b></span>`}
             <span><label>SRV</label><b class="debug-val ${tickClass}">${tickLabel}</b></span>`;
 
         if (this.collapsed) return;
@@ -494,6 +575,39 @@ export class DebugOverlay {
         const heapText = memInfo ? `${Math.round(memInfo.usedJSHeapSize / (1024 * 1024))} / ${Math.round(memInfo.jsHeapSizeLimit / (1024 * 1024))} MB` : "N/A";
         const domNodes = document.getElementsByTagName("*").length;
 
+        const cores = navigator.hardwareConcurrency || 0;
+        const devRam = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+        const renderLoadPct = Math.min(100, Math.round((this.frameAvgMs / 16.67) * 100));
+        const hasNativeCpu = typeof hw?.cpuPct === "number" && hw.cpuPct >= 0;
+        const hasNativeGpu = typeof hw?.gpuPct === "number" && hw.gpuPct >= 0;
+        const cpuDisplay = hasNativeCpu
+            ? `${Math.round(hw!.cpuPct!)}%${cores ? ` (${cores}c)` : ""}`
+            : `~${Math.min(100, Math.round(this.loopLagMs * 1.4 + Math.min(45, renderLoadPct * 0.45)))}%${cores ? ` (${cores}c)` : ""}`;
+        const cpuNumeric = hasNativeCpu ? hw!.cpuPct! : Math.min(100, this.loopLagMs * 1.4);
+        const cpuClass = cpuNumeric < 55 ? "good" : cpuNumeric < 80 ? "warn" : "bad";
+
+        const gpuLoadVal = hasNativeGpu ? Math.round(hw!.gpuPct!) : renderLoadPct;
+        const gpuLoadText = hasNativeGpu ? `${gpuLoadVal}%` : `~${gpuLoadVal}% (${this.frameAvgMs.toFixed(1)}ms)`;
+        const gpuLoadClass = gpuLoadVal < 70 ? "good" : gpuLoadVal < 95 ? "warn" : "bad";
+
+        const thermalMapAr: Record<string, string> = {
+            None: "عادي", Light: "دافئ", Moderate: "متوسط", Severe: "مرتفع", Critical: "ساخن جداً", Emergency: "حرج", Shutdown: "إيقاف"
+        };
+        const thermalRaw = hw?.thermalStatus && hw.thermalStatus !== "Unknown" ? hw.thermalStatus : "";
+        const thermalLabel = thermalRaw ? (isAr ? (thermalMapAr[thermalRaw] ?? thermalRaw) : thermalRaw) : "";
+        const thermalText = tempC !== null
+            ? `${tempC.toFixed(1)}°C${thermalLabel ? ` · ${thermalLabel}` : ""}`
+            : (isAr ? "متاح في APK" : "Android APK");
+
+        const batPct = typeof hw?.batteryPct === "number" && hw.batteryPct >= 0
+            ? hw.batteryPct
+            : (this.webBattery ? Math.round(this.webBattery.level * 100) : null);
+        const charging = hw?.charging ?? this.webBattery?.charging ?? false;
+        const batText = batPct !== null ? `${batPct}%${charging ? " ⚡" : ""}` : "—";
+        const ramText = typeof hw?.appRamMb === "number" && hw.appRamMb > 0
+            ? `${hw.appRamMb} MB${hw.availRamMb ? ` · ${isAr ? "متاح" : "Free"} ${(hw.availRamMb / 1024).toFixed(1)}G` : ""}`
+            : (devRam ? `${heapText} · ${devRam}G` : heapText);
+
         const row = (label: string, val: string, cls = "") =>
             `<div class="debug-row"><span>${label}</span><span class="debug-val ${cls}">${val}</span></div>`;
 
@@ -501,6 +615,17 @@ export class DebugOverlay {
             `<span class="debug-chip"><span>${label}</span><b>${n}</b></span>`;
 
         this.body.innerHTML = `
+            <section class="debug-section">
+                <h4>${isAr ? "عتاد الجهاز والحرارة" : "Device Hardware & Thermal"}<span>${hw ? "APK Native" : "WebGL"}</span></h4>
+                <div class="debug-grid">
+                    ${row(isAr ? "كرت الشاشة (GPU)" : "GPU Chip", this.gpuRenderer || "WebGL")}
+                    ${row(isAr ? "حمل الكرت / الرسم" : "GPU / Render Load", gpuLoadText, gpuLoadClass)}
+                    ${row(isAr ? "المعالج (CPU)" : "CPU Load", cpuDisplay, cpuClass)}
+                    ${row(isAr ? "حرارة الجهاز" : "Device Temp", thermalText, tempClass)}
+                    ${row(isAr ? "البطارية" : "Battery", batText, batPct !== null && batPct < 20 ? "warn" : "")}
+                    ${row(isAr ? "الذاكرة (RAM)" : "Memory", ramText, "muted")}
+                </div>
+            </section>
             <section class="debug-section">
                 <h4>${isAr ? "الشبكة والبنج" : "Network & Latency"}<span>${connState}</span></h4>
                 <div class="debug-grid">

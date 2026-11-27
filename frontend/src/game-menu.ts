@@ -1,14 +1,20 @@
-import { localizeNow, t } from './locale';
+import { currentLanguage, localizeNow, t } from './locale';
 import type { GameAudio } from './game-audio';
+import { isMobilePhone } from './mobile-shell';
 
 const UI_SCALE_KEY = 'warzone.uiScale';
 const clampScale = (value: number) => Math.min(1.25, Math.max(0.75, Math.round(value * 20) / 20));
+
+export interface DebugMenuControl {
+    isOpen: () => boolean;
+    toggle: () => boolean;
+}
 
 export class GameMenu {
     private dialog=document.createElement('dialog');
     private pending=false;
     private uiScale=1;
-    constructor(private audio:GameAudio,private status:()=>string|null,private leave:()=>Promise<void>,private openGuide?:()=>void,private replayTutorial?:()=>void){
+    constructor(private audio:GameAudio,private status:()=>string|null,private leave:()=>Promise<void>,private openGuide?:()=>void,private replayTutorial?:()=>void,private debugControl?:DebugMenuControl){
         try {
             const saved = Number(localStorage.getItem(UI_SCALE_KEY));
             if (Number.isFinite(saved) && saved >= 0.75 && saved <= 1.25) this.uiScale = clampScale(saved);
@@ -31,6 +37,7 @@ export class GameMenu {
               <p class="menu-note">Scales menus, HUD bars and report panels without shrinking the battlefield map.</p>
             </section>
             <p id="menu-error" role="alert" hidden></p>
+            <button type="button" id="toggle-mobile-debug" class="wide" data-no-translate hidden></button>
             <button type="button" id="open-guide" class="wide">Game guide</button>
             <button type="button" id="replay-tutorial" class="wide">Replay tutorial</button>
             <button type="button" id="return-game" class="primary wide">Return to game</button>
@@ -41,6 +48,7 @@ export class GameMenu {
         this.element('close-game-menu').onclick=()=>this.close();this.element('return-game').onclick=()=>this.close();
         this.element('open-guide').onclick=()=>{this.close();this.openGuide?.();};
         this.element('replay-tutorial').onclick=()=>{this.close();this.replayTutorial?.();};
+        this.element('toggle-mobile-debug').onclick=()=>{this.debugControl?.toggle();this.refreshDebugButton();this.close();};
         this.element<HTMLInputElement>('sound-volume').oninput=event=>{this.audio.setVolume(Number((event.target as HTMLInputElement).value)/100);this.refreshSound();};
         this.element('sound-mute').onclick=()=>{this.audio.setMuted(!this.audio.muted);this.refreshSound();};
         this.element('sound-preview').onclick=()=>void this.audio.preview();
@@ -59,7 +67,19 @@ export class GameMenu {
             event.preventDefault();
             if(!event.repeat){if(this.dialog.open)this.close();else this.open();}
         });
-        window.addEventListener('languagechange',()=>this.refreshSound());
+        window.addEventListener('languagechange',()=>{this.refreshSound();this.refreshDebugButton();});
+    }
+    private refreshDebugButton(){
+        const btn=this.element('toggle-mobile-debug');
+        if(!this.debugControl){btn.hidden=true;return;}
+        const mobile=isMobilePhone()||(window.matchMedia?.('(pointer: coarse)').matches??false);
+        btn.hidden=!mobile;
+        const open=this.debugControl.isOpen();
+        const isAr=currentLanguage()==='ar';
+        btn.textContent=isAr
+            ?(open?'📊 إخفاء لوحة الأداء والديبج (F3)':'📊 تشغيل لوحة الأداء والديبج (F3)')
+            :(open?'📊 Hide Performance & Debug (F3)':'📊 Show Performance & Debug (F3)');
+        btn.setAttribute('aria-pressed',String(open));
     }
     private element<T extends HTMLElement=HTMLElement>(id:string){return this.dialog.querySelector<T>(`#${id}`)!;}
     private applyUiScale(){
@@ -94,7 +114,7 @@ export class GameMenu {
         this.element('menu-live-note').hidden=status!=='Running';
         this.element('return-game').textContent=t(status?'Return to game':'Close menu');
         this.element('menu-error').hidden=true;
-        this.refreshSound();this.refreshDisplay();localizeNow(this.dialog);this.dialog.showModal();this.audio.setMenu(true);
+        this.refreshSound();this.refreshDisplay();this.refreshDebugButton();localizeNow(this.dialog);this.dialog.showModal();this.audio.setMenu(true);
         this.element('return-game').focus();
     }
     close(){if(this.pending)return;this.dialog.close();this.audio.setMenu(false);}

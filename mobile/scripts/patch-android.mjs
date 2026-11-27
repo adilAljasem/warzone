@@ -29,18 +29,36 @@ if (!manifest.includes("android:screenOrientation=")) {
 fs.writeFileSync(manifestPath, manifest, "utf8");
 console.log("Patched AndroidManifest.xml -> sensorLandscape");
 
-// 2. Patch MainActivity.java for immersive fullscreen, display cutout support, and keep-screen-on
+// 2. Patch MainActivity.java for immersive fullscreen, display cutout support, keep-screen-on, and native hardware telemetry bridge
 const mainActivitySource = `package com.warzonee.app;
 
+import android.app.ActivityManager;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Debug;
+import android.os.PowerManager;
+import android.os.Process;
+import android.os.SystemClock;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {
+    private long lastWallMs = 0L;
+    private long lastCpuMs = 0L;
+    private double smoothedCpuPct = -1.0;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -51,6 +69,10 @@ public class MainActivity extends BridgeActivity {
             getWindow().setAttributes(lp);
         }
         applyImmersiveFullscreen();
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            WebView webView = getBridge().getWebView();
+            webView.addJavascriptInterface(new NativeTelemetryBridge(), "WarzoneNativeTelemetry");
+        }
     }
 
     @Override
@@ -67,6 +89,97 @@ public class MainActivity extends BridgeActivity {
         if (controller != null) {
             controller.hide(WindowInsetsCompat.Type.systemBars());
             controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        }
+    }
+
+    private double sampleProcessCpuPct() {
+        long nowWall = SystemClock.elapsedRealtime();
+        long nowCpu = Process.getElapsedCpuTime();
+        if (lastWallMs > 0L) {
+            long dWall = nowWall - lastWallMs;
+            long dCpu = nowCpu - lastCpuMs;
+            if (dWall >= 150L && dCpu >= 0L) {
+                int cores = Math.max(1, Runtime.getRuntime().availableProcessors());
+                double raw = Math.min(100.0, (dCpu * 100.0) / (dWall * (double) cores));
+                smoothedCpuPct = smoothedCpuPct < 0.0 ? raw : (smoothedCpuPct * 0.65 + raw * 0.35);
+                lastWallMs = nowWall;
+                lastCpuMs = nowCpu;
+            }
+        } else {
+            lastWallMs = nowWall;
+            lastCpuMs = nowCpu;
+        }
+        return smoothedCpuPct;
+    }
+
+    private int sampleGpuBusyPct() {
+        try (BufferedReader reader = new BufferedReader(new FileReader("/sys/class/kgsl/kgsl-3d0/gpubusy"))) {
+            String line = reader.readLine();
+            if (line != null) {
+                String[] parts = line.trim().split("\\\\s+");
+                if (parts.length >= 2) {
+                    long busy = Long.parseLong(parts[0]);
+                    long total = Long.parseLong(parts[1]);
+                    if (total > 0L) return (int) Math.min(100L, Math.round((busy * 100.0) / total));
+                }
+            }
+        } catch (Throwable ignored) { }
+        try (BufferedReader reader = new BufferedReader(new FileReader("/sys/class/misc/mali0/device/utilization"))) {
+            String line = reader.readLine();
+            if (line != null) return Math.max(0, Math.min(100, Integer.parseInt(line.trim())));
+        } catch (Throwable ignored) { }
+        return -1;
+    }
+
+    private String thermalStatusLabel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return "";
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (pm == null) return "";
+        switch (pm.getCurrentThermalStatus()) {
+            case PowerManager.THERMAL_STATUS_NONE: return "None";
+            case PowerManager.THERMAL_STATUS_LIGHT: return "Light";
+            case PowerManager.THERMAL_STATUS_MODERATE: return "Moderate";
+            case PowerManager.THERMAL_STATUS_SEVERE: return "Severe";
+            case PowerManager.THERMAL_STATUS_CRITICAL: return "Critical";
+            case PowerManager.THERMAL_STATUS_EMERGENCY: return "Emergency";
+            case PowerManager.THERMAL_STATUS_SHUTDOWN: return "Shutdown";
+            default: return "";
+        }
+    }
+
+    private final class NativeTelemetryBridge {
+        @JavascriptInterface
+        public String getMetrics() {
+            JSONObject out = new JSONObject();
+            try {
+                out.put("cpuPct", sampleProcessCpuPct());
+                out.put("gpuPct", sampleGpuBusyPct());
+
+                Intent battery = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+                if (battery != null) {
+                    int tempTenths = battery.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1);
+                    if (tempTenths > 0) out.put("tempC", tempTenths / 10.0);
+                    int level = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                    int scale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+                    if (level >= 0 && scale > 0) out.put("batteryPct", (level * 100) / scale);
+                    int status = battery.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                    out.put("charging", status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL);
+                }
+
+                out.put("thermalStatus", thermalStatusLabel());
+
+                Debug.MemoryInfo mem = new Debug.MemoryInfo();
+                Debug.getMemoryInfo(mem);
+                out.put("appRamMb", mem.getTotalPss() / 1024);
+
+                ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+                if (am != null) {
+                    ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
+                    am.getMemoryInfo(mi);
+                    out.put("availRamMb", mi.availMem / (1024L * 1024L));
+                }
+            } catch (Throwable ignored) { }
+            return out.toString();
         }
     }
 }

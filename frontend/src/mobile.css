@@ -257,8 +257,16 @@ html.is-mobile-landscape .spectator-bar,
 html.is-mobile-landscape .achievement,
 html.is-mobile-landscape .toast,
 html.is-mobile-landscape .welcome-card,
-html.is-mobile-landscape .unit-tooltip {
+html.is-mobile-landscape .unit-tooltip,
+html.is-mobile-landscape .debug-overlay {
     zoom: var(--eff-scale);
+}
+
+html.is-mobile-landscape .debug-overlay {
+    top: 48px;
+    left: calc(10px + env(safe-area-inset-left, 0px));
+    width: min(370px, calc(100vw / var(--eff-scale) - 20px));
+    max-height: calc(100dvh / var(--eff-scale) - 56px);
 }
 
 /* Top HUD Bar: Compact single-row, safe-area aware, nothing clipped */

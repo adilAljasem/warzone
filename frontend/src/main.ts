@@ -1130,6 +1130,9 @@ const gameMenu = new GameMenu(gameAudio, () => state?.status ?? null, async () =
     gameGuide.open();
 }, () => {
     gameTutorial.replay(buildTutorialContext());
+}, {
+    isOpen: () => debugOverlay.isOpen(),
+    toggle: () => debugOverlay.toggle()
 });
 const menuButton = document.createElement('button'); menuButton.id = 'open-game-menu'; menuButton.textContent = '☰'; menuButton.setAttribute('aria-label', 'Game menu'); menuButton.title = 'Game menu'; menuButton.onclick = () => gameMenu.open(); el('world-tools').prepend(menuButton);
 function currentTribe() { return state?.world?.warfare?.settlements.find(c => c.id === state?.economy?.villageId)?.tribe ?? "Romans"; }

@@ -123,7 +123,7 @@ export class WorldMap {
   private pendingFocus: { point: Point; zoom: number } | null = null;
   private last: { world: WorldView | null; players: MapPlayer[]; viewer: string; lobbyCapacity?: number } | null = null;
   private dragging: { x: number; y: number; panX: number; panY: number; moved: boolean; pointerId: number; longPressTimer: number; longPressed: boolean } | null = null;
-  private activeTouchPointers = new Map<number, { x: number; y: number }>();
+  private activeTouchPointers = new Map<number, { x: number; y: number; at: number }>();
   private pinch: { startDist: number; startZoom: number; anchorWorld: Point } | null = null;
   private suppressTapUntil = 0;
   constructor(private host: HTMLElement, private onSelect: (selection: MapSelection, modifiers: { ctrl: boolean; shift: boolean; client?: Point }) => void) {}
@@ -1136,11 +1136,33 @@ export class WorldMap {
     const target = this.resolveAtClient(clientX, clientY);
     this.rightClickHandler(target, { x: clientX, y: clientY });
   }
+  private pruneStaleTouchPointers() {
+    const cutoff = performance.now() - 3500;
+    for (const [id, pt] of this.activeTouchPointers) {
+      if (pt.at < cutoff) this.activeTouchPointers.delete(id);
+    }
+    if (this.activeTouchPointers.size < 2) this.pinch = null;
+  }
+  private releaseTouchPointer(pointerId: number) {
+    if (!this.activeTouchPointers.delete(pointerId)) return;
+    if (this.pinch && this.activeTouchPointers.size < 2) {
+      this.pinch = null;
+      this.suppressTapUntil = performance.now() + 260;
+    }
+  }
+  private clearAllTouchGestures() {
+    this.activeTouchPointers.clear();
+    this.pinch = null;
+    if (this.dragging?.longPressTimer) window.clearTimeout(this.dragging.longPressTimer);
+    this.dragging = null;
+  }
   private beginPinch(canvas: HTMLCanvasElement) {
+    this.pruneStaleTouchPointers();
     const pts = [...this.activeTouchPointers.values()];
     if (pts.length < 2) return;
     const [a, b] = pts;
     const dist = Math.hypot(b!.x - a!.x, b!.y - a!.y);
+    if (dist < 14) return;
     const rect = canvas.getBoundingClientRect();
     const cx = (a!.x + b!.x) / 2 - rect.left;
     const cy = (a!.y + b!.y) / 2 - rect.top;
@@ -1150,13 +1172,14 @@ export class WorldMap {
       this.dragging = null;
     }
     this.pinch = {
-      startDist: Math.max(12, dist),
+      startDist: Math.max(14, dist),
       startZoom: this.zoomFactor,
       anchorWorld: this.world.toLocal({ x: cx, y: cy })
     };
     this.hoverHandler?.(null, null);
   }
   private updatePinch(canvas: HTMLCanvasElement) {
+    this.pruneStaleTouchPointers();
     if (!this.pinch || this.activeTouchPointers.size < 2) return;
     const [a, b] = [...this.activeTouchPointers.values()];
     const dist = Math.hypot(b!.x - a!.x, b!.y - a!.y);
@@ -1190,9 +1213,40 @@ export class WorldMap {
         console.error("Contextmenu error:", err);
       }
     });
+    // Global touch/pointer guards prevent ghost pointers from ever sticking pinch-zoom after lifting over HUD or screen edges.
+    window.addEventListener("pointerup", event => {
+      if (event.pointerType === "touch") this.releaseTouchPointer(event.pointerId);
+    }, true);
+    window.addEventListener("pointercancel", event => {
+      if (event.pointerType === "touch") this.releaseTouchPointer(event.pointerId);
+    }, true);
+    window.addEventListener("touchend", event => {
+      if (event.touches.length === 0) {
+        this.activeTouchPointers.clear();
+        if (this.pinch) {
+          this.pinch = null;
+          this.suppressTapUntil = performance.now() + 260;
+        }
+      } else if (event.touches.length < 2 && this.pinch) {
+        this.pinch = null;
+        this.suppressTapUntil = performance.now() + 260;
+      }
+    }, { passive: true, capture: true });
+    window.addEventListener("touchcancel", () => {
+      this.activeTouchPointers.clear();
+      this.pinch = null;
+    }, { passive: true, capture: true });
+    window.addEventListener("blur", () => this.clearAllTouchGestures());
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.clearAllTouchGestures();
+    });
+    canvas.addEventListener("lostpointercapture", event => {
+      if (event.pointerType === "touch") this.releaseTouchPointer(event.pointerId);
+    });
     canvas.addEventListener("pointerdown", event => {
       if (event.pointerType === "touch") {
-        this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        this.pruneStaleTouchPointers();
+        this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY, at: performance.now() });
         if (this.activeTouchPointers.size >= 2) {
           this.beginPinch(canvas);
           return;
@@ -1214,9 +1268,13 @@ export class WorldMap {
     canvas.addEventListener("pointermove", event => {
       try {
         if (event.pointerType === "touch" && this.activeTouchPointers.has(event.pointerId)) {
-          this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+          this.activeTouchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY, at: performance.now() });
           if (this.pinch && this.activeTouchPointers.size >= 2) {
             this.updatePinch(canvas);
+            return;
+          }
+          if (!this.pinch && this.activeTouchPointers.size >= 2) {
+            this.beginPinch(canvas);
             return;
           }
         }
@@ -1253,15 +1311,10 @@ export class WorldMap {
       }
     });
     canvas.addEventListener("pointerup", event => {
+      const wasPinching = !!this.pinch;
       if (event.pointerType === "touch") {
-        this.activeTouchPointers.delete(event.pointerId);
-        if (this.pinch) {
-          if (this.activeTouchPointers.size < 2) {
-            this.pinch = null;
-            this.suppressTapUntil = performance.now() + 260;
-          }
-          return;
-        }
+        this.releaseTouchPointer(event.pointerId);
+        if (wasPinching) return;
       }
       if (!this.dragging || event.pointerId !== this.dragging.pointerId) return;
       if (this.dragging.longPressTimer) {
@@ -1286,10 +1339,7 @@ export class WorldMap {
       }
     });
     canvas.addEventListener("pointercancel", event => {
-      if (event.pointerType === "touch") {
-        this.activeTouchPointers.delete(event.pointerId);
-        if (this.activeTouchPointers.size < 2) this.pinch = null;
-      }
+      if (event.pointerType === "touch") this.releaseTouchPointer(event.pointerId);
       if (this.dragging?.longPressTimer) window.clearTimeout(this.dragging.longPressTimer);
       this.dragging = null;
       this.hoverHandler?.(null, null);
