@@ -134,7 +134,8 @@ if (Directory.Exists(clientPath))
         OnPrepareResponse = ctx =>
         {
             var path = ctx.Context.Request.Path.Value ?? "";
-            if (path.Equals("/", StringComparison.Ordinal) || path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+            if (path.Equals("/", StringComparison.Ordinal) || path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
                 || path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
                 || path.EndsWith(".webmanifest", StringComparison.OrdinalIgnoreCase))
                 ctx.Context.Response.Headers.CacheControl = "no-cache";

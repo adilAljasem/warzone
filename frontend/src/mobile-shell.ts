@@ -287,6 +287,10 @@ export function initMobileShell(onLayoutChange?: () => void): MobileShellHandle 
     document.addEventListener("fullscreenchange", syncViewportClasses);
     document.addEventListener("visibilitychange", () => { void syncWakeLock(); });
 
+    if ("serviceWorker" in navigator && window.location.protocol === "https:") {
+        void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => { /* Optional PWA registration */ });
+    }
+
     syncViewportClasses();
 
     return {
