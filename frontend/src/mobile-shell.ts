@@ -5,8 +5,6 @@ interface BeforeInstallPromptEvent extends Event {
     userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
-const APK_URL = "/downloads/warzonee.apk";
-
 export function isAndroidDevice(): boolean {
     return typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
 }
@@ -26,12 +24,10 @@ function isBrowserFullscreenActive(): boolean {
 export function isStandaloneMobileApp(): boolean {
     if (typeof window === "undefined") return false;
     const nav = navigator as Navigator & { standalone?: boolean };
-    const cap = window as Window & { Capacitor?: { isNativePlatform?: () => boolean } };
     const installedPwaFullscreen = (window.matchMedia?.("(display-mode: fullscreen)").matches ?? false)
         && !isBrowserFullscreenActive();
     return Boolean(
-        cap.Capacitor?.isNativePlatform?.()
-        || nav.standalone === true
+        nav.standalone === true
         || window.matchMedia?.("(display-mode: standalone)").matches
         || installedPwaFullscreen
     );
@@ -56,8 +52,6 @@ export interface MobileShellHandle {
 
 export function initMobileShell(onLayoutChange?: () => void): MobileShellHandle {
     let deferredInstallPrompt: BeforeInstallPromptEvent | null = null;
-    // Show Android APK download immediately when hosted; hide only if HEAD explicitly fails.
-    let apkAvailable = isAndroidDevice();
     let matchActive = false;
     let portraitDismissed = false;
     let wakeLock: { release(): Promise<void> } | null = null;
@@ -137,22 +131,19 @@ export function initMobileShell(onLayoutChange?: () => void): MobileShellHandle 
         const isAr = currentLanguage() === "ar";
         if (isAndroidDevice()) {
             const btns: string[] = [];
-            if (apkAvailable) {
-                btns.push(`<a class="mobile-install-btn apk" href="${APK_URL}" download="Warzonee.apk"><span>📱</span><b>${isAr ? "تحميل تطبيق الأندرويد (APK)" : "Download Android App (APK)"}</b></a>`);
-            }
             if (deferredInstallPrompt) {
-                btns.push(`<button type="button" class="mobile-install-btn pwa" data-mobile-action="install-pwa"><span>⚡</span><b>${isAr ? "تثبيت سريع كتطبيق" : "Quick Install App"}</b></button>`);
+                btns.push(`<button type="button" class="mobile-install-btn pwa" data-mobile-action="install-pwa"><span>⚡</span><b>${isAr ? "إضافة أيقونة للشاشة الرئيسية" : "Add to Home Screen"}</b></button>`);
             }
             if (!compact && supportsFullscreen() && !isBrowserFullscreenActive()) {
                 btns.push(`<button type="button" class="mobile-install-btn fs" data-mobile-action="fullscreen-landscape"><span>⛶</span><b>${isAr ? "ملء الشاشة بالعرض" : "Fullscreen Landscape"}</b></button>`);
             }
             if (btns.length === 0) return "";
-            return `<div class="mobile-install-row">${btns.join("")}</div><small class="mobile-install-note">${isAr ? "تطبيق خفيف بالعرض الدائم ويتحدث تلقائياً مع الموقع" : "Always-landscape app · auto-syncs with site updates"}</small>`;
+            return `<div class="mobile-install-row">${btns.join("")}</div><small class="mobile-install-note">${isAr ? "العب مباشرة من المتصفح بملء الشاشة بدون تحميل" : "Play fullscreen directly in your browser — no download needed"}</small>`;
         }
         if (isIOSDevice()) {
             return `<div class="mobile-install-row">
-                <button type="button" class="mobile-install-btn ios" data-mobile-action="open-ios-guide"><span>📱</span><b>${isAr ? "تثبيت اللعبة على الآيفون (ملء الشاشة)" : "Install on iPhone (Fullscreen)"}</b></button>
-            </div><small class="mobile-install-note">${isAr ? "يعمل بدون شريط المتصفح ويتحدث تلقائياً مع الموقع" : "Runs fullscreen without Safari bars & auto-updates"}</small>`;
+                <button type="button" class="mobile-install-btn ios" data-mobile-action="open-ios-guide"><span>📱</span><b>${isAr ? "إضافة للشاشة الرئيسية (ملء الشاشة)" : "Add to Home Screen (Fullscreen)"}</b></button>
+            </div><small class="mobile-install-note">${isAr ? "تفتح بدون شريط Safari وتتحدث تلقائياً بدون تحميل" : "Opens without Safari bars & updates automatically"}</small>`;
         }
         return "";
     }
@@ -172,10 +163,10 @@ export function initMobileShell(onLayoutChange?: () => void): MobileShellHandle 
         const sub = isAr
             ? (matchActive
                 ? "اللعبة مصممة للوضع الأفقي لتظهر الخريطة والقوائم بوضوح وبأزرار مريحة للمس."
-                : "لأفضل تجربة تحكم بالجيوش والمباني، افتح اللعبة بالوضع الأفقي أو حمّل تطبيق اللعبة.")
+                : "لأفضل تجربة تحكم بالجيوش والمباني، افتح اللعبة بالوضع الأفقي بملء الشاشة.")
             : (matchActive
                 ? "Warzonee plays in landscape so the battlefield and command panels stay clear and touch-friendly."
-                : "Switch to landscape for the best battlefield controls, or install the mobile app.");
+                : "Switch to landscape fullscreen for the best battlefield controls.");
         const rotateBtn = canAutoRotate
             ? `<button type="button" class="primary wide mobile-rotate-btn" data-mobile-action="fullscreen-landscape">${isAr ? "↻ العب بالعرض بشاشة ممتلئة" : "↻ Play in Landscape Fullscreen"}</button>`
             : `<p class="mobile-rotate-tip">${isAr ? "تأكد من إلغاء قفل تدوير الشاشة في جوالك ثم أدره أفقياً." : "Make sure rotation lock is off, then turn your phone sideways."}</p>`;
@@ -220,7 +211,7 @@ export function initMobileShell(onLayoutChange?: () => void): MobileShellHandle 
         const isAr = currentLanguage() === "ar";
         iosModal.innerHTML = `<div class="ios-guide-card glass" role="dialog" aria-modal="true">
             <div class="ios-guide-head">
-                <strong>${isAr ? "تثبيت Warzonee على الآيفون" : "Install Warzonee on iPhone"}</strong>
+                <strong>${isAr ? "إضافة Warzonee للشاشة الرئيسية" : "Add Warzonee to Home Screen"}</strong>
                 <button type="button" class="icon-button" data-mobile-action="close-ios-guide" aria-label="Close">×</button>
             </div>
             <ol class="ios-guide-steps">
@@ -295,21 +286,6 @@ export function initMobileShell(onLayoutChange?: () => void): MobileShellHandle 
     });
     document.addEventListener("fullscreenchange", syncViewportClasses);
     document.addEventListener("visibilitychange", () => { void syncWakeLock(); });
-
-    // Verify if the hosted APK exists; keep visible by default on Android, hide only on explicit 404/HTML fallback.
-    if (isAndroidDevice() && !isStandaloneMobileApp()) {
-        void fetch(APK_URL, { method: "HEAD" })
-            .then(res => {
-                const ct = res.headers.get("content-type") ?? "";
-                const available = res.ok && !ct.includes("text/html");
-                if (available !== apkAvailable) {
-                    apkAvailable = available;
-                    renderRotateGate();
-                    renderInstallBar();
-                }
-            })
-            .catch(() => { /* Keep button available if network check is blocked. */ });
-    }
 
     syncViewportClasses();
 

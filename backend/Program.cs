@@ -126,7 +126,6 @@ if (Directory.Exists(clientPath))
     var files = new PhysicalFileProvider(clientPath);
     var contentTypes = new FileExtensionContentTypeProvider();
     contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
-    contentTypes.Mappings[".apk"] = "application/vnd.android.package-archive";
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
     app.UseStaticFiles(new StaticFileOptions
     {
