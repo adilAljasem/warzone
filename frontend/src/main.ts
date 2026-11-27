@@ -476,6 +476,7 @@ const armyDrafts: Record<string, Record<string, number>> = {};
 const editedDrafts = new Set<string>();
 let hoveredState: { target: MapSelection | null; client: { x: number; y: number } | null } = { target: null, client: null };
 let radialState: { target: MapSelection; options: RadialOption[]; anchor: { x: number; y: number } } | null = null;
+let radialOpenedAt = 0;
 let selection: MapSelection | null = null, busy = false, roomBusy = false, pendingActions = 0, connecting = false, page = 0, toastTimer = 0;
 const isTouchUi = () => typeof window !== "undefined" && (
     (window.matchMedia?.("(pointer: coarse)").matches ?? false)
@@ -833,7 +834,7 @@ function applyOasisUnitSelection(oasisId: string, armyId: string, units: string[
 function renderArmyOrderBar() {
     const bar = document.getElementById("army-order-bar");
     if (!bar) return;
-    if (!isTouchUi() || !state?.world || state.status !== "Running" || selectedArmies.length === 0) {
+    if (!isTouchUi() || isMobilePhone() || !state?.world || state.status !== "Running" || selectedArmies.length === 0) {
         bar.hidden = true;
         if (bar.dataset.key) {
             delete bar.dataset.key;
@@ -977,8 +978,9 @@ function issueMapOrder(target: MapSelection, client: { x: number; y: number }): 
     }
     if (behavior.options.length) {
         radialState = { target, options: behavior.options, anchor: client };
+        radialOpenedAt = performance.now();
         refreshCursorBadge();
-        renderRadialMenu(el("radial-menu"), client, behavior.options, esc);
+        renderRadialMenu(el("radial-menu"), client, behavior.options, esc, isMobilePhone());
         return true;
     }
     closeRadial();
@@ -1006,7 +1008,16 @@ const map = new WorldMap(el("map"), (pick, modifiers) => {
     }
     if (!state?.world) return;
     closeRadial();
+    const onMobilePhone = isMobilePhone();
     const isMulti = modifiers.ctrl || modifiers.shift || multiSelectMode;
+    // On mobile phones, tapping empty ground while any right drawer is open dismisses the drawer cleanly.
+    if (onMobilePhone && pick.kind === "ground" && panel !== null) {
+        buildingOasisId = null;
+        closePanel();
+        selection = null;
+        map.select(null);
+        return;
+    }
     if (pick.kind === "village" && pick.ownerId === state.you) {
         if (isMulti) {
             if (armyTroopMap(`home:${pick.id}`)) selectArmies([`home:${pick.id}`], "toggle", false);
@@ -1017,7 +1028,7 @@ const map = new WorldMap(el("map"), (pick, modifiers) => {
             selectArmies([pick.id], "toggle", false);
             return;
         }
-    } else if (tapOrderMode && selectedArmies.length > 0 && state.status === "Running") {
+    } else if ((tapOrderMode || onMobilePhone) && selectedArmies.length > 0 && state.status === "Running") {
         const anchor = modifiers.client ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 };
         if (issueMapOrder(pick, anchor)) return;
     }
@@ -1035,6 +1046,11 @@ const map = new WorldMap(el("map"), (pick, modifiers) => {
         openPanel("army", pick.id);
     } else if (pick.kind === "ground") {
         buildingOasisId = null;
+        if (onMobilePhone) {
+            selection = null;
+            map.select(null);
+            return;
+        }
         openPanel("biome", String(biomeAt(state.world.regions ?? [], pick.position)?.id ?? ""));
     }
     else {
@@ -3348,7 +3364,7 @@ document.addEventListener("click", event => {
         return;
     }
     const targetEl = event.target as Element;
-    if (radialState && !targetEl.closest("#radial-menu")) closeRadial();
+    if (radialState && !targetEl.closest("#radial-menu") && performance.now() - radialOpenedAt > 300) closeRadial();
     if (targetEl.closest(".unit-help,#unit-tooltip")) return;
     const choice = targetEl.closest<HTMLButtonElement>('[data-choice]');
     if (choice) { if (choice.disabled) return; const input = el<HTMLInputElement>(choice.dataset.choice!); input.value = choice.dataset.value!; choice.closest('.choice-grid')?.querySelectorAll<HTMLButtonElement>('button').forEach(b => { const active = b === choice; b.classList.toggle('active', active); b.setAttribute('aria-pressed', String(active)); b.querySelector('.choice-check')!.innerHTML = active ? '&#10003;' : ''; }); input.dispatchEvent(new Event('change', { bubbles: true })); return; }

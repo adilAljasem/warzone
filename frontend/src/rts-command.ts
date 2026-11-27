@@ -548,17 +548,22 @@ export function renderRadialMenu(
   host: HTMLElement,
   anchor: Point,
   options: RadialOption[],
-  escape: (s: string) => string
+  escape: (s: string) => string,
+  compact = false
 ) {
   if (!options.length) {
     host.hidden = true;
     host.innerHTML = "";
     return;
   }
-  const marginX = 135;
+  const marginX = compact ? 86 : 135;
+  const minY = compact ? 96 : 150;
+  const maxBottomPad = compact ? 40 : 55;
   const x = Math.max(marginX, Math.min(window.innerWidth - marginX, anchor.x));
-  const y = Math.max(150, Math.min(window.innerHeight - 55, anchor.y));
-  const radius = options.length >= 5 ? 108 : options.length >= 3 ? 96 : 84;
+  const y = Math.max(minY, Math.min(window.innerHeight - maxBottomPad, anchor.y));
+  const radius = compact
+    ? (options.length >= 5 ? 74 : options.length >= 3 ? 66 : 56)
+    : (options.length >= 5 ? 108 : options.length >= 3 ? 96 : 84);
   const startDeg = options.length === 2 ? -130 : -162;
   const endDeg = options.length === 2 ? -50 : -18;
 
