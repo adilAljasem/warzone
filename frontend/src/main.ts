@@ -1010,9 +1010,10 @@ const map = new WorldMap(el("map"), (pick, modifiers) => {
     closeRadial();
     const onMobilePhone = isMobilePhone();
     const isMulti = modifiers.ctrl || modifiers.shift || multiSelectMode;
-    // On mobile phones, tapping empty ground while any right drawer is open dismisses the drawer cleanly.
+    // On mobile phones, tapping empty ground while any right drawer is open dismisses the drawer and clears army selection so villages/oases can be inspected immediately.
     if (onMobilePhone && pick.kind === "ground" && panel !== null) {
         buildingOasisId = null;
+        if (selectedArmies.length > 0) selectArmies([], "clear", false);
         closePanel();
         selection = null;
         map.select(null);
@@ -2215,6 +2216,9 @@ async function executeRtsOrder(actionId: RadialActionId, target: MapSelection) {
         renderArmiesStrip();
         refreshCursorBadge();
         renderDrawer(true);
+    } else if (anySent && isMobilePhone()) {
+        // On mobile phones, clear army selection after issuing an order so tapping villages/oases opens their drawer normally.
+        selectArmies([], "clear", false);
     }
 
     if (!anySent && missingScoutsOnly) {
@@ -3536,6 +3540,10 @@ document.addEventListener("click", event => {
     if (action === 'focus-army') {
         if (armyTroopMap(id)) {
             const multi = event.ctrlKey || event.metaKey || event.shiftKey;
+            if (!multi && isMobilePhone() && selectedArmies.length === 1 && selectedArmies[0] === id) {
+                selectArmies([], "clear", false);
+                return;
+            }
             selectArmies([id], multi ? "toggle" : "replace", !multi);
             return;
         }

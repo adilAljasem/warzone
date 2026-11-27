@@ -700,52 +700,79 @@ html.is-mobile-landscape .army-merge-btn {
 }
 
 html.is-mobile-landscape .army-shelf {
-    padding: 3px 5px 2px;
+    padding: 2px 4px 1px;
     border-radius: 9px 9px 0 0;
     border-bottom: 0;
     margin-bottom: -1px;
     min-height: 0;
     box-shadow: 0 -4px 14px rgba(10, 26, 21, 0.35);
+    overflow: visible;
 }
 
 html.is-mobile-landscape .army-strip {
-    gap: 4px;
-    padding: 1px;
+    gap: 5px;
+    padding: 5px 4px 1px;
 }
 
 html.is-mobile-landscape .army-card {
-    flex: 0 0 60px;
-    width: 60px;
-    height: 54px;
+    flex: 0 0 54px;
+    width: 54px;
+    height: 50px;
 }
 
 html.is-mobile-landscape .army-card-btn {
-    padding: 2px 3px;
+    padding: 1px 2px 2px;
     border-radius: 7px;
 }
 
+html.is-mobile-landscape .army-card-header {
+    margin-bottom: -3px;
+}
+
 html.is-mobile-landscape .army-name-tag {
-    font-size: 7.5px;
+    font-size: 7px;
+    line-height: 1.05;
+}
+
+html.is-mobile-landscape .army-status-badge {
+    height: 11px;
+}
+
+html.is-mobile-landscape .army-status-badge svg {
+    width: 11px;
+    height: 11px;
 }
 
 html.is-mobile-landscape .army-lead-art {
-    width: 30px;
-    height: 23px;
+    width: 40px;
+    height: 31px;
+    margin: -4px 0 -4px;
+}
+
+html.is-mobile-landscape .army-lead-art.lead-icon {
+    font-size: 21px;
 }
 
 html.is-mobile-landscape .army-total-count {
-    font-size: 10px;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1;
+    color: #fff2be;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
 }
 
 html.is-mobile-landscape .army-select-toggle {
     opacity: 1;
-    width: 19px;
-    height: 19px;
-    top: -4px;
+    width: 23px;
+    height: 23px;
+    top: -6px;
     inset-inline-start: auto;
-    inset-inline-end: -4px;
-    font-size: 10.5px;
-    line-height: 17px;
+    inset-inline-end: -5px;
+    font-size: 14px;
+    font-weight: 900;
+    line-height: 21px;
+    border-width: 1.5px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
 }
 
 html.is-mobile-landscape .building-shelf {
